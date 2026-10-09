@@ -34,3 +34,4 @@ with version selection, rollback and safe mode.
 - **Signing:** images are signed with cosign v2.x; v3's default format is not readable by Podman 5.4.
 - **GPIO:** pin numbers are BCM numbers. Never hard-code a gpiochip number.
 - Commit messages reference the milestone (`OS3`) and, where relevant, application requirement IDs (`NFR-003`).
+- Keep the GitHub Project board [BrewberryPi OS](https://github.com/users/tinkerius/projects/1) in sync with the work. There is one issue per milestone (OS0–OS8); set it to *In Progress* when work starts and *Done* + closed when its "done when" checks pass (`gh project item-edit` on project 1). Pull requests reference the milestone issue (`Refs #n` / `Closes #n`).

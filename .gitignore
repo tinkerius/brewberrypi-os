@@ -1,0 +1,12 @@
+# Build output
+/work/
+/deploy/
+*.img
+*.img.xz
+*.zip
+
+# Secrets (never commit signing keys or registry tokens)
+*.key
+cosign.key
+auth.json
+.env

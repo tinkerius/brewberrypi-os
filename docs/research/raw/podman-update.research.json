@@ -1,0 +1,207 @@
+{
+  "area": "podman-update",
+  "summary": "The design is feasible on Trixie with Podman 5.4.2, conmon 2.1.12, crun 1.21, containers/image 5.34.2 and systemd 257, but it needs five fixes. (1) The graphroot must be on /data, because overlay over overlayfs is refused, and image_copy_tmp_dir must be moved off /var/tmp, which is RAM on this root. (2) CI must emit legacy cosign signatures (sha256-<digest>.sig tags): containers/image cannot see cosign v3's default OCI-1.1 referrer/bundle signatures. Use cosign v2.x or skopeo/podman --sign-by-sigstore-private-key, and pin the key with keyPath. Keyless cannot pin a GitHub Actions identity, because only email SANs are supported. (3) Notify=true works: READY=1 and WATCHDOG=1 are relayed by conmon, and systemctl restart blocks until READY. WATCHDOG_USEC does not reach the container. (4) The safe-mode OnFailure= needs RestartMode=direct, otherwise it fires on every crash, and the updater must reset-failed because start limits count manual starts. (5) Never use `prune -a`: plain prune keeps :previous. Offline updates can stay signature-verified with dir: plus `podman pull dir:`; podman load archives cannot carry signatures. Anonymous tag listing works on GHCR and Docker Hub, but the list includes .sig tags and is paginated and lexical. Private GHCR needs a classic PAT (read:packages) in an authfile on /data. `podman auto-update` with AutoUpdate=local already implements retag→restart→wait→rollback and can replace steps 4.3–4.5, but it does not keep a persistent :previous or provide safe mode.",
+  "claims": [
+    {
+      "id": "P01",
+      "claim": "Debian Trixie ships podman 5.4.2+ds1-2, conmon 2.1.12, crun 1.21, skopeo 1.18.0, cosign 2.5.0, containers/image 5.34.2, containers/common 0.62.2, containers/storage 1.57.2, systemd 257.13. Podman is built for both arm64 and armhf.",
+      "evidence": "https://sources.debian.org/api/src/{podman,conmon,crun,skopeo,cosign,golang-github-containers-image,golang-github-containers-common,golang-github-containers-storage,systemd}/ (trixie suite entries, queried 2026-10-09); https://packages.debian.org/trixie/podman lists arm64 and armhf. podman v5.4.2 go.mod: containers/common v0.62.3, containers/storage v1.57.2.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P02",
+      "claim": "Point graphroot at /data with [storage] driver=\"overlay\", graphroot=\"/data/containers/storage\" in /etc/containers/storage.conf. Keep runroot on tmpfs (/run/containers/storage). Podman's static_dir (database) and volume_path follow graphroot by default, so the sqlite DB lands on /data as well.",
+      "evidence": "https://raw.githubusercontent.com/containers/storage/v1.57.2/docs/containers-storage.conf.5.md: graphroot / runroot ('Default directory to store all temporary writable content'); https://raw.githubusercontent.com/containers/common/v0.62.2/docs/containers.conf.5.md: static_dir 'Directory for persistent libpod files (database, etc). By default this will be configured relative to where containers/storage stores containers.' tmp_dir='/run/libpod' 'Must be a tmpfs'.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P03",
+      "claim": "Kernel overlay on ext4 is a supported graphroot backing filesystem. containers/storage refuses overlay when the backing filesystem is itself overlayfs, so the graphroot must NOT sit on the read-only/RAM-overlay root (default /var/lib/containers would). On /data (ext4) nothing is nested, because the container's overlay mounts use only ext4 directories.",
+      "evidence": "https://raw.githubusercontent.com/containers/storage/v1.57.2/drivers/overlay/overlay.go L364-365: 'case graphdriver.FsMagicAufs, graphdriver.FsMagicOverlay, graphdriver.FsMagicEcryptfs: return nil, fmt.Errorf(\"'overlay' is not supported over %s, a mount_program is required...' ; d_type check at L690 (ext4 provides d_type).",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P04",
+      "claim": "Pull staging is NOT in graphroot. containers/image stages layer blobs in image_copy_tmp_dir, default /var/tmp. On a RAM-overlay root this is RAM, so a pull on a 1 GB Pi 3 can exhaust memory. Set image_copy_tmp_dir=\"storage\" (or a /data path) in containers.conf [engine].",
+      "evidence": "https://raw.githubusercontent.com/containers/image/v5.34.2/storage/storage_dest.go L144 'tmpdir.MkDirBigFileTemp(sys, \"storage\")'; https://raw.githubusercontent.com/containers/image/v5.34.2/internal/tmpdir/tmpdir.go 'builtinUnixTempDirForBigFiles = \"/var/tmp\"'; containers.conf.5.md v0.62.2: 'image_copy_tmp_dir=\"/var/tmp\" ... If you specify \"storage\", then the location of the container/storage tmp directory will be used.'",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P05",
+      "claim": "Power cut during a pull: containers/storage marks a layer 'incomplete' while it is being created and deletes incomplete layers the next time the store is loaded read-write. Metadata (layers.json/images.json) is written atomically (temp file + fsync + rename, unless the store is volatile). An image record and its tag appear only after all layers are committed, so a cut pull leaves the old 'active' tag intact.",
+      "evidence": "https://raw.githubusercontent.com/containers/storage/v1.57.2/layers.go L41 incompleteFlag; L924-934 'if layerHasIncompleteFlag(layer) ... logrus.Warnf(\"Found incomplete layer %q, deleting it\"'; L1053 NoSync only for volatile layers; https://raw.githubusercontent.com/containers/storage/v1.57.2/pkg/ioutils/fswriters.go 'If NoSync is not specified, the file is synced'. Ordering of image-record creation is inferred from containers/image's commit flow and was not tested.",
+      "confidence": "medium",
+      "decision_critical": true
+    },
+    {
+      "id": "P06",
+      "claim": "`podman system check` exists in 5.4 (added in 5.0, 'HISTORY April 2024'). It checks image/container storage consistency. --repair removes damaged images unless containers use them, --force also removes the dependent containers, and --max=<dur> treats unreferenced layers older than <dur> as remains of cancelled pulls. It removes damage; it does not repair images in place. Re-pull or fall back to previous afterwards.",
+      "evidence": "https://raw.githubusercontent.com/containers/podman/v5.4.2/docs/source/markdown/podman-system-check.1.md: '--repair, -r Remove any images which are determined to have been damaged in some way, unless they are in use by containers. Use --force to remove containers which depend on damaged images'; '--max ... assume that any layers which are more than duration old are the results of canceled attempts to pull images'.",
+      "confidence": "high",
+      "decision_critical": false
+    },
+    {
+      "id": "P07",
+      "claim": "policy.json type sigstoreSigned with keyPath (or keyPaths/keyData) plus registries.d `use-sigstore-attachments: true` is supported by containers/image 5.34.2 (what Podman 5.4.2 on Trixie uses). cosign signatures carry only the repository, so signedIdentity must be matchRepository or exactRepository. The signature is bound to the manifest digest, not to the tag.",
+      "evidence": "https://raw.githubusercontent.com/containers/image/v5.34.2/docs/containers-policy.json.5.md §sigstoreSigned: 'If keyPath or keyData is present, it contains a sigstore public key. Only signatures made by this key are accepted.' ... 'Note that cosign-created signatures only contain a repository, so only matchRepository and exactRepository can be used ... (and that does not protect against substitution of a signed image with an unexpected tag).' ... 'the use-sigstore-attachments option needs to be enabled'; https://raw.githubusercontent.com/containers/image/v5.34.2/docs/containers-registries.d.5.md 'use-sigstore-attachments specifies whether sigstore image attachments ... are going to be read'.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P08",
+      "claim": "With default:[{type:reject}] and a sigstoreSigned requirement for the repo, `podman pull` refuses unsigned images and images signed with another key. libimage always builds a PolicyContext from the system policy for pull/load copies. The same policy applies to podman load / pull from archives, so an explicit entry is needed for every transport the device should accept.",
+      "evidence": "https://raw.githubusercontent.com/containers/common/v0.62.3/libimage/copier.go L286 'policy, err := signature.DefaultPolicy(c.systemContext)', L297 'signature.NewPolicyContext(policy)'; policy doc 'Only signatures made by this key are accepted'. Not run on hardware.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P09",
+      "claim": "CRITICAL CI pitfall: containers/image (5.34.2 and current container-libs) looks for sigstore signatures only under the legacy tag `sha256-<digest>.sig`. cosign v3 by default stores signatures as OCI 1.1 referring artifacts in the new bundle format, which Podman 5.4 will not find, so every pull is rejected. Sign with cosign v2.x (e.g. Trixie's 2.5.0, or cosign-installer pinned to v2), or with `podman push`/`skopeo copy --sign-by-sigstore-private-key`. Re-verify in CI with the device policy.",
+      "evidence": "https://raw.githubusercontent.com/containers/image/v5.34.2/docker/docker_client.go L1176-1180 'func sigstoreAttachmentTag ... return strings.Replace(d.String(), \":\", \"-\", 1) + \".sig\"' (same at https://raw.githubusercontent.com/containers/container-libs/main/image/docker/docker_client.go L1278-1282; no referrers support found); cosign CHANGELOG v3.0.0 https://raw.githubusercontent.com/sigstore/cosign/main/CHANGELOG.md: 'new features ... on by default ... container signatures stored as an OCI Image 1.1 referring artifact'. The exact v3 opt-out flags are not confirmed (cosign_sign.md on main shows --registry-referrers-mode legacy|oci-1-1 but no --new-bundle-format).",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P10",
+      "claim": "cosign is packaged in Debian Trixie (2.5.0-2, legacy .sig format), but it is needed only in CI. The device verifies with containers/image itself, so it does not need cosign.",
+      "evidence": "https://sources.debian.org/api/src/cosign/ → ('2.5.0-2', ['trixie','trixie-proposed-updates']); 3.x only in forky/sid.",
+      "confidence": "high",
+      "decision_critical": false
+    },
+    {
+      "id": "P11",
+      "claim": "Keyless (Fulcio/Rekor) in policy.json is possible: fulcio{caPath|caData, oidcIssuer, subjectEmail} plus a mandatory rekorPublicKeyPath. Verification is offline: it uses the pinned Fulcio CA and the Rekor 'signed entry timestamp' embedded in the signature, with no network call. However, identity matching is by email SAN only. GitHub Actions keyless certificates carry a workflow URI SAN, not an email, so CI keyless signing cannot be pinned with Podman 5.4. Pinned public key (keyPath) is the only practical choice.",
+      "evidence": "https://raw.githubusercontent.com/containers/image/v5.34.2/docs/containers-policy.json.5.md: 'Both oidcIssuer and subjectEmail are mandatory' ; 'rekorPublicKeyPath ... mandatory if fulcio is specified ... must contain an (offline-verifiable) “signed entry timestamp”'; https://raw.githubusercontent.com/containers/image/v5.34.2/signature/fulcio_cert.go L168 'if !slices.Contains(untrustedCertificate.EmailAddresses, f.subjectEmail)'. The claim that GitHub Actions certificates have only a URI SAN comes from Sigstore knowledge and was not re-fetched.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P12",
+      "claim": "Anonymous tag listing works on public GHCR and Docker Hub: GET token (ghcr.io/token?scope=repository:<name>:pull or auth.docker.io/token?service=registry.docker.io&scope=...), then GET /v2/<name>/tags/list with Bearer. Results are paginated via a Link: rel=\"next\" header (use ?n=). Tags come in lexical, not chronological, order. cosign signature tags (sha256-<64hex>.sig, .att, .sbom) appear in the list and must be filtered out.",
+      "evidence": "Live test 2026-10-09: ghcr.io/token anonymous → 200; /v2/home-assistant/home-assistant/tags/list?n=5 → 200 with 'link: <...&n=5>; rel=\"next\"'; without token → 401 'www-authenticate: Bearer realm=\"https://ghcr.io/token\"'; Docker Hub library/alpine tags/list → 200; ghcr.io/sigstore/cosign/cosign tags/list contained 'sha256-7cfb...ba.sig'.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P13",
+      "claim": "skopeo is in Trixie (1.18.0), and `skopeo list-tags docker://ghcr.io/OWNER/brewberrypi` lists tags with --authfile/--creds support. It honours the same auth.json lookup.",
+      "evidence": "https://raw.githubusercontent.com/containers/skopeo/v1.18.0/docs/skopeo-list-tags.1.md 'Return a list of tags from source-image in a registry'; sources.debian.org skopeo 1.18.0+ds1-1 trixie.",
+      "confidence": "high",
+      "decision_critical": false
+    },
+    {
+      "id": "P14",
+      "claim": "Credentials for rootful Podman: the primary auth file is ${XDG_RUNTIME_DIR}/containers/auth.json, or /run/containers/0/auth.json for root, which is tmpfs and lost on reboot. Fallbacks are ~/.config/containers/auth.json and ~/.docker/config.json, both on the RAM overlay here. Store the credential on /data (root-only 0600) and pass --authfile or REGISTRY_AUTH_FILE to the updater. GHCR accepts only a classic PAT. Scope read:packages is enough to pull/list; CI pushes with GITHUB_TOKEN/write:packages.",
+      "evidence": "https://raw.githubusercontent.com/containers/image/v5.34.2/docs/containers-auth.json.5.md 'The primary (read/write) file is stored at ${XDG_RUNTIME_DIR}/containers/auth.json'; https://raw.githubusercontent.com/containers/image/v5.34.2/pkg/docker/config/config.go L39 'defaultPerUIDPathFormat = \"/run/containers/%d/auth.json\"'; https://docs.github.com/en/packages/working-with-a-github-packages-registry/working-with-the-container-registry: 'GitHub Packages only supports authentication using a personal access token (classic)' ; 'Select the read:packages scope to download container images and read their metadata'.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P15",
+      "claim": "Rate limits: according to Docker Hub's docs, anonymous pulls are limited to 100 per 6 h per IPv4 address or IPv6 /64. A manifest GET counts, HEAD does not, and a multi-arch pull counts once per architecture. The live response header on 2026-10-09 showed 'ratelimit-limit: 100;w=3600', so the window is unclear. GHCR documents no pull rate limit and allows anonymous pulls of public images. For one device either is fine; GHCR is the safer choice.",
+      "evidence": "https://docs.docker.com/docker-hub/usage/pulls/ ('100 per IPv4 address or IPv6 /64 subnet' per 6 hours; 'Using GET emulates a real pull and counts towards the limit. Using HEAD won't.'); live HEAD registry-1.docker.io/v2/library/alpine/manifests/latest → 'ratelimit-limit: 100;w=3600'; GitHub container-registry doc mentions no pull rate limits ('You can also access public container images anonymously').",
+      "confidence": "medium",
+      "decision_critical": false
+    },
+    {
+      "id": "P16",
+      "claim": "Quadlet 5.4: Image=localhost/brewberrypi:active with Pull=never maps to `podman run --pull never localhost/brewberrypi:active`. Only names ending in .image or .build get special handling. The image is resolved at each start, so retag plus restart switches the version. The generated unit always uses --replace --rm --cidfile=%t/%N.cid.",
+      "evidence": "https://raw.githubusercontent.com/containers/podman/v5.4.2/docs/source/markdown/podman-systemd.unit.5.md table 'Pull=never | --pull never'; Image= 'supports using :tag or digests'; https://raw.githubusercontent.com/containers/podman/v5.4.2/pkg/systemd/quadlet/quadlet.go L605-611 '--cidfile=%t/%N.cid', '--replace', '--rm'.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P17",
+      "claim": "Notify=true → `--sdnotify=container`. Quadlet sets Type=notify and NotifyAccess=all. Podman bind-mounts conmon's proxy socket dir to /run/notify and sets NOTIFY_SOCKET=/run/notify/notify.sock inside the container. It strips NOTIFY_SOCKET from the OCI runtime's environment, so crun's own READY-only proxy is bypassed. MAINPID is conmon. `systemctl restart` blocks until READY=1 or until the start fails or TimeoutStartSec expires; it returns non-zero on failure.",
+      "evidence": "quadlet.go L670-683 'case container.LookupBooleanWithDefault(ContainerGroup, KeyNotify, false): podman.add(\"--sdnotify=container\") ... \"Type\", \"notify\", \"NotifyAccess\", \"all\"'; https://raw.githubusercontent.com/containers/podman/v5.4.2/libpod/container_internal_common.go L910-933 mountNotifySocket 'c.state.BindMounts[\"/run/notify\"] = notifyDir ... g.AddProcessEnv(\"NOTIFY_SOCKET\", \"/run/notify/notify.sock\")'; https://raw.githubusercontent.com/containers/podman/v5.4.2/libpod/oci_conmon_common.go L1021 '--sdnotify-socket=', L1259 'The NOTIFY_SOCKET must not leak'; https://raw.githubusercontent.com/systemd/systemd/v257/man/systemctl.xml --no-block: 'If this is not specified, the job will be verified, enqueued and systemctl will wait until the unit's start-up is completed.'",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P18",
+      "claim": "WatchdogSec= in [Service] plus WATCHDOG=1 from the app passes through. conmon 2.1.12 relays an allowlist that includes WATCHDOG=1 and WATCHDOG=trigger, and NotifyAccess=all accepts it. Caveat: WATCHDOG_USEC/WATCHDOG_PID are set for podman, not the container, so sd_watchdog_enabled() inside the container reports 'off'. Pass the interval via Environment= and ping unconditionally. HealthCmd plus HealthOnFailure=kill is the alternative; it depends on podman's healthcheck timers.",
+      "evidence": "https://raw.githubusercontent.com/containers/conmon/v2.1.12/src/conn_sock.c L437-438 'const char *passon_line[] = { \"READY=1\", \"RELOADING=1\", \"STOPPING=1\", \"WATCHDOG=1\", \"WATCHDOG=trigger\", }'; quadlet doc HealthOnFailure: 'The \"kill\" action in combination integrates best with systemd'. Watchdog relay was not tested end to end on a Pi. The WATCHDOG_USEC caveat is inferred from sd_watchdog_enabled(3) semantics.",
+      "confidence": "medium",
+      "decision_critical": true
+    },
+    {
+      "id": "P19",
+      "claim": "Restart=, RestartSec=, RestartMode=, WatchdogSec=, TimeoutStartSec=, [Unit] StartLimitIntervalSec=/StartLimitBurst=/OnFailure= and extra ExecStopPost= all pass through unchanged. Exceptions: Type must be notify/oneshot and KillMode mixed/control-group. Quadlet appends its own ExecStop/ExecStopPost (`podman rm -v -f -i --cidfile`) AFTER user lines. A user ExecStopPost therefore runs before Quadlet's podman rm and may find the container still alive, for example after a watchdog SIGABRT to conmon.",
+      "evidence": "podman-systemd.unit.5.md: 'options defined in the [Service] table and [Install] tables pass directly to systemd'; quadlet.go L527 'service := container.Dup()', L588-595 service.AddCmdline(ServiceGroup, \"ExecStopPost\", ...) (Add appends: https://raw.githubusercontent.com/containers/podman/v5.4.2/pkg/systemd/parser/unitfile.go L870 group.add); L569-576 KillMode check; L664-667 Type check. The ordering consequence for the watchdog case is inferred.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P20",
+      "claim": "Safe mode: with the default RestartMode=normal, every auto-restart passes through the failed state and fires OnFailure=. Use RestartMode=direct (systemd ≥254; Trixie has 257) so OnFailure fires only when restarting stops, e.g. on start-limit-hit. Start limits also count manual starts, so the updater must `systemctl reset-failed` before its restart.",
+      "evidence": "https://raw.githubusercontent.com/systemd/systemd/v257/man/systemd.service.xml RestartMode=: 'If set to normal (the default), the service restarts by going through a failed/inactive state. If set to direct ... skipping failed/inactive state. ExecStopPost= is still invoked. OnSuccess= and OnFailure= are skipped.'; https://raw.githubusercontent.com/systemd/systemd/v257/man/systemd.unit.xml OnFailure= 'activated when this unit enters the failed state'; StartLimitIntervalSec: 'they apply to all kinds of starts (including manual), not just those triggered by the Restart= logic.'",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P21",
+      "claim": "AddDevice= may repeat. A leading '-' adds the device only if it exists on the host (checked when the generator runs at boot/daemon-reload), so AddDevice=-/dev/gpiochip0 and AddDevice=-/dev/gpiochip4 cover Pi 3/4/5. GroupAdd= maps to --group-add. Use the host's numeric gpio GID, because the container has no 'gpio' group name; keep-groups is for rootless crun. Volume=/data/config:/config:ro gives a read-only bind mount.",
+      "evidence": "podman-systemd.unit.5.md AddDevice=: 'The - prefix tells Quadlet to add the device only if it exists on the host. This key can be listed multiple times.'; quadlet.go L724-733 (fileutils.Exists at generation). GroupAdd 'Equivalent to the Podman --group-add option'; Volume= 'equivalent to the Podman --volume option'. The numeric-GID point is inferred.",
+      "confidence": "high",
+      "decision_critical": false
+    },
+    {
+      "id": "P22",
+      "claim": "Retagging: an image name is unique in containers/storage. `podman tag NEW localhost/brewberrypi:active` moves the name from the old image in a single atomic metadata write. `podman untag` only removes names. The image stays until it is removed.",
+      "evidence": "https://raw.githubusercontent.com/containers/storage/v1.57.2/images.go L846-848 'for _, name := range names { if otherImage, ok := r.byname[name]; ok { r.removeName(otherImage, name)'; https://raw.githubusercontent.com/containers/podman/v5.4.2/docs/source/markdown/podman-untag.1.md.",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P23",
+      "claim": "`podman image prune` (no -a) adds filters dangling=true and containers=false, so it never removes a tagged :previous image or an image a container uses. `podman image prune -a` removes every image without a container, including :previous. It must never be used here.",
+      "evidence": "https://raw.githubusercontent.com/containers/podman/v5.4.2/pkg/domain/infra/abi/images.go Prune L66-83: 'pruneOptions.Filters = append(..., \"dangling=true\")' unless All; 'append(..., \"containers=false\")'; podman-image-prune.1.md '--all: Remove dangling images and images that have no associated containers.'",
+      "confidence": "high",
+      "decision_critical": true
+    },
+    {
+      "id": "P24",
+      "claim": "Offline with verification: the dir: transport stores sigstore signatures. docker-archive, oci (layout) and oci-archive cannot. `podman pull dir:/media/usb/x` is supported, so policy.json can require sigstoreSigned for the dir transport (signedIdentity exactRepository). `podman load`/`podman save` archives carry no signatures. Accepting them requires an insecureAcceptAnything entry for that transport, or a separate verification (e.g. a signed SHA-256 of the tarball). `podman image scp` copies between hosts/users over SSH and does not help with USB media.",
+      "evidence": "https://raw.githubusercontent.com/containers/image/v5.34.2/directory/directory_dest.go L34 'stubs.AlwaysSupportsSignatures', L238 PutSignaturesWithFormat; https://raw.githubusercontent.com/containers/image/v5.34.2/docker/internal/tarfile/dest.go L62 'stubs.NoSignatures(\"Storing signatures for docker tar files is not supported\")'; https://raw.githubusercontent.com/containers/image/v5.34.2/oci/layout/oci_dest.go L79 'stubs.NoSignatures(\"Pushing signatures for OCI images is not supported\")'; podman-pull.1.md.in '$ podman pull dir:/tmp/myimage'. End-to-end dir: verification was not tested.",
+      "confidence": "medium",
+      "decision_critical": true
+    },
+    {
+      "id": "P25",
+      "claim": "Multi-arch: the policy is evaluated on the top-level manifest being copied. Signing the index digest is enough for `podman pull ghcr.io/...:tag`. A single-instance copy (e.g. a per-arch dir: export) needs the per-platform manifest signed too, so use `cosign sign --recursive` (signs the index and each image). Platform matching on 32-bit ARM falls back v8→v7→v6, so a linux/arm/v7 image is selected on Pi 3 armhf.",
+      "evidence": "cosign_sign.md (main): '-r, --recursive if a multi-arch image is specified, additionally sign each discrete image'; https://raw.githubusercontent.com/containers/image/v5.34.2/internal/pkg/platform/platform_matcher.go L148-150 'compatibility = map[string][]string{\"arm\": {\"v8\", \"v7\", \"v6\", \"v5\"}'. The top-level evaluation detail is inferred from containers/image copy behaviour and was not re-fetched.",
+      "confidence": "medium",
+      "decision_critical": false
+    },
+    {
+      "id": "P26",
+      "claim": "Built-in alternative: Quadlet AutoUpdate=local plus `podman auto-update` does exactly 'image under the raw name changed → RestartUnit(job mode replace) and wait for the job result → on failure re-tag the old image to the raw name and restart again' (--rollback defaults to true; READY via sd_notify is recommended). It does not pick arbitrary tags, keep a persistent :previous, verify anything beyond the pull, or handle later boot failures. AutoUpdate=registry follows one fixed tag (e.g. :stable) and verifies signatures through the same policy.json.",
+      "evidence": "https://raw.githubusercontent.com/containers/podman/v5.4.2/pkg/autoupdate/autoupdate.go L315-321 localUpdateAvailable 'localImg.ID() != t.image.ID()', L324-331 rollbackImage 't.image.Tag(t.rawImageName)', L334-345 RestartUnitContext(ctx, unit, \"replace\", restartChan) ... 'result := <-restartChan'; podman-auto-update.1.md.in '--rollback ... Default is true. Note that detecting if a systemd unit has failed is best done by the container sending the READY message via SDNOTIFY.'",
+      "confidence": "high",
+      "decision_critical": false
+    },
+    {
+      "id": "P27",
+      "claim": "A .path unit on /data (ext4) can start the root oneshot updater through inotify (PathChanged=/DirectoryNotEmpty=). The updater must consume/remove the request file, otherwise PathExists/DirectoryNotEmpty re-triggers. Validate the tag string strictly. It comes from a no-auth web UI (IF-060), so anyone on the LAN can request any signed tag, including a signed old one (downgrade).",
+      "evidence": "Standard systemd.path(5) semantics, not re-fetched in this pass. Downgrade risk follows from P07 (signature binds repository+digest, not version).",
+      "confidence": "medium",
+      "decision_critical": false
+    }
+  ],
+  "recommendation": "HOST CONFIG (baked into the read-only root):\n/etc/containers/storage.conf:\n  [storage]\n  driver = \"overlay\"\n  graphroot = \"/data/containers/storage\"\n  runroot = \"/run/containers/storage\"\n/etc/containers/containers.conf.d/50-brewberrypi.conf:\n  [engine]\n  image_copy_tmp_dir = \"storage\"      # keeps pull staging off /var/tmp (RAM)\n/etc/containers/registries.d/brewberrypi.yaml:\n  docker:\n    ghcr.io/OWNER/brewberrypi:\n      use-sigstore-attachments: true\n/etc/containers/policy.json:\n  {\"default\":[{\"type\":\"reject\"}],\n   \"transports\":{\n     \"docker\":{\"ghcr.io/OWNER/brewberrypi\":[{\"type\":\"sigstoreSigned\",\"keyPaths\":[\"/etc/brewberrypi/keys/cosign-2026.pub\",\"/etc/brewberrypi/keys/cosign-next.pub\"],\"signedIdentity\":{\"type\":\"matchRepository\"}}]},\n     \"dir\":{\"\":[{\"type\":\"sigstoreSigned\",\"keyPaths\":[\"/etc/brewberrypi/keys/cosign-2026.pub\",\"/etc/brewberrypi/keys/cosign-next.pub\"],\"signedIdentity\":{\"type\":\"exactRepository\",\"dockerRepository\":\"ghcr.io/OWNER/brewberrypi\"}}]}}}\n  (A second, pre-provisioned key in keyPaths allows key rotation without a root image change. Do NOT add docker-archive/oci-archive accept entries unless the unverified-USB path is explicitly wanted.)\n\nQUADLET /etc/containers/systemd/brewberrypi.container:\n  [Unit]\n  Description=BrewberryPi\n  RequiresMountsFor=/data\n  StartLimitIntervalSec=10min\n  StartLimitBurst=4\n  OnFailure=brewberrypi-safemode.service\n  [Container]\n  Image=localhost/brewberrypi:active\n  Pull=never\n  ContainerName=brewberrypi\n  Notify=true\n  User=10001:10001\n  GroupAdd=<numeric GID of host 'gpio' group>\n  AddDevice=-/dev/gpiochip0\n  AddDevice=-/dev/gpiochip4\n  Volume=/data/config:/config:ro\n  Volume=/data/update/requests:/update/requests:rw\n  PublishPort=8080:8080            (or Network=host)\n  ReadOnly=true\n  NoNewPrivileges=true\n  DropCapability=ALL\n  Environment=BREWBERRY_WATCHDOG_SEC=20\n  [Service]\n  Restart=on-failure\n  RestartSec=3\n  RestartMode=direct\n  TimeoutStartSec=60\n  WatchdogSec=20                   (app sends WATCHDOG=1 every ~5-10 s unconditionally; it cannot rely on WATCHDOG_USEC)\n  ExecStopPost=+/usr/local/sbin/brewberrypi-outputs-off %t/%N.cid\n  [Install]\n  WantedBy=multi-user.target\n  The outputs-off script first runs `podman rm -f -t 0 -i --cidfile=$1` so the container no longer holds the GPIO lines (Quadlet's own ExecStopPost runs after user lines), then drives BCM 22/23 HIGH (relays off).\n\nUPDATE TRIGGER: brewberrypi-update.path with DirectoryNotEmpty=/data/update/requests → brewberrypi-update.service (Type=oneshot, root, Environment=REGISTRY_AUTH_FILE=/data/secrets/auth.json only for private repos, TimeoutStartSec=30min).\n\nUPDATER (root, under flock /run/brewberrypi-update.lock):\n 1. Take the oldest request file, delete it, and validate the tag against ^[A-Za-z0-9_][A-Za-z0-9._-]{0,127}$. Reject ^sha256-; optionally reject downgrades below a minimum version.\n 2. podman pull ghcr.io/OWNER/brewberrypi:$TAG   (policy enforces signature; failure → report 'signature/pull failed', active untouched)\n 3. NEW=$(podman image inspect -f '{{.Id}}' ghcr.io/OWNER/brewberrypi:$TAG); OLD=$(podman image inspect -f '{{.Id}}' localhost/brewberrypi:active); if equal → done.\n 4. Write /data/update/state.json {phase:\"switching\",old:OLD,new:NEW,tag:TAG} via tmp+fsync+rename.\n 5. podman tag $OLD localhost/brewberrypi:previous ; podman tag $NEW localhost/brewberrypi:active   (each is an atomic name move)\n 6. systemctl reset-failed brewberrypi.service; systemctl restart brewberrypi.service   (blocks until READY=1, fails on crash or TimeoutStartSec), then soak about 60 s: is-active and NRestarts unchanged.\n 7. On failure: podman tag $OLD localhost/brewberrypi:active; podman tag $NEW localhost/brewberrypi:rejected; reset-failed; restart; state {phase:\"rolled-back\"}.\n 8. On success: state {phase:\"ok\"}. GC: `podman rmi` (no -f) for every image ID that is not active/previous, then `podman image prune -f` (dangling only). NEVER `prune -a`.\n Alternative for steps 6-7: label the container AutoUpdate=local and run `podman auto-update --format json` (built-in retag-back rollback), then keep step 5's :previous handling yourself.\n\nSAFE MODE (brewberrypi-safemode.service, Type=oneshot, triggered only by start-limit-hit thanks to RestartMode=direct):\n If the updater lock is held, exit (the updater handles it). If /data/update/safemode.marker is absent and :previous exists and differs from :active, swap the tags, create the marker, reset-failed and `systemctl start --no-block brewberrypi.service`. Otherwise stay down: outputs are already off through ExecStopPost. The updater clears the marker after the next successful update.\n Optional boot unit before the app: `podman system check --quick`; on reported damage run `--repair --force` and fall back to :previous if :active is gone.\n\nCI:\n Build linux/arm64 and linux/arm/v7 → push by digest → sign with cosign v2.x (or skopeo/podman --sign-by-sigstore-private-key): `cosign sign --key ... --recursive ghcr.io/OWNER/brewberrypi@sha256:<index>`.\n Gate: run skopeo with the device's policy.json and registries.d (`skopeo --policy policy.json --registries.d ... copy docker://...@digest dir:/tmp/check`) and fail the release if it is rejected.\n Offline artifact: `skopeo copy --all docker://ghcr.io/OWNER/brewberrypi@sha256:<index> dir:brewberrypi-<ver>` (with use-sigstore-attachments enabled) → USB. Device: `podman pull dir:/media/usb/brewberrypi-<ver>`, then the same steps 3-8.\n\nTAG LISTING:\n Public repo: the app (non-root) itself calls GET https://ghcr.io/token?scope=repository:OWNER/brewberrypi:pull and then /v2/OWNER/brewberrypi/tags/list?n=1000, follows Link rel=next, filters ^sha256-[0-9a-f]{64}\\.(sig|att|sbom)$, and sorts by semver.\n Private repo: the root updater (or a timer) runs `skopeo list-tags --authfile /data/secrets/auth.json docker://ghcr.io/OWNER/brewberrypi` and writes /data/update/tags.json for the app, so the PAT (classic, read:packages) never enters the container.",
+  "open_questions": [
+    "Is the GHCR repo public or private? That decides whether the non-root app can list tags itself or the root side must publish tags.json and hold a classic PAT.",
+    "cosign v3: which exact flags (e.g. --registry-referrers-mode=legacy and/or a new-bundle-format opt-out) still produce the legacy sha256-<digest>.sig attachment that containers/image 5.34 reads? Not confirmed. Pin cosign v2.x or sign with skopeo/podman until a CI gate proves it.",
+    "WatchdogSec through conmon is confirmed only from source (allowlist plus mount path) and not tested on hardware. Verify that `systemctl show -p WatchdogTimestamp` advances and that a stalled app is killed.",
+    "Confirm that RestartMode=direct + start-limit-hit triggers OnFailure exactly once on systemd 257 (documented semantics, not tested).",
+    "dir: offline flow: test that `podman pull dir:` with a sigstoreSigned/exactRepository policy accepts a `skopeo copy --all` export and rejects a tampered one.",
+    "Should a signed but older tag be allowed (downgrade) from an unauthenticated LAN UI (IF-060)? This is a policy decision, because signatures bind repo+digest, not version.",
+    "Time and memory cost of `podman system check --quick` on a Pi 3 with a few images. Decide whether to run it on every boot or only after a failed start.",
+    "Pi 5 gpiochip numbering differs by kernel version (RP1 on gpiochip4 on older kernels vs gpiochip0 on newer ones), hence the optional '-' AddDevice entries. Confirm on the target kernel.",
+    "Raspberry Pi OS 32-bit (Raspbian armv6hf rebuild): only Debian armhf podman availability was verified, not Raspbian's archive."
+  ]
+}

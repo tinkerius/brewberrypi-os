@@ -1,0 +1,511 @@
+{
+  "area": "Container runtimes (Docker Engine, Podman) on Raspberry Pi OS for BrewberryPi, plus image building, wheels, logging and the state of Raspberry Pi OS (as of 2026-10-08)",
+  "summary": "I checked most of this directly against package indexes, docs, source code and package contents on 2026-10-08.\n\n**Docker on Raspberry Pi OS**\n- Docker's own 32-bit \"raspbian\" repo has stopped. It has no trixie suite, and its newest package is docker-ce 28.5.2 (2025-11-05).\n- Docker's Debian repo still ships current Docker 29.8.2 (2026-09-30) for both armhf (ARMv7) and arm64. On 64-bit Pi OS, which Docker calls \"fully supported\", Docker sends you to the Debian instructions.\n- The get.docker.com script behaves differently on the two 32-bit releases:\n  - On 32-bit Trixie it uses Docker's Debian repo, so you get 29.x.\n  - On 32-bit Bookworm it uses the stopped raspbian repo with no warning, so you get 28.5.2, which gets no more updates.\n- Debian's own docker.io is old: 20.10.24 on Bookworm, 26.1.5 on Trixie.\n\n**Podman on Raspberry Pi OS**\n- Bookworm has Podman 4.3.1. That is too old for Quadlet (Podman's systemd unit files), which arrived in 4.4.0.\n- Trixie has Podman 5.4.2, which includes Quadlet. It also has `podman auto-update`, which rolls back to the previous image by default if the restarted unit fails.\n- Quadlet keeps any `ExecStopPost=` lines written in the `[Service]` section and adds its own cleanup command after them. So the GPIO reset after a crash (NFR-003) works the same as in a native systemd unit.\n\n**Docker and the crash-safety and update requirements**\n- Docker's restart policies have no post-stop hook. Docker turned down a request to expose OCI hooks.\n- So a GPIO reset after a crash only works if systemd supervises `docker run` instead of a restart policy. Docker allows this but recommends restart policies instead.\n- `docker.service` only starts after the network is online.\n- By default, stopping dockerd stops all containers, including when Docker itself is upgraded.\n- Access to `docker.sock` is equivalent to root, which works against the non-root rule (NFR-024) if the web UI triggers updates.\n- Watchtower, the usual Docker auto-updater, is archived and fails against Docker 29.\n\n**Memory, CPU and disk**\n- On a 512 MB-class Pi board, someone measured dockerd at 39.3 MiB and containerd plus shims at 30.5 MiB resident memory, with zero idle CPU. That is about 70 MiB, less than the \"100 MB+\" I stated earlier.\n- Podman leaves only conmon running, about 2 MB.\n- Installed size is about 313–323 MiB for Docker (the 5 packages in Docker's install command) and about 95 MiB for Podman installed with `--no-install-recommends`.\n\n**Python wheels**\n- Everything in the stack is pure Python except websockets and lgpio. websockets has armv7l and aarch64 wheels plus a pure-Python fallback.\n- lgpio only has wheels for Python 3.9–3.12. Python 3.13, which Trixie ships, has to build it from source, which needs SWIG plus either the system liblgpio or `PYPI=1`.\n- piwheels has lgpio for Python 3.13, but only for 32-bit.\n- Raspberry Pi's apt repo has python3-lgpio and python3-gpiozero 2.0.1. Both are preinstalled in the 2026-10-06 Lite images for armhf and arm64.\n- A Python 3.12 base image needs no compiling at all.\n\n**Logging**\n- Docker's default `json-file` log driver never rotates logs.\n- Raspberry Pi OS Trixie keeps the system journal in RAM only (`Storage=volatile`), so journald logs cause no SD-card writes but are lost on reboot.\n\n**Raspberry Pi OS**\n- Trixie-based images since 2025-10-01, with Python 3.13.5.\n- 64-bit is listed as \"Recommended\" and is offered for Pi 3, 4 and 5. 32-bit is offered for every model.\n\n**Corrections to my earlier message**\n- The 1-Wire sysfs path probably does not need to be passed into a container, because `/sys` is mounted read-only but not hidden. Only `/dev/gpiochip*` and the gpio group's numeric ID are needed. I inferred this from code; it is not tested on hardware.\n- \"Docker breaks ExecStopPost\" is really \"Docker restart policies have no hook\".",
+  "claims": [
+    {
+      "id": "DOCKER-01",
+      "claim": "Docker's official Raspberry Pi OS (32-bit/armhf) install page states verbatim: \"Docker Engine v28 will be the last major version to support Raspberry Pi OS 32-bit (armhf). Starting with Docker Engine v29, new major versions will no longer provide packages for Raspberry Pi OS 32-bit (armhf).\" Migration options given: \"64-bit ARM: Install the Debian arm64 packages (fully supported)\" and \"32-bit ARM (v7): Install the Debian armhf packages (targets ARMv7 CPUs)\"; ARMv6 devices (Pi 1, Zero, Zero W) are no longer supported by official packages.",
+      "evidence": "https://docs.docker.com/engine/install/raspberry-pi-os/ (raw: https://docs.docker.com/engine/install/raspberry-pi-os.md, fetched 2026-10-08); same notice in v28.5.0 notes https://docs.docker.com/engine/release-notes/28/",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-02",
+      "claim": "Docker Engine 29.0.0 (released 2025-11-10) release notes: \"Official Raspbian (32-bit) packages are no longer provided. Use Debian arm64 packages for 64-bit devices, or Debian armhf packages for 32-bit ARMv7 devices.\" and \"Debian armhf (32-bit) packages now target ARMv7 CPUs and will not work on ARMv6 devices.\"",
+      "evidence": "https://docs.docker.com/engine/release-notes/29/ (29.0.0 section, dated 2025-11-10)",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-03",
+      "claim": "Docker's raspbian repo is frozen. https://download.docker.com/linux/raspbian/dists/ contains only bookworm, bullseye, buster, jessie and stretch (no trixie). The newest docker-ce there is docker-ce_28.5.2-1~raspbian.12~bookworm_armhf.deb, dated 2025-11-05, and 28.5.2 is the last 28.x release.",
+      "evidence": "Directory listings fetched with curl 2026-10-08: https://download.docker.com/linux/raspbian/dists/ and https://download.docker.com/linux/raspbian/dists/bookworm/pool/stable/armhf/ ; v28 release notes list 28.5.2 (2025-11-05) as latest: https://docs.docker.com/engine/release-notes/28/",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-04",
+      "claim": "Docker's Debian repo stays current on both ARM architectures. It has docker-ce 29.8.2 (built 2026-09-30) for trixie armhf, trixie arm64 and bookworm armhf, plus containerd.io 2.3.6 (2026-09-25). Docker's Debian page supports Trixie 13 and Bookworm 12 on \"x86_64 (or amd64), armhf (arm/v7), arm64, and ppc64le\".",
+      "evidence": "https://download.docker.com/linux/debian/dists/trixie/pool/stable/armhf/ (docker-ce_29.8.2-1~debian.13~trixie_armhf.deb 2026-09-30 19:54), .../arm64/, https://download.docker.com/linux/debian/dists/bookworm/pool/stable/armhf/ ; https://docs.docker.com/engine/install/debian/ ; 29.8.2 dated 2026-09-30 in https://docs.docker.com/engine/release-notes/29/",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-05",
+      "claim": "Docker's Raspberry Pi OS page lists only \"32-bit Raspberry Pi OS Bookworm 12 (stable)\" and \"32-bit Raspberry Pi OS Bullseye 11 (oldstable)\" as supported. It says: \"If you're using the 64-bit (arm64) version, follow the instructions for Debian.\"",
+      "evidence": "https://docs.docker.com/engine/install/raspberry-pi-os.md (OS requirements + IMPORTANT box)",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-06",
+      "claim": "The get.docker.com script (commit 2b32480025b223ebfddae9a3a8bef09027680f53, fetched 2026-10-08) handles 32-bit Pi OS in two ways. For ID=raspbian on trixie it switches to Docker's Debian repo, with the comment \"Docker does not publish a Raspbian Trixie repo; use Debian Trixie instead.\" For raspbian on bookworm it still writes 'deb ... /linux/raspbian bookworm stable' (stopped at 28.5.2). It prints deprecation notices only for raspbian buster, stretch and jessie. So on 32-bit Pi OS Bookworm the script silently installs a Docker that gets no more updates; on 32-bit Trixie it installs 29.x armhf.",
+      "evidence": "https://get.docker.com/ (lines ~562-600: case raspbian.buster|raspbian.stretch|raspbian.jessie -> deprecation_notice; if lsb_dist=raspbian && dist_version=trixie then apt_repo_lsb_dist=debian); source repo https://github.com/docker/docker-install",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-07",
+      "claim": "32-bit Raspberry Pi OS reports ID=raspbian (Raspbian base-files 13.8+rpi1+deb13u6: ID=raspbian, ID_LIKE=debian, VERSION_CODENAME=trixie). archive.raspberrypi.com does not override base-files for arm64, so 64-bit Pi OS carries Debian's os-release (ID=debian). get.docker.com therefore uses Docker's Debian arm64 repo on 64-bit Pi OS.",
+      "evidence": "http://raspbian.raspberrypi.com/raspbian/pool/main/b/base-files/base-files_13.8+rpi1+deb13u6_armhf.deb (/usr/lib/os-release); http://archive.raspberrypi.com/debian/dists/trixie/main/binary-arm64/Packages.gz contains no base-files override. The 64-bit ID is inferred, not read from an image.",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-08",
+      "claim": "Docker's docs say the convenience script \"isn't recommended for production environments\". They also say it installs \"dependencies and recommendations without asking for confirmation\", can cause \"unexpected major version upgrades of Docker\", and \"isn't designed to upgrade an existing Docker installation\".",
+      "evidence": "https://docs.docker.com/engine/install/debian/#install-using-the-convenience-script (debian.md lines ~299-330)",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-09",
+      "claim": "Versions of Debian's own docker.io package:\n- Debian 12 bookworm: 20.10.24+dfsg1-1+deb12u1 (binNMU +b6; amd64/arm64/armel/armhf/...)\n- Debian 13 trixie: 26.1.5+dfsg1-9+deb13u1 (arm64, armhf, ...)\n- testing: 28.5.2+dfsg4-5\n\nRaspbian (32-bit Pi OS) carries the same versions: 20.10.24 on bookworm, 26.1.5 on trixie. There are no backports. Docker lists docker.io among the \"unofficial packages\" to uninstall before docker-ce.",
+      "evidence": "https://api.ftp-master.debian.org/madison?package=docker.io&text=on (queried 2026-10-08); http://raspbian.raspberrypi.com/raspbian/dists/{bookworm,trixie}/main/binary-armhf/Packages.xz ; https://docs.docker.com/engine/install/debian/#uninstall-old-versions",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-10",
+      "claim": "Debian 13 release notes §5.2.3.2: Go- and Rust-based packages \"will be covered by limited security support\", and in most cases updates \"will only be released via regular point releases\". This covers Debian's docker.io, containerd and podman (Go) and netavark (Rust).",
+      "evidence": "https://www.debian.org/releases/trixie/release-notes/issues.html §5.2.3.2 'Go- and Rust-based packages'. That these specific packages are Go or Rust is general knowledge, not stated in the notes.",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "DOCKER-11",
+      "claim": "Docker's documented install (docker-ce, docker-ce-cli, containerd.io, docker-buildx-plugin, docker-compose-plugin) on Trixie needs 321,046 KiB (≈313.5 MiB) on armhf and 330,275 KiB (≈322.5 MiB) on arm64 (Installed-Size). The minimal core (docker-ce, docker-ce-cli, containerd.io) needs ≈216 MiB on armhf and ≈225 MiB on arm64. docker-ce 29.8.2 also depends on iptables and nftables.",
+      "evidence": "https://download.docker.com/linux/debian/dists/trixie/stable/binary-armhf/Packages and .../binary-arm64/Packages (e.g. armhf: docker-ce 101632, docker-ce-cli 41802, containerd.io 78154, buildx 69644, compose 29814 KiB); install command at https://docs.docker.com/engine/install/debian/ ; control file of docker-ce_29.8.2-1~debian.13~trixie_arm64.deb",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-12",
+      "claim": "Since Docker 29.0.0 the containerd image store is the default for fresh installs. Docker documents that it \"uses more disk space than the legacy storage drivers\" because it keeps both the compressed layers and the unpacked layers.",
+      "evidence": "https://docs.docker.com/engine/release-notes/29/ (29.0.0: 'containerd image store is now the default for fresh installs'); https://docs.docker.com/engine/storage/containerd/ ('Disk space usage')",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-13",
+      "claim": "Docker's restart policies provide no post-stop hook, and Docker's proposal to expose OCI hooks (moby#28837) was closed as not planned. Docker says \"Docker recommends that you use restart policies, and avoid using process managers\". It allows systemd as a process manager but warns: \"Don't combine Docker restart policies with host-level process managers\". So under Docker, a host-side GPIO reset after a crash (NFR-003) needs a systemd unit that runs `docker run` with restart policy 'no' and ExecStopPost=.",
+      "evidence": "https://docs.docker.com/engine/containers/start-containers-automatically/ ; https://github.com/moby/moby/issues/28837 ('Closed as not planned')",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-14",
+      "claim": "The docker.service unit shipped in docker-ce 29.8.2 has 'After=network-online.target nss-lookup.target docker.socket firewalld.service containerd.service time-set.target' and 'Wants=network-online.target containerd.service'. Containers started by restart policy therefore start only after the network is online, so after power-on the app takes control of the relay GPIOs later than a native unit with no network dependency.",
+      "evidence": "/usr/lib/systemd/system/docker.service extracted from https://download.docker.com/linux/debian/dists/trixie/pool/stable/arm64/docker-ce_29.8.2-1~debian.13~trixie_arm64.deb ; identical to https://github.com/moby/moby/blob/master/contrib/init/systemd/docker.service . The startup delay is inferred from the ordering, not measured.",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-15",
+      "claim": "\"By default, when the Docker daemon terminates, it shuts down running containers\" unless \"live-restore\": true is set. A restart or upgrade of the Docker engine packages (docker-ce / containerd.io) therefore stops the controller container, even mid-brew, which bypasses the app's \"no update while a brew is loaded\" rule.",
+      "evidence": "https://docs.docker.com/engine/daemon/live-restore/",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-16",
+      "claim": "Docker's docs warn: \"The docker group grants root-level privileges to the user.\" They also say \"only trusted users should be allowed to control your Docker daemon\". An app or updater container that drives Docker updates through /var/run/docker.sock therefore has root-equivalent power on the host.",
+      "evidence": "https://docs.docker.com/engine/install/linux-postinstall/ ; https://docs.docker.com/engine/security/ ('Docker daemon attack surface')",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-17",
+      "claim": "Watchtower, the common Docker auto-updater, is unmaintained:\n- The containrrr/watchtower repo is archived. Its README says \"This project is no longer maintained\". Maintainers announced the archiving on 2025-12-17 (Discussion #2135).\n- Its last release is v1.7.1 (2023-11-11).\n- Against Docker 29 it fails with \"client version 1.25 is too old. Minimum supported API version is 1.44\" (issue #2126, 2025-11-14).\n\nDocker Engine itself has no built-in update-with-rollback.",
+      "evidence": "https://github.com/containrrr/watchtower (archived=true via GitHub API); https://github.com/containrrr/watchtower/discussions/2135 ; https://github.com/containrrr/watchtower/issues/2126 ; Docker 29 minimum API v1.44: https://docs.docker.com/engine/release-notes/29/",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-18",
+      "claim": "Moby's default container spec mounts /sys as sysfs with options nosuid,noexec,nodev,ro. It hides only /sys/firmware, /sys/devices/virtual/powercap and the per-CPU thermal_throttle entries, plus some /proc paths. /sys/bus/w1/devices/28-*/w1_slave should therefore be readable in an unprivileged container without a bind mount; only /dev/gpiochip* must be passed in.",
+      "evidence": "https://github.com/moby/moby/blob/master/daemon/pkg/oci/defaults.go (sysfs mount options; defaultLinuxMaskedPaths). Inferred from code; not tested on hardware.",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "DOCKER-19",
+      "claim": "/sys/firmware is hidden in Docker containers, so /proc/device-tree/system/linux,revision is missing (ENOENT). gpiozero's get_pi_revision() then falls back to the 'Revision' line of /proc/cpuinfo, so board detection should still work. LGPIOFactory picks gpiochip4 only when the board is a Pi 5 and /dev/gpiochip4 exists inside the container; otherwise it uses chip 0.",
+      "evidence": "https://github.com/gpiozero/gpiozero/blob/master/gpiozero/pins/local.py (get_pi_revision, ENOENT fallback); https://github.com/gpiozero/gpiozero/blob/master/gpiozero/pins/lgpio.py (line ~67 chip selection); moby masked paths as in DOCKER-18. Code reading, not tested.",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-20",
+      "claim": "`docker stop` sends SIGTERM, then SIGKILL after a default of 10 seconds for Linux containers. pid_namespaces(7) says only signals for which the init process has installed a handler reach a container's PID 1. uvicorn's Server installs handlers for SIGINT and SIGTERM (HANDLED_SIGNALS). An app run through uvicorn as PID 1 therefore gets a graceful stop, but a custom entrypoint must keep a SIGTERM handler or use --init.",
+      "evidence": "https://docs.docker.com/reference/cli/docker/container/stop/ ('is 10 seconds for Linux containers'); https://man7.org/linux/man-pages/man7/pid_namespaces.7.html ; https://github.com/encode/uvicorn/blob/master/uvicorn/server.py (HANDLED_SIGNALS, capture_signals)",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "DOCKER-21",
+      "claim": "Docker 29.7.0 added an experimental 'embedded-containerd' mode that runs containerd inside the dockerd process. In 29.8.2, \"dockerd now uses the embedded containerd if no system containerd service is configured and containerd is not installed\". The standard install still runs a separate containerd.",
+      "evidence": "https://docs.docker.com/engine/daemon/embedded-containerd/ ('Starting with Docker Engine 29.7.0'; CAUTION experimental); https://docs.docker.com/engine/release-notes/29/ (29.8.2 entry)",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "DOCKER-22",
+      "claim": "Docker Hub limits unauthenticated pulls to 100 per 6 hours per IPv4 address or IPv6 /64. A multi-arch pull counts once per architecture. This is irrelevant for one Pi, but GHCR is an alternative registry.",
+      "evidence": "https://docs.docker.com/docker-hub/usage/pulls/",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "PODMAN-01",
+      "claim": "Podman versions:\n- Debian 12 bookworm: 4.3.1+ds1-8+deb12u1 (+b3) for amd64/arm64/armel/armhf/...\n- Debian 13 trixie: 5.4.2+ds1-2 (+b2) for arm64/armhf/...\n- testing: 5.8.6\n\nRaspbian (32-bit Pi OS) has podman 4.3.1 on bookworm and 5.4.2 on trixie (armhf). The Raspberry Pi archive adds no newer Podman, and there are no backports.",
+      "evidence": "https://api.ftp-master.debian.org/madison?package=podman&text=on ; http://raspbian.raspberrypi.com/raspbian/dists/{bookworm,trixie}/main/binary-armhf/Packages.xz ; http://archive.raspberrypi.com/debian/dists/{bookworm,trixie}/main/binary-*/Packages.gz (no podman)",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "podman"
+    },
+    {
+      "id": "PODMAN-02",
+      "claim": "Quadlet was introduced in Podman 4.4.0 (\"Introduce Quadlet, a new systemd-generator that easily writes and maintains systemd services using Podman\"). Debian bookworm's podman 4.3.1 has no quadlet generator. Debian trixie's podman ships /usr/libexec/podman/quadlet, the system and user generators, and podman-auto-update.service/.timer.",
+      "evidence": "https://github.com/containers/podman/blob/main/RELEASE_NOTES.md (4.4.0 section); file lists https://packages.debian.org/trixie/arm64/podman/filelist and https://packages.debian.org/bookworm/arm64/podman/filelist",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "podman"
+    },
+    {
+      "id": "PODMAN-03",
+      "claim": "Feature versions relevant to Trixie's Podman 5.4.2:\n- `--sdnotify=healthy` arrived in 4.7.0 and Quadlet `DefaultDependencies=` in 5.3.0, so 5.4.2 has both.\n- `podman quadlet install` arrived in 5.6.0, so 5.4.2 lacks it.\n\nCurrent upstream is v6.1.3 / v5.8.8 (2026-09-29). Podman 6.0 removed cgroups v1 and iptables support.",
+      "evidence": "https://github.com/containers/podman/blob/main/RELEASE_NOTES.md (4.7.0, 5.3.0, 5.6.0 and 6.0.0 sections); https://github.com/containers/podman/releases",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "podman"
+    },
+    {
+      "id": "PODMAN-04",
+      "claim": "How `podman auto-update` works:\n- The container must run in a systemd unit (e.g. Quadlet) with `AutoUpdate=registry`, which needs a fully-qualified image reference, or `AutoUpdate=local`.\n- Podman ships podman-auto-update.timer (\"triggered daily at midnight\"). The service can also be started manually or by other units.\n- `--rollback` defaults to true: \"If restarting a systemd unit after updating the image has failed, rollback to using the previous image and restart the unit another time.\"\n- Failure detection works best when the container sends READY via sd_notify (`Notify=true`) or uses `Notify=healthy`.",
+      "evidence": "https://github.com/containers/podman/blob/v5.4.2/docs/source/markdown/podman-auto-update.1.md.in",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "podman"
+    },
+    {
+      "id": "PODMAN-05",
+      "claim": "With `AutoUpdate=local`, Podman compares the container's image digest with the image in local storage and restarts the unit if they differ. A checksum-verified image archive loaded with `podman load`, followed by `podman auto-update`, should therefore update without any registry and keep the rollback behaviour.",
+      "evidence": "https://github.com/containers/podman/blob/v5.4.2/docs/source/markdown/podman-auto-update.1.md.in ('local' policy). The load-from-archive workflow is my inference, not documented as such.",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "podman"
+    },
+    {
+      "id": "PODMAN-06",
+      "claim": "Quadlet passes the [Service] and [Install] sections straight to systemd (\"options defined in the [Service] table and [Install] tables pass directly to systemd\"). The generator copies the .container file (container.Dup()) and then appends its own '-podman rm -v -f -i --cidfile=%t/%N.cid' as an extra ExecStopPost (service.Add). A user-written ExecStopPost GPIO reset is kept and runs when conmon or the container dies. KillMode may only be mixed (the default) or control-group.",
+      "evidence": "https://github.com/containers/podman/blob/v5.4.2/docs/source/markdown/podman-systemd.unit.5.md (DESCRIPTION); https://github.com/containers/podman/blob/v5.4.2/pkg/systemd/quadlet/quadlet.go (lines ~527, ~566-595)",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "podman"
+    },
+    {
+      "id": "PODMAN-07",
+      "claim": "No Podman process stays running for a Quadlet container. The generated unit runs `podman run ... --sdnotify=conmon -d` (code comment: \"Detach from container, we don't need the podman process to hang around\") with Type=notify and NotifyAccess=all. Only conmon and the app process remain resident.",
+      "evidence": "https://github.com/containers/podman/blob/v5.4.2/pkg/systemd/quadlet/quadlet.go (lines ~664-690)",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "podman"
+    },
+    {
+      "id": "PODMAN-08",
+      "claim": "Rootful Quadlet files go in /etc/containers/systemd/. Generated services \"are considered transient by systemd\"; \"it is not possible to 'systemctl enable' them\", and the generator applies the [Install] section itself. Quadlet adds After= and Wants= on network-online.target by default; `DefaultDependencies=false` in [Quadlet] removes that.",
+      "evidence": "https://github.com/containers/podman/blob/v5.4.2/docs/source/markdown/podman-systemd.unit.5.md ('Podman rootful unit search path', 'Enabling unit files', 'DefaultDependencies=')",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "podman"
+    },
+    {
+      "id": "PODMAN-09",
+      "claim": "Podman's default log driver: \"The journald driver is used by default if the systemd journal is readable and writable. Otherwise, the k8s-file driver is used.\" log_size_max defaults to -1 (no limit).",
+      "evidence": "https://github.com/containers/common/blob/v0.62.2/docs/containers.conf.5.md (log_driver, log_size_max); v0.62.2 is the containers-common version in Debian trixie",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "podman"
+    },
+    {
+      "id": "PODMAN-10",
+      "claim": "GPIO device access in containers:\n- Raspberry Pi OS's udev rule 99-com.rules (raspberrypi-sys-mods) sets 'SUBSYSTEM==\"gpio\", GROUP=\"gpio\", MODE=\"0660\"'. 60-gpiochip4.rules adds a /dev/gpiochip4 -> gpiochip0 symlink when gpiochip4 does not exist.\n- A container therefore needs the device (--device / AddDevice=) plus the gpio group's numeric ID (Docker: --group-add <gid>). For rootless Podman, `--group-add keep-groups` works (crun only).\n- Podman resolves a symlinked host device to its major/minor numbers.",
+      "evidence": "/usr/lib/udev/rules.d/99-com.rules and 60-gpiochip4.rules extracted from http://archive.raspberrypi.com/debian/pool/main/r/raspberrypi-sys-mods/raspberrypi-sys-mods_20260914_arm64.deb ; https://github.com/containers/podman/blob/v5.4.2/docs/source/markdown/options/group-add.md and options/device.md",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "PODMAN-11",
+      "claim": "Podman 5.4.2 on Debian trixie has an Installed-Size of 80,675 KiB on arm64 and 79,910 KiB on armhf. With its hard dependencies (conmon, crun, netavark, golang-github-containers-common) it totals ≈96.6 MiB on arm64 and ≈93.2 MiB on armhf. podman Recommends buildah (121,708 KiB ≈119 MiB) and more, so a minimal install needs --no-install-recommends.",
+      "evidence": "http://deb.debian.org/debian/dists/trixie/main/binary-arm64/Packages.xz and binary-armhf/Packages.xz (Installed-Size, Depends, Recommends fields)",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "podman"
+    },
+    {
+      "id": "RES-01",
+      "claim": "Measured on a Pi Zero-class board (MemTotal 414.8 MiB, issue opened 2026-10-08, Docker version not stated):\n- dockerd: 39.3 MiB resident (RssAnon 26,924 kB), 0 CPU at idle.\n- containerd, 3 processes including shims: 30.5 MiB resident (RssAnon 15,396 kB), 0 CPU at idle.\n- Each docker CLI call temporarily loads ~42.6 MiB, plus ~28.8 MiB for the compose plugin.\n\nThe resident Docker cost on a 1 GB Pi is therefore ≈70 MiB, not 100+ MB.",
+      "evidence": "https://github.com/symmatree/coordinator/issues/449 (measurement table; per-process data from /proc/<pid>/status)",
+      "confidence": "medium",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "RES-02",
+      "claim": "x86 measurements are higher:\n- botmonster (Docker 29.5, freshly restarted, no containers): dockerd + containerd 144 MB.\n- getmind.io (Docker 29.2.1, 89 days uptime): dockerd 233 MB PSS, containerd 46 MB PSS.\n- Per container, containerd-shim used 8.2 MB PSS (10.5 MB resident) versus Podman 4.9.3's conmon at 0.55 MB PSS (2.2 MB resident).",
+      "evidence": "https://getmind.io/blog/docker-vs-podman ; https://botmonster.com/self-hosting/podman-vs-docker-linux-container-runtime/ (blog measurements, x86, methods not fully described)",
+      "confidence": "low",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "RES-03",
+      "claim": "dockerd and containerd use ~0 CPU when idle unless something polls the Docker API. With the containerd image store, polling is expensive: in moby#53593 a monitoring agent polling 6 requests/s drove dockerd and containerd to ~77–88% CPU each on x86, and GET /images/json had a median latency of 0.393 s with 28 images. Any update-status polling of the Docker API must therefore be rare.",
+      "evidence": "https://github.com/moby/moby/issues/53593 (opened 2026-09-06; reporter's 2026-09-19 correction: 'Netdata stopped -> 0–1 %')",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "RES-04",
+      "claim": "I found no reliable boot-time measurement of docker.service on a Pi 3. The only data point is anecdotal: systemd-analyze blame on a Pi 4 running OpenMediaVault (2022) showed docker.service 11.549 s and containerd.service 3.130 s, and that slow boot was caused by fsck, not Docker.",
+      "evidence": "https://forums.raspberrypi.com/viewtopic.php?t=329216",
+      "confidence": "low",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "IMG-01",
+      "claim": "Official python images:\n- 3.13-slim-trixie (3.13.16) covers amd64, arm32v5, arm32v7, arm64v8, i386, ppc64le, riscv64 and s390x.\n- The *-slim-bookworm tags cover only amd64, arm32v7, arm64v8, i386 and ppc64le.\n- python:3-slim / slim now points to 3.14.8-slim-trixie.",
+      "evidence": "https://github.com/docker-library/official-images/blob/master/library/python (fetched 2026-10-08)",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "IMG-02",
+      "claim": "python:3.13-slim-trixie (updated 2026-10-06) is 38.8 MB compressed on arm/v7, 43.3 MB on arm64 and 43.1 MB on amd64. Uncompressed it is ≈126 MB on arm/v7 and ≈148 MB on arm64. For comparison, python:3.11-slim-bookworm is 43.8 MB (arm/v7) and 49.5 MB (arm64) compressed.",
+      "evidence": "https://hub.docker.com/v2/repositories/library/python/tags/3.13-slim-trixie (compressed size per image); uncompressed size measured by streaming the layers from registry-1.docker.io through gunzip: 125,989,888 and 147,640,832 bytes",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "IMG-03",
+      "claim": "On PyPI (2026-10-08) these packages ship only pure-Python py3-none-any wheels, so nothing compiles on any architecture: starlette 1.7.0 (requires Python >=3.10), uvicorn 0.54.0, fastjsonschema 2.22.2, gpiozero 2.0.1.post3, rpi-lgpio 0.6, colorzero 2.0, h11 0.16.0, anyio 4.15.1 and click 8.5.0.",
+      "evidence": "PyPI JSON API https://pypi.org/pypi/<name>/json for each package",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "IMG-04",
+      "claim": "websockets 17.2 (2026-10-03, requires Python >=3.11) ships manylinux armv7l and aarch64 wheels (plus musllinux) for cp311–cp315, and a pure-Python py3-none-any fallback wheel.",
+      "evidence": "https://pypi.org/pypi/websockets/json",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "IMG-05",
+      "claim": "lgpio 0.2.2.0, the latest release (Mar/Apr 2024), has PyPI wheels only for cp39–cp312, as linux_armv7l, manylinux_2_34_aarch64 and manylinux_2_34_x86_64. Python 3.13+ therefore builds from the sdist. That needs SWIG (the sdist has only lgpio.i, no generated wrapper) and a C compiler. Unless the environment variable PYPI=1 selects a static build of the bundled src/, it also links the system library (libraries=['lgpio']).",
+      "evidence": "https://pypi.org/pypi/lgpio/json (13 files listed); setup.py and file list of https://files.pythonhosted.org/packages/source/l/lgpio/lgpio-0.2.2.0.tar.gz",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "IMG-06",
+      "claim": "piwheels has lgpio 0.2.2.0, gpiod 2.5.0, uvloop 0.23.0, httptools 0.8.0 and websockets 17.2 wheels for cp311 and cp313 on linux_armv7l and armv6l, i.e. 32-bit only. Its FAQ says \"The repository at piwheels.org does not currently support the 64-bit version of the Raspberry Pi OS\" and lists Bookworm (Python 3.11) and Trixie (Python 3.13) as supported. On 64-bit Trixie (aarch64, cp313) no prebuilt lgpio wheel exists anywhere.",
+      "evidence": "https://www.piwheels.org/project/lgpio/json/ (and gpiod, uvloop, httptools, websockets); https://www.piwheels.org/faq.html ; https://blog.piwheels.org/ (2025-10-02: Trixie cp313 backlog complete)",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "IMG-07",
+      "claim": "Raspberry Pi's apt archive provides python3-lgpio / liblgpio1 0.2.2-1~rpt1 and python3-gpiozero 2.0.1-0+rpt1 for armhf and arm64 on both bookworm and trixie (trixie builds carry a +trixie suffix). The 2026-10-06 Trixie Lite images (armhf and arm64) come with python3-gpiozero 2.0.1, python3-lgpio 0.2.2, python3-libgpiod 2.2.1, python3-venv and python3.13 3.13.5 preinstalled. Debian proper only has python3-gpiozero 1.6.2 and no lgpio package, so Debian- or python-based container images lack these unless the RPi repo is added.",
+      "evidence": "http://archive.raspberrypi.com/debian/dists/{bookworm,trixie}/main/binary-{armhf,arm64}/Packages.gz ; https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-10-06/2026-10-06-raspios-trixie-arm64-lite.info and the armhf .info ; https://api.ftp-master.debian.org/madison?package=python3-gpiozero&text=on",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "IMG-08",
+      "claim": "gpiod 2.5.0, the official libgpiod v2 Python bindings, has PyPI wheels for aarch64 and x86_64 (cp310–cp314) but none for armv7l. Its sdist bundles the libgpiod C sources, so building it needs only a C compiler and Python headers. gpiozero 2.0.1.post3 has no gpiod pin factory: its factories are lgpio, mock, native, pigpio and rpigpio.",
+      "evidence": "https://pypi.org/pypi/gpiod/json ; gpiod-2.5.0.tar.gz (lib/*.c, setup.py LINK_SYSTEM_LIBGPIOD); entry_points.txt of gpiozero-2.0.1.post3-py3-none-any.whl",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "IMG-09",
+      "claim": "uvicorn's base dependencies are only click and h11. For WebSockets it uses `websockets` if installed, otherwise `wsproto`. The [standard] extra adds:\n- uvloop and httptools: no armv7l wheels on PyPI.\n- PyYAML 6.0.3: no armv7l wheels.\n- watchfiles: has an abi3 armv7l wheel.\n\nPlain `uvicorn` + `websockets` therefore needs no compiling on armv7 or aarch64, while uvicorn[standard] would on armv7 without piwheels.",
+      "evidence": "https://github.com/encode/uvicorn/blob/master/pyproject.toml ; https://github.com/encode/uvicorn/blob/master/uvicorn/protocols/websockets/auto.py ; PyPI JSON for uvloop, httptools, PyYAML, watchfiles",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "IMG-10",
+      "claim": "Multi-arch builds in GitHub Actions:\n- Docker's docs use docker/setup-qemu-action@v4, setup-buildx-action@v4 and build-push-action@v7 with `platforms:`.\n- arm64 standard runners (ubuntu-24.04-arm, ubuntu-22.04-arm) went GA for public repos on 2025-08-07. Since 2026-01-29 they also work in private repos (2 vCPUs, counted against free minutes).\n- No GitHub-hosted 32-bit ARM runner exists, so linux/arm/v7 is normally built under QEMU. Whether the Cobalt 100 arm64 runners can execute AArch32 natively is disputed: Arm's Neoverse N2 manual says AArch32 is supported at EL0, while a 2026 GitHub issue says it is not.",
+      "evidence": "https://docs.docker.com/build/ci/github-actions/multi-platform/ ; https://github.blog/changelog/2025-08-07-arm64-hosted-runners-for-public-repositories-are-now-generally-available/ ; https://github.blog/changelog/2026-01-29-arm64-standard-runners-are-now-available-in-private-repositories/ ; https://github.com/DrewFerg11/numbers-go-up/issues/86 ; Arm Neoverse N2 TRM https://developer.arm.com/documentation/102099/",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "IMG-11",
+      "claim": "On a Python 3.12 (or 3.11) base image, every dependency of the accepted stack installs from wheels on both linux/arm/v7 and linux/arm64, including lgpio (cp312 linux_armv7l and aarch64) and websockets, so nothing compiles even under QEMU. On Python 3.13+, lgpio must be compiled in a builder stage (SWIG + gcc, PYPI=1), or the image must be based on Debian trixie with Raspberry Pi's apt repo for python3-lgpio.",
+      "evidence": "Derived from IMG-03, IMG-04, IMG-05 and IMG-07 (PyPI file lists and the lgpio setup.py)",
+      "confidence": "medium",
+      "decision_critical": true,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "IMG-12",
+      "claim": "Raspberry Pi OS Trixie ships /etc/pip.conf with 'extra-index-url=https://www.piwheels.org/simple' on both armhf and arm64 (from RPi's python3-pip-whl 25.1.1+dfsg-1+rpt1). It also ships a PEP 668 EXTERNALLY-MANAGED marker for python3.13 (raspberrypi-sys-mods), which blocks system-wide pip installs and pushes users to a venv. uv \"does not read configuration files or environment variables that are specific to pip, like pip.conf\", so uv-based installs on the Pi must configure piwheels explicitly.",
+      "evidence": "Contents of http://archive.raspberrypi.com/debian/pool/main/p/python-pip/python3-pip-whl_25.1.1+dfsg-1+rpt1_all.deb and of raspberrypi-sys-mods_20260914; https://github.com/astral-sh/uv/blob/main/docs/pip/compatibility.md",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "native"
+    },
+    {
+      "id": "LOG-01",
+      "claim": "Docker logging defaults:\n- Docker uses the json-file driver by default, and \"By default, no log-rotation is performed\". json-file's max-size defaults to -1 (unlimited), max-file to 1, compress to false.\n- Docker recommends the `local` driver, which by default keeps 100 MB per container (5 files × 20 MB) with compression.\n- A log-driver change in daemon.json applies only to containers created after it (\"Existing containers don't use the new logging configuration automatically\").\n- The journald driver also supports `docker logs`.",
+      "evidence": "https://docs.docker.com/engine/logging/configure/ ; https://docs.docker.com/engine/logging/drivers/json-file/ ; https://docs.docker.com/engine/logging/drivers/local/ ; https://docs.docker.com/engine/logging/drivers/journald/",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "LOG-02",
+      "claim": "Raspberry Pi OS Trixie keeps the system journal in RAM. raspberrypi-sys-mods (1:20260914) ships /usr/lib/systemd/journald.conf.d/40-rpi-volatile-storage.conf containing '[Journal] Storage=volatile'. Journal logs (native service stdout, Podman's default journald logs, Docker's journald driver) therefore cause no SD-card writes but are lost at reboot, including after a crash. A /etc/systemd/journald.conf.d/ drop-in with a higher number can switch it back to persistent.",
+      "evidence": "File extracted from http://archive.raspberrypi.com/debian/pool/main/r/raspberrypi-sys-mods/raspberrypi-sys-mods_20260914_arm64.deb ; Contents-arm64 maps the path to admin/raspberrypi-sys-mods; context: https://forums.raspberrypi.com/viewtopic.php?t=392855",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "OS-01",
+      "claim": "The first Raspberry Pi OS image based on Debian 13 Trixie is dated 2025-10-01 (release notes: \"Based on Debian Trixie release\"). The announcement on raspberrypi.com was published 2025-10-02. The latest images are dated 2026-10-06 and use Linux kernel 6.18.50.",
+      "evidence": "https://downloads.raspberrypi.com/raspios_lite_arm64/release_notes.txt ; https://www.raspberrypi.com/news/trixie-the-new-version-of-raspberry-pi-os/ (datePublished 2025-10-02T08:28:59Z)",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "OS-02",
+      "claim": "Raspberry Pi OS Trixie ships Python 3.13 (Debian python3-defaults 3.13.5-1, python3.13 3.13.5-2+deb13u5; Raspbian python3 3.13.5-1). The Bookworm-based 'Legacy' images ship Python 3.11.2.",
+      "evidence": "https://api.ftp-master.debian.org/madison?package=python3-defaults&text=on ; Lite image .info package lists dated 2026-10-06 (python3 3.13.5-1, python3.13 3.13.5-2+deb13u5)",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "OS-03",
+      "claim": "Raspberry Pi Imager's OS list (images dated 2026-10-06):\n- \"Raspberry Pi OS (64-bit) – A port of Debian Trixie with the Raspberry Pi Desktop (Recommended)\" is offered for the pi5, pi4 and pi3 64-bit tags. Pi 3 and Zero 2 W use the pi3 tags.\n- 32-bit Trixie images are offered for Pi 1, 2, 3, 4 and 5.\n- Lite 64-bit is described as \"Compatible with Raspberry Pi 3/4/400/5\".\n- Legacy (Bookworm) 32-bit and 64-bit images are still published.\n\nRaspberry Pi's docs say the recommended OS for a model is at the top of Imager's list.",
+      "evidence": "https://downloads.raspberrypi.com/os_list_imagingutility_v4.json ; https://www.raspberrypi.com/documentation/computers/getting-started.html (install section)",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "OS-04",
+      "claim": "Default kernels per Raspberry Pi's docs:\n- Pi 2, 3, 3+ and Zero 2 W boot kernel7.img (32-bit) by default.\n- arm_64bit defaults to 1 only on Pi 4, 400 and CM4/4S.\n- Pi 5 loads kernel_2712.img (16K page size).\n\nThe Trixie 32-bit Lite image contains the rpi-v6, rpi-v7 and rpi-v8 (arm64) kernels.",
+      "evidence": "https://www.raspberrypi.com/documentation/computers/config_txt.html (kernel, arm_64bit); 2026-10-06-raspios-trixie-armhf-lite.info",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "OS-05",
+      "claim": "Raspberry Pi recommends a clean install rather than an in-place upgrade from Bookworm to Trixie: \"we strongly recommend that you use a clean install to upgrade the OS version\". The launch post says \"we do not recommend or support attempting to upgrade a running Bookworm image\".",
+      "evidence": "https://www.raspberrypi.com/documentation/computers/os.html (updating section); https://www.raspberrypi.com/news/trixie-the-new-version-of-raspberry-pi-os/",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "OS-06",
+      "claim": "Since the 2026-04-13 images, \"Passwordless sudo now disabled by default\" on Raspberry Pi OS. An installer or updater that needs root will prompt for a password unless a privileged service does the work.",
+      "evidence": "https://downloads.raspberrypi.com/raspios_lite_arm64/release_notes.txt (2026-04-13 entry)",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "OS-07",
+      "claim": "Pi kernels disable the memory cgroup by default: the rpi-6.18.y device tree for Pi 5 (bcm2712-rpi.dtsi) puts 'cgroup_disable=memory' in the boot arguments. pi-gen issue #917 (2026-04-18, closed as not planned) reports that memory limits are silently ignored on stock 64-bit Trixie Lite on Pi 3B+, 4 and 5. Container --memory limits, and probably systemd MemoryMax=, therefore have no effect unless cmdline.txt adds cgroup_enable=memory.",
+      "evidence": "https://github.com/raspberrypi/linux/blob/rpi-6.18.y/arch/arm64/boot/dts/broadcom/bcm2712-rpi.dtsi (bootargs line ~122); https://github.com/RPi-Distro/pi-gen/issues/917 (Pi 3 and 4 behaviour comes from the issue; I verified only the Pi 5 device tree)",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "SAFE-01",
+      "claim": "The kernel GPIO uAPI docs say a line's state \"is guaranteed to remain as requested until the returned file descriptor is closed. Once the file descriptor is closed, the state of the line becomes uncontrolled from the userspace perspective, and may revert to its default state.\" After a crash or kill -9 the active-low heater line can stay driven LOW (heater on), so every deployment mode needs an external reset that runs after the process dies.",
+      "evidence": "https://docs.kernel.org/userspace-api/gpio/gpio-v2-get-line-ioctl.html (source Documentation/userspace-api/gpio/gpio-v2-get-line-ioctl.rst lines 44-47)",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "SAFE-02",
+      "claim": "The config.txt `gpio` directive sets pin modes and levels at boot in firmware (e.g. 'gpio=12=op,dh'). The docs note \"a delay of a few seconds between power being applied and the changes taking effect\", and later pinctrl or device-tree settings can override it. A line like 'gpio=22,23=op,dh' would switch the active-low relays off early in boot, regardless of when the service or container starts.",
+      "evidence": "https://www.raspberrypi.com/documentation/computers/config_txt.html#gpio (source documentation/asciidoc/computers/config_txt/gpio.adoc). Applying it to BCM 22/23 is my inference.",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "SAFE-03",
+      "claim": "The host-side reset tools are preinstalled on the Trixie Lite images (armhf and arm64, 2026-10-06): /usr/bin/pinctrl from raspi-utils-core 20260626-1, and the gpiod 2.2.1 CLI tools (libgpiod v2). In container modes the reset has to run on the host, either as a Quadlet [Service] ExecStopPost or as ExecStopPost in a systemd unit that wraps `docker run`; it cannot live inside the container.",
+      "evidence": "http://archive.raspberrypi.com/debian/dists/trixie/main/Contents-arm64.gz (usr/bin/pinctrl -> utils/raspi-utils-core); 2026-10-06-raspios-trixie-{arm64,armhf}-lite.info",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "SAFE-04",
+      "claim": "lgpio creates notification FIFOs (.lgd-nfy*) in its working directory: the LG_WD environment variable if set, otherwise the current directory, with /tmp as a fallback. gpiozero issue #1106 (open since 2024-01-09) shows scripts failing (\"Can't set permissions ... .lgd-nfy0\") when the directory is not writable. Hardened systemd units and read-only containers must set LG_WD or WorkingDirectory to a writable path.",
+      "evidence": "lgpio-0.2.2.0 sdist src/lgUtil.c (lguGetWorkDir) and src/lgpio.h (#define LG_WD); https://github.com/gpiozero/gpiozero/issues/1106",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    }
+  ],
+  "open_questions": [
+    "What are the idle resident memory and CPU of dockerd + containerd (Docker 29.8) and of conmon on an actual Pi 3 with 1 GB, on both armhf and arm64? The only ARM figure is from a Pi Zero-class board (~70 MiB for dockerd + containerd); the rest are x86. Measure before quoting a number in the ADR.",
+    "Can an unprivileged Docker or Podman container read /sys/bus/w1/devices/28-*/w1_slave with no extra mounts? This is inferred from moby's default sysfs options and hidden-path list, not tested on hardware.",
+    "Does Docker test or support its Debian armhf (ARMv7) packages on 32-bit Raspberry Pi OS Trixie? get.docker.com routes there, but Docker's Raspberry Pi OS page lists only Bookworm and Bullseye.",
+    "Can GitHub's ubuntu-24.04-arm runners (Azure Cobalt 100) run linux/arm/v7 natively? Arm's N2 manual and a 2026 GitHub issue disagree. Plan for QEMU for arm/v7.",
+    "How long does Docker add to boot on a Pi 3 before the controller container starts (docker.service waits for network-online.target and time-set.target)? I found no reliable measurement.",
+    "Does upgrading the podman package restart running Quadlet services? Docker engine upgrades stop all containers unless live-restore is enabled. Is unattended-upgrades ever enabled on target Pis? It is not in the 2026-10-06 Lite image package list.",
+    "Do the relay boards energise during the window between power-on and the config.txt gpio= settings taking effect (BCM 22/23 default pulls)? This is a hardware question that affects every deployment mode."
+  ]
+}

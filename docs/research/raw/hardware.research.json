@@ -1,0 +1,424 @@
+{
+  "area": "Hardware access (GPIO character devices and the 1-Wire DS18B20 via sysfs) from Docker or Podman containers on Raspberry Pi 3/4/5, plus the host-side setup a container cannot replace",
+  "summary": "A non-privileged container can drive the relays/buzzer through the GPIO character device and read the DS18B20 from sysfs. It needs only `--device /dev/gpiochipN` and the host's numeric gpio GID via `--group-add`. /sys is visible read-only by default, so the 1-Wire path does NOT have to be passed in. That corrects the earlier assumption. Containerising removes none of the host setup:\n- dtoverlay=w1-gpio and SPI left off in config.txt\n- the gpio group and udev rules\n- any kernel parameters\n- a host-side crash-reset mechanism\n\nMost important finding (applies to every deployment mode): current Raspberry Pi kernels (rpi-6.12.y and rpi-6.18.y) set persist_gpio_outputs=true by default in both pinctrl-bcm2835 (Pi 3/4) and pinctrl-rp1 (Pi 5). When the process holding the lines dies (crash, kill -9, OOM, killed container), each pin stays an output at its last level. A crash while heating therefore leaves the active-low heater relay ON, natively and in a container alike.\n\nHow each mode can meet NFR-003:\n- Native systemd and Podman Quadlet: an ExecStopPost on the host can reset the pins. Quadlet passes [Service] keys straight to systemd, but needs Podman 4.4 or later. Debian bookworm ships 4.3.1; trixie ships 5.4.2.\n- Docker: has no post-stop hook. Docker advises against wrapping its restart policies in host process managers, and systemd would only supervise the docker client.\n- Any mode: `dtparam=strict_gpiod` makes the kernel return released pins to inputs. This works even with Docker. But the released state is an input with the default ~50 kΩ pull-down on BCM 22/23, not an actively driven HIGH. Whether the active-low relay board stays off in that state must be measured on the real hardware.\n\nContainer-specific gotchas found:\n1. Pi 5 gpiochip numbering is not stable.\n   - The header moved from gpiochip4 to gpiochip0 in Aug/Sept 2024 (kernel 6.6.45–6.6.47).\n   - Raspberry Pi OS adds a udev compatibility symlink, /dev/gpiochip4.\n   - In July 2026, Bookworm kernel 6.12.96 put pinctrl-rp1 at gpiochip11 or gpiochip15. Trixie's 6.18 is fine.\n   - Static `--device` mappings break when the number changes.\n2. gpiozero on PyPI hard-coded gpiochip4 on the Pi 5 until 2.0.1.post3 (2026-07-27). post1 and post2 had a regression. The Raspberry Pi OS apt package carried a patch since 2024. With --privileged, Docker drops a `--device` that points at the gpiochip4 symlink.\n3. Python lgpio packaging:\n   - `import lgpio` creates a FIFO `.lgd-nfy<N>` in the working directory (or LG_WD) and fails if that directory is not writable. It also chdir()s there.\n   - lgpio 0.2.2.0 has no wheels for Python 3.13 or later.\n   - liblgpio is only in the Raspberry Pi apt repo, not in Debian.\n4. As PID 1 in a container, a process ignores SIGTERM unless it installs a handler. Docker then SIGKILLs it after 10 s, and HW-021's turn-everything-off-on-SIGTERM path never runs.\n5. Docker Engine 29 (2025-11-10) dropped Raspberry Pi OS 32-bit packages. Debian armhf (ARMv7) packages remain.\n\nPrecedent: Home Assistant runs its core container privileged with /dev mounted. Most community gpiozero-in-Docker-on-Pi-5 reports also ended up privileged. A 2026 non-root example worked with numeric GIDs, lgpio built from source and a writable working directory.",
+  "claims": [
+    {
+      "id": "C01",
+      "claim": "On Pi 3 and Pi 4 with current Raspberry Pi kernels, the 40-pin header GPIOs are on gpiochip0. The label is 'pinctrl-bcm2835' (54 lines) on BCM2835/6/7 and 'pinctrl-bcm2711' (58 lines) on the Pi 4. gpiochip1 is the firmware expander 'raspberrypi-exp-gpio' (8 lines). The Pi 3/4 device trees define no gpiochip aliases, so numbering follows probe order.",
+      "evidence": "Raspberry Pi whitepaper RP-006553-WP, release 2, 13 Aug 2025: Pi 4 gpiodetect example https://pip-assets.raspberrypi.com/categories/685-whitepapers-app-notes/documents/RP-006553-WP/A-history-of-GPIO-usage-on-Raspberry-Pi-devices-and-current-best-practices. Driver labels and line counts: https://github.com/raspberrypi/linux/blob/rpi-6.18.y/drivers/pinctrl/bcm/pinctrl-bcm2835.c (MODULE_NAME 'pinctrl-bcm2835', line 41; .label 'pinctrl-bcm2711', line 409; 54/58 GPIOs). grep of bcm2710/bcm2711/bcm270x/bcm283x .dts/.dtsi in rpi-6.18.y: no 'gpiochipN =' aliases.",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C02",
+      "claim": "The Pi 5 header GPIOs (pinctrl-rp1, 54 lines) were gpiochip4 at launch. Raspberry Pi kernel PR #6144 (opened 2024-05-02, closed 2024-08-05) moved them to gpiochip0 through a downstream gpiolib patch that honours DT 'gpiochip<n>' aliases. bcm2712-rpi.dtsi sets gpiochip0 = &gpio (RP1) and gpiochip10 = &gio, and the SoC brcmstb chips became gpiochip10–13. The change reached apt users with the 6.6.31 → 6.6.47 kernel update (reported 2024-09-09). HAT vendors cite 'since 6.6.45'.",
+      "evidence": "https://github.com/raspberrypi/linux/pull/6144 (body plus comments by pelwell and L4wnmower, 2024-09-09). Commit b1f9389706 'gpiolib: Override gpiochip numbers with DT aliases' (Phil Elwell, 2024-05-02). Aliases at https://github.com/raspberrypi/linux/blob/rpi-6.18.y/arch/arm64/boot/dts/broadcom/bcm2712-rpi.dtsi lines 140–141. https://forums.raspberrypi.com/viewtopic.php?t=376470 (RPi engineer, 2024-09-11). https://forums.raspberrypi.com/viewtopic.php?t=377766 (PhilE, 2024-10-10).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C03",
+      "claim": "Raspberry Pi OS (not other distros) adds the compatibility symlink /dev/gpiochip4 -> gpiochip0. It comes from udev rule 60-gpiochip4.rules in raspberrypi-sys-mods (commit 'Add gpiochip4 symlink', 2024-09-11): SUBSYSTEM==\"gpio\", KERNEL==\"gpiochip0\", PROGRAM=\"/usr/bin/test ! -c /dev/gpiochip4\", SYMLINK+=\"gpiochip4\". The rule only fires when the RP1 chip is gpiochip0.",
+      "evidence": "https://github.com/RPi-Distro/raspberrypi-sys-mods/blob/pios/trixie/usr/lib/udev/rules.d/60-gpiochip4.rules; commit e475bd6245 (2024-09-11); pelwell on PR #6144, 2024-09-12 ('There's a udev rule that creates a symbolic link…').",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C04",
+      "claim": "On the Pi 5, the header gpiochip number changed again in July 2026. With Raspberry Pi OS Bookworm kernel 6.12.96+rpt-rpi-2712, /dev/gpiochip0 is missing and pinctrl-rp1 shows up as gpiochip15 (one report) or gpiochip11 (another). 6.12.93 and Trixie's 6.18.34 still have gpiochip0. No acknowledgement by a Raspberry Pi engineer was found. A container with a fixed `--device /dev/gpiochip0` would then fail to start or lose GPIO access after a host kernel update.",
+      "evidence": "https://forums.raspberrypi.com/viewtopic.php?p=2384025 ('pinctrl-rp1 no longer gpiochip0 with 6.12.96+rpt-rpi on bookworm', 2026-07-28/31); https://forums.raspberrypi.com/viewtopic.php?p=2384297 (2026-07-31: gpiochip11–16, fixed by rpi-update to 6.18.40).",
+      "confidence": "medium",
+      "decision_critical": true,
+      "affects": "all (worst for docker, podman static device maps)"
+    },
+    {
+      "id": "C05",
+      "claim": "Likely root cause of C04, from reading the source: on rpi-6.12.y the alias patch was reverted and reapplied on 2026-07-13 (da5f07d402) after the upstream stable commit 'gpio: Fix resource leaks on errors in gpiochip_add_data_with_key()' (merged 2026-07-04). The reapplied code calls of_alias_get_id(gdev->dev.of_node, \"gpiochip\") before device_set_node(), so of_node is NULL and every chip gets a dynamic number of 11 or higher (highest alias gpiochip10 + 1). This was still the case at branch head 6.12.112 (2026-10-05). rpi-6.18.y has the correct fixup f58c91b38f (2026-04-29), which uses gpiochip_choose_fwnode(gc). Pi 3/4 are unaffected because they have no aliases.",
+      "evidence": "https://github.com/raspberrypi/linux/blob/rpi-6.12.y/drivers/gpio/gpiolib.c (alias lookup at line 999, device_set_node later); https://github.com/raspberrypi/linux/commit/da5f07d402549ea355de25e48a9c179b75ae82f5; https://github.com/raspberrypi/linux/commit/f58c91b38f2d89355775e18534fe512576c47971 (commit message says the upstream reshuffle broke the downstream patch).",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C06",
+      "claim": "On Pi 5 kernels from before the 2024 renumbering, gpiochip0 is gpio-brcmstb@107d508500 (SoC GPIO), not the header. Code or a container that blindly opens gpiochip0 on an out-of-date Pi 5 drives the wrong lines. Choosing the chip by label (pinctrl-rp1 / pinctrl-bcm2711 / pinctrl-bcm2835) avoids this and C04.",
+      "evidence": "PR #6144 body (old listing) https://github.com/raspberrypi/linux/pull/6144; mstroh76 comment 2024-09-11 ('gpiochip0 can be opened, but this is the wrong chip'); whitepaper RP-006553-WP.",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C07",
+      "claim": "Real projects are moving to discovering the chip by label. Allsky merged label-based gpiochip discovery on 2026-10-05 because of the 6.12.96 renumbering. Home Assistant's rpi_gpio custom integration (gpiod>=2.2.1, runs inside the HA container) scans /dev/gpiochip[0-5] for a chip labelled 'pinctrl', in the order 0,4,1,2,3,5. That scan would miss gpiochip11/15.",
+      "evidence": "https://github.com/AllskyTeam/allsky/pull/5340; https://github.com/thecode/ha-rpi_gpio (README 'Usage'; manifest requirements gpiod>=2.2.1, version 2026.4.0).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C08",
+      "claim": "On Raspberry Pi OS, /dev/gpiochip* are root:gpio mode 0660 through the udev rule SUBSYSTEM==\"gpio\", GROUP=\"gpio\", MODE=\"0660\" (raspberrypi-sys-mods 99-com.rules). /dev/gpiomem* get the same group and mode. Other distros need their own rule.",
+      "evidence": "https://github.com/RPi-Distro/raspberrypi-sys-mods/blob/pios/trixie/usr/lib/udev/rules.d/99-com.rules",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C09",
+      "claim": "The gpio group is created as a system group with a dynamically allocated GID (pi-gen: `groupadd -f -r gpio`). Its number can differ between images, so container configs must use the host's numeric GID (`getent group gpio`). A 2026 Docker example defaulted to GPIO_GID=986 and told users to check and override it.",
+      "evidence": "https://github.com/RPi-Distro/pi-gen/blob/master/stage2/01-sys-tweaks/01-run.sh (lines 33–35); https://github.com/omaramin-2000/linux-voice-assistant/pull/5 (compose.yml group_add \"${GPIO_GID:-986}\").",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C10",
+      "claim": "Docker's --device creates the node inside the container with the host node's major/minor, file mode, UID and GID. It resolves a host-side symlink first. So /dev/gpiochipN inside the container is root:<host gpio GID> 0660, and a non-root container user needs that GID as a supplementary group.",
+      "evidence": "https://github.com/moby/moby/blob/master/daemon/pkg/oci/devices_linux.go (DevicesFromPath: EvalSymlinks, then coci.DeviceFromPath); https://github.com/containerd/containerd/blob/main/pkg/oci/utils_unix.go (DeviceFromPath: Lstat, FileMode, UID, GID).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "C11",
+      "claim": "Docker resolves --group-add names against the container's /etc/group and fails with 'unable to find group' if the name is missing. Numeric GIDs are used as-is. Images such as python:*-slim have no 'gpio' group, so a numeric GID must be passed (docker compose group_add behaves the same).",
+      "evidence": "https://github.com/moby/sys/blob/main/user/user.go (GetAdditionalGroups: 'Numeric group IDs may be used as-is…; non-numeric group names must be found'); moby daemon/oci_linux.go getUser; precedent https://github.com/omaramin-2000/linux-voice-assistant/pull/5.",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "C12",
+      "claim": "--privileged can be avoided for GPIO. The lgpio library touches only /dev/gpiochip%d for GPIO (no /dev/mem, /dev/gpiomem or sysfs GPIO). Mapping the chip with --device and adding the gpio GID is enough. A 2026 example runs gpiozero+lgpio as user 1000:1000 with numeric group_add and no privileged. An Alpine + py3-libgpiod container with only --device /dev/gpiochip0 also worked.",
+      "evidence": "https://github.com/joan2937/lg/blob/master/lgGpio.c line 724 (sprintf \"/dev/gpiochip%d\"); https://github.com/omaramin-2000/linux-voice-assistant/pull/5 (merged 2026-06-10); https://github.com/gpiozero/gpiozero/discussions/1117 (Alpine variant).",
+      "confidence": "medium",
+      "decision_critical": true,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C13",
+      "claim": "--privileged actually breaks the usual gpiochip4 workaround. Privileged Docker copies only real device nodes from host /dev and skips symlinks, and it skips any --device entry whose host and container paths are equal ('already exists in privileged mode'). So `--privileged --device /dev/gpiochip4` leaves no /dev/gpiochip4 on current Pi 5 kernels. A non-privileged `--device /dev/gpiochip4`, or `--device /dev/gpiochip0:/dev/gpiochip4`, creates the node. A Docker user hit exactly this in Nov 2024 (python:3.11 image, pip gpiozero) and fell back to creating the symlink at runtime in the entrypoint, because /dev is a tmpfs created at container start.",
+      "evidence": "https://github.com/moby/moby/blob/master/daemon/oci_linux.go WithDevices (lines ~853–870); containerd getDevices skips ErrNotADevice (symlinks); https://github.com/gpiozero/gpiozero/issues/1166#issuecomment-2453093179 and #issuecomment-2453192398 (2024-11-02).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "C14",
+      "claim": "Docker masks /sys/firmware by default. Podman does too, and also /sys/fs/selinux. Neither masks /proc/cpuinfo. Inside a default container /proc/device-tree (a link to /sys/firmware/devicetree/base) is therefore empty.",
+      "evidence": "https://github.com/moby/moby/blob/master/daemon/pkg/oci/defaults.go (defaultLinuxMaskedPaths); https://github.com/containers/common/blob/main/pkg/config/default.go (getMaskedPaths); https://docs.podman.io/en/latest/markdown/podman-run.1.html (--security-opt mask/unmask).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C15",
+      "claim": "gpiozero's board detection still works in a default container. get_pi_revision() reads /proc/device-tree/system/linux,revision and, on ENOENT, falls back to the 'Revision' line of /proc/cpuinfo. Raspberry Pi kernels print that line on both arm64 (arch/arm64/kernel/cpuinfo.c, from the DT linux,revision property) and 32-bit arm. No unmasking or env var is needed.",
+      "evidence": "https://github.com/gpiozero/gpiozero/blob/v2.0.1.post3/gpiozero/pins/local.py (get_pi_revision); https://github.com/raspberrypi/linux/blob/rpi-6.18.y/arch/arm64/kernel/cpuinfo.c lines 279–297; https://github.com/raspberrypi/linux/blob/rpi-6.18.y/arch/arm/kernel/setup.c lines 1320–1322.",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C16",
+      "claim": "Tools that need the device tree fail in a default container:\n- rpi-lgpio (the RPi.GPIO shim) reads only /proc/device-tree/…/linux,revision and raises 'This module can only be run on a Raspberry Pi!' unless RPI_LGPIO_REVISION is set. Its chip auto-detection reads /sys/bus/gpio/devices/*/of_node/compatible and otherwise uses RPI_LGPIO_CHIP or 0.\n- Raspberry Pi's `pinctrl` finds controllers via /sys/firmware/devicetree/base and needs /dev/gpiomem*, so it belongs on the host.\nUnmasking options are Docker `--security-opt systempaths=unconfined` (all paths) and Podman `--security-opt unmask=/sys/firmware`.",
+      "evidence": "https://github.com/waveform80/rpi-lgpio/blob/main/RPi/GPIO/__init__.py (_get_rpi_info, _get_gpiochip_num); https://github.com/raspberrypi/utils/blob/master/pinctrl/gpiolib.c lines 463–474; https://docs.docker.com/reference/cli/docker/container/run/; https://docs.podman.io/en/latest/markdown/podman-run.1.html",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C17",
+      "claim": "gpiozero 2.0.1 on PyPI (2024-02-15) hard-codes gpiochip4 on any Pi 5 and ignores the chip= argument (issue #1162). Raspberry Pi OS's apt python3-gpiozero carried an unofficial fix from Sept 2024, but a pip-installed gpiozero in a container (no Raspberry Pi apt repo) did not. This broke Docker deployments on Pi 5 after kernel 6.6.51 (Nov 2024 report).",
+      "evidence": "https://github.com/gpiozero/gpiozero/issues/1166 (Milliways2 2024-09-09, lurch and bennuttall 2024-11-03, ksubileau 2024-11-02); diff v2.0.1 vs v2.0.1.post3 gpiozero/pins/lgpio.py line 66.",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C18",
+      "claim": "The upstream fix shipped as gpiozero 2.0.1.post1/post2 (2026-07-24/25), but those versions miss `import os`. LGPIOFactory then fails and gpiozero falls back to RPiGPIOFactory on the Pi 5, crashing (issue #1229). 2.0.1.post3 (2026-07-27) is the first correct PyPI release. Images should pin gpiozero>=2.0.1.post3.",
+      "evidence": "https://github.com/gpiozero/gpiozero/issues/1229 (2026-07-27); changelog https://github.com/gpiozero/gpiozero/blob/main/docs/changelog.rst ('Release 2.0.1.post3 (2026-07-27)… Fixed LGPIOFactory defaulting to the wrong GPIO chip on the Raspberry Pi 5'); PyPI https://pypi.org/project/gpiozero/",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker, podman (also native venv)"
+    },
+    {
+      "id": "C19",
+      "claim": "In gpiozero 2.0.1.post3, LGPIOFactory picks chip 4 only if the board type is Pi 5 (0x17) AND /dev/gpiochip4 exists; otherwise it uses chip 0. An explicit LGPIOFactory(chip=N) is honoured. There is no environment variable for chip or revision on real hardware: gpiozero reads only GPIOZERO_PIN_FACTORY, GPIOZERO_MOCK_REVISION, GPIOZERO_MOCK_PIN_CLASS, PIGPIO_ADDR and PIGPIO_PORT.",
+      "evidence": "https://github.com/gpiozero/gpiozero/blob/v2.0.1.post3/gpiozero/pins/lgpio.py lines 65–66; grep of devices.py and pins/mock.py and pins/pigpio.py at v2.0.1.post3.",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C20",
+      "claim": "Among gpiozero's pin factories only lgpio supports the Pi 5; rpigpio, pigpio and native are documented as '(not Pi 5)'. With no GPIOZERO_PIN_FACTORY set, gpiozero falls back silently (PinFactoryFallback warning) through rpigpio → pigpio → native when lgpio fails, e.g. because the gpiochip or the FIFO directory is missing. Setting GPIOZERO_PIN_FACTORY=lgpio makes such failures loud.",
+      "evidence": "https://github.com/gpiozero/gpiozero/blob/v2.0.1.post3/docs/api_pins.rst (factory table); devices.py _default_pin_factory; bennuttall in issue #1166 (2024-11-03) recommends GPIOZERO_PIN_FACTORY=lgpio.",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C21",
+      "claim": "`import lgpio` (PyPI 0.2.2.0) creates and opens a FIFO named `.lgd-nfy<N>` at import time (module-level _callback_thread). It goes in the directory named by env var LG_WD, else the current working directory. If that directory is not writable (read-only rootfs, root-owned WORKDIR with a non-root user), the import fails (e.g. FileNotFoundError '.lgd-nfy-3') and gpiozero falls through every pin factory.",
+      "evidence": "https://github.com/joan2937/lg/blob/master/lgNotify.c lines 131–133; https://github.com/joan2937/lg/blob/master/PY_LGPIO/lgpio_extra.py lines 272–273, 331 (identical in the 0.2.2.0 sdist); https://github.com/joan2937/lg/issues/22; https://github.com/joan2937/lg/issues/12 (open since 2022, LG_WD workaround); precedent https://github.com/omaramin-2000/linux-voice-assistant/pull/5 ('chmod a+w /app').",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all (docker/podman with read-only rootfs or non-root most likely)"
+    },
+    {
+      "id": "C22",
+      "claim": "lgpio's lguGetWorkDir() calls chdir() into LG_WD (or the current cwd) the first time it runs, which is during `import lgpio`. Setting LG_WD=/tmp therefore also changes the whole process's working directory, so the application must use absolute paths.",
+      "evidence": "https://github.com/joan2937/lg/blob/master/lgUtil.c lines 181–199 (getenv(LG_WD) … chdir(xWorkDir)).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C23",
+      "claim": "lgpio 0.2.2.0 (2024-03-29) is still the newest on PyPI. Its wheels cover only CPython 3.9–3.12 (manylinux_2_34 aarch64/x86_64 and linux_armv7l). On Python 3.13+ (Debian trixie, python:3.13 images) pip builds from the sdist. That build needs swig and python3-dev, plus either the system liblgpio or env PYPI=1 to compile the bundled C sources statically.",
+      "evidence": "PyPI JSON https://pypi.org/project/lgpio/ (release files); https://github.com/joan2937/lg/blob/master/PY_LGPIO/setup.py (PYPI env switch, libraries=['lgpio']); gpiozero docs commit aa23c0d8c6 (2026-07-27): 'install python3-dev, swig, liblgpio-dev'.",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker, podman, native venv"
+    },
+    {
+      "id": "C24",
+      "claim": "liblgpio and python3-lgpio are not in Debian's archive, only in the Raspberry Pi apt repo. A Debian-based image cannot apt-install them. A 2026 example on python:3.13-slim-trixie had to git-clone joan2937/lg v0.2.2 and build it with build-essential and swig.",
+      "evidence": "https://sources.debian.org/api/src/lgpio/ (404); Ben Nuttall in https://github.com/gpiozero/gpiozero/discussions/1117 ('python3-lgpio only exists in Raspberry Pi's apt repo'); Dockerfile diff in https://github.com/omaramin-2000/linux-voice-assistant/pull/5",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C25",
+      "claim": "The libgpiod v2 Python binding 'gpiod' on PyPI (2.5.0, 2026-06-17, Python >=3.10) ships manylinux/musllinux wheels for aarch64 and x86_64 only, none for armv7l. Its sdist vendors the libgpiod C sources (no system library, no swig needed; LINK_SYSTEM_LIBGPIOD=1 is optional), and it creates no files in the working directory.",
+      "evidence": "PyPI JSON https://pypi.org/project/gpiod/; gpiod-2.5.0.tar.gz contents (lib/*.c, include/gpiod.h) and setup.py (LINK_SYSTEM_LIBGPIOD, LIBGPIOD_MINIMUM_VERSION 2.1).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C26",
+      "claim": "gpiozero has no gpiod (libgpiod v2) pin factory as of main in Oct 2026: its pins are lgpio, native, pigpio, rpigpio and mock. PR #1185 'Add gpiod pin factory, again' (2025-01-19) is still open. Using gpiod means writing the HAL directly against gpiod rather than through gpiozero.",
+      "evidence": "https://github.com/gpiozero/gpiozero/tree/main/gpiozero/pins; https://github.com/gpiozero/gpiozero/pull/1185",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C27",
+      "claim": "Debian bookworm's libgpiod (and hence python3-libgpiod) is 1.6.3, the v1 API. 2.1.3 is in bookworm-backports, and trixie ships 2.2.1. A bookworm-based image using distro bindings gets the v1 API, which does not match code written for gpiod v2.",
+      "evidence": "https://sources.debian.org/api/src/libgpiod/",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman, native"
+    },
+    {
+      "id": "C28",
+      "claim": "On current Raspberry Pi kernels (rpi-6.12.y and the default branch rpi-6.18.y, checked 2026-10-08), persist_gpio_outputs defaults to true in both pinctrl-bcm2835 (Pi 3/4) and pinctrl-rp1 (Pi 5). When a GPIO line is released, which the kernel does when the holding process dies (including kill -9, the OOM killer or a killed container), the pin keeps its output function and last level. A crash with the active-low heater relay ON (driven LOW) leaves the heater ON, in native and container deployments alike.",
+      "evidence": "https://github.com/raspberrypi/linux/blob/rpi-6.18.y/drivers/pinctrl/bcm/pinctrl-bcm2835.c lines 248–250, 974 (bcm2835_pmx_free); https://github.com/raspberrypi/linux/blob/rpi-6.18.y/drivers/pinctrl/pinctrl-rp1.c lines 578–580, 1270–1272 (rp1_pmx_free); same in rpi-6.12.y.",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "C29",
+      "claim": "Raspberry Pi documents this persistence officially. Its GPIO whitepaper says 'the Raspberry Pi kernel modifies this behaviour so that the state of a GPIO IS retained when a program that has changed the value … exits'.",
+      "evidence": "Whitepaper RP-006553-WP (release 1: 1 Aug 2024; release 2: 13 Aug 2025), libgpiod section: https://pip-assets.raspberrypi.com/categories/685-whitepapers-app-notes/documents/RP-006553-WP/A-history-of-GPIO-usage-on-Raspberry-Pi-devices-and-current-best-practices",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "C30",
+      "claim": "`dtparam=strict_gpiod` in config.txt adds bootargs pinctrl_bcm2835.persist_gpio_outputs=n (Pi 0–4) or pinctrl_rp1.persist_gpio_outputs=n (Pi 5). The kernel then returns released GPIOs to inputs. This is a host-level, kernel-enforced post-crash action that works no matter how the app is deployed, Docker included.",
+      "evidence": "https://github.com/raspberrypi/linux/blob/rpi-6.18.y/arch/arm/boot/dts/broadcom/bcm270x-rpi.dtsi line 121; https://github.com/raspberrypi/linux/blob/rpi-6.18.y/arch/arm64/boot/dts/broadcom/bcm2712-rpi.dtsi line 245; overlays README ('strict_gpiod: Return GPIOs to inputs when they are released'); whitepaper RP-006553-WP.",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "all (key for docker)"
+    },
+    {
+      "id": "C31",
+      "claim": "strict_gpiod is not automatically safe for active-low relays. On release the pin only becomes an input and keeps its pull. The power-on default is pull-down (~50 kΩ) for BCM 9–27, which includes heater BCM 23 and pump BCM 22, on Pi 3/4 and Pi 5. An active-low relay input then sees a weak pull to LOW rather than a driven HIGH. Whether the relay stays off is board-dependent and must be measured. The released state equals the boot state before the app starts.",
+      "evidence": "rp1_pmx_free / bcm2835_pmx_free set only the input direction/function (see C28 sources); default pulls: PhilE (RPi engineer), 2024-03-04, 'As with BCM2835 et al, 0-8 default to pull-ups, 9-27 pull down' https://forums.raspberrypi.com/viewtopic.php?t=366826",
+      "confidence": "medium",
+      "decision_critical": true,
+      "affects": "all"
+    },
+    {
+      "id": "C32",
+      "claim": "Docker restart policies have no host-side post-stop hook. Docker's docs advise against combining restart policies with host-level process managers. If `docker run` is wrapped in a systemd unit to get ExecStopPost, systemd supervises only the docker client process, not the container, which is a child of the daemon.",
+      "evidence": "https://docs.docker.com/engine/containers/start-containers-automatically/; Red Hat Developer blog (2019-04-24) https://developers.redhat.com/blog/2019/04/24/how-to-run-systemd-in-a-container ('systemd has no idea of this relationship between the Docker client and the container…').",
+      "confidence": "medium",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "C33",
+      "claim": "A Docker restart policy takes effect only after the container has run for at least 10 s. `docker stop` waits 10 s by default on Linux before sending SIGKILL.",
+      "evidence": "https://docs.docker.com/engine/containers/start-containers-automatically/; https://docs.docker.com/reference/cli/docker/container/run/ (--stop-timeout default 10 s).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "C34",
+      "claim": "A process running as PID 1 in a container ignores every signal whose action is the default. Python installs no SIGTERM handler by default (only SIGPIPE ignored and SIGINT → KeyboardInterrupt). If PID 1 is a shell wrapper or an app without a SIGTERM handler, `docker stop` ends in SIGKILL and HW-021's 'outputs off on SIGTERM' never runs; with C28 the outputs then stay as they were. uvicorn does install SIGINT/SIGTERM handlers when it runs in the main thread. Use an exec-form ENTRYPOINT or --init.",
+      "evidence": "https://docs.docker.com/reference/cli/docker/container/run/ (--init: 'A process running as PID 1 inside a container is treated specially by Linux: it ignores any signal with the default action'); https://man7.org/linux/man-pages/man7/pid_namespaces.7.html; https://docs.python.org/3/library/signal.html; https://github.com/encode/uvicorn/blob/master/uvicorn/server.py (HANDLED_SIGNALS).",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C35",
+      "claim": "Podman Quadlet passes [Service] options straight to systemd, so a .container unit can carry ExecStopPost= (a GPIO reset run on the host), Restart= and so on. Quadlet units default to Type=notify, and they offer AddDevice=, GroupAdd= (including keep-groups), User= and ReadOnly=. This keeps the native-style crash reset in a container.",
+      "evidence": "https://docs.podman.io/en/latest/markdown/podman-systemd.unit.5.html ('options defined in the [Service] table and [Install] tables pass directly to systemd').",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "podman"
+    },
+    {
+      "id": "C36",
+      "claim": "Quadlet arrived in Podman 4.4.0. Debian bookworm ships Podman 4.3.1 (no Quadlet), Debian trixie 5.4.2, and forky/sid 5.8.6.",
+      "evidence": "https://github.com/containers/podman/blob/main/RELEASE_NOTES.md ('## 4.4.0 … Introduce Quadlet'); https://sources.debian.org/api/src/libpod/ (4.3.1+ds1-8+deb12u1 bookworm); https://sources.debian.org/api/src/podman/ (5.4.2+ds1-2 trixie).",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "podman"
+    },
+    {
+      "id": "C37",
+      "claim": "In rootless Podman, --device bind-mounts the host node. If the user can reach the device only through a group, access from the container fails unless `--group-add keep-groups` is used. keep-groups was added in Podman 3.2.0, works only with the crun runtime, and passes only the groups the calling process already has (a systemd user manager must be restarted to pick up a new gpio membership).",
+      "evidence": "https://docs.podman.io/en/latest/markdown/podman-run.1.html (--device, --group-add); https://github.com/containers/podman/blob/main/RELEASE_NOTES.md (3.2.0 keep-groups).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "podman"
+    },
+    {
+      "id": "C38",
+      "claim": "Two host-side reset tools behave differently. Raspberry Pi's `pinctrl` (e.g. `pinctrl set 22,23 op dh`) drives the hardware directly, bypassing the kernel drivers and line ownership. It needs root, or gpio-group access to /dev/gpiomem* on Raspberry Pi OS, and does not depend on gpiochip numbering. libgpiod v2's gpioset does not exit by default; it holds the line.",
+      "evidence": "https://github.com/raspberrypi/utils/blob/master/pinctrl/README.md; whitepaper RP-006553-WP ('The default behaviour for gpioset in libgpiod v2 is NOT to exit').",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "native, podman, docker (host-side helper)"
+    },
+    {
+      "id": "C39",
+      "claim": "A default non-privileged Docker container mounts a fresh sysfs read-only (nosuid,noexec,nodev,ro). Only /sys/firmware, /sys/devices/virtual/powercap and the per-CPU thermal_throttle directories are masked under /sys. So /sys/bus/w1/devices/28-*/w1_slave is visible without --privileged and without a bind mount. Not tested on hardware here.",
+      "evidence": "https://github.com/moby/moby/blob/master/daemon/pkg/oci/defaults.go (/sys mount options lines 84–87; masked paths lines 194–208).",
+      "confidence": "medium",
+      "decision_critical": true,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C40",
+      "claim": "w1_slave is DEVICE_ATTR_RW (mode 0644), so a non-root container user can read it. Writes, such as changing the DS18B20 resolution through w1_slave or 'resolution', are impossible from a default container because /sys is read-only. The spec (HW-030..034) only reads.",
+      "evidence": "https://github.com/raspberrypi/linux/blob/rpi-6.18.y/drivers/w1/slaves/w1_therm.c lines 348–354.",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C41",
+      "claim": "Raspberry Pi kernel defconfigs (bcm2709, bcm2711 and bcm2712 in rpi-6.18.y) set CONFIG_SECURITY_APPARMOR=y with CONFIG_LSM=\"\", so AppArmor is inactive unless enabled on the kernel command line. Even when active, Docker's docker-default profile denies only write/lock/link/exec under /sys (plus all access to /sys/firmware, /sys/kernel/security and powercap), so reading /sys/bus/w1 is allowed. Whether the packaged Raspberry Pi OS kernel matches the defconfig was not verified.",
+      "evidence": "https://github.com/raspberrypi/linux/blob/rpi-6.18.y/arch/arm64/configs/bcm2712_defconfig (lines ~1748–1749) and bcm2711_defconfig / arch/arm/configs/bcm2709_defconfig; https://github.com/moby/profiles/blob/main/apparmor/template.go lines 76–83.",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C42",
+      "claim": "Community DS18B20-in-Docker examples use --privileged plus `-v /sys/bus/w1/devices:/sys/bus/w1/devices:ro` 'to reliably guarantee' access. That is a precaution, not a documented requirement. The same project also ships a Podman `play kube` manifest.",
+      "evidence": "https://github.com/welderpb/ds18b20-mqtt (README, 2026).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C43",
+      "claim": "1-Wire must be enabled on the host with `dtoverlay=w1-gpio` (default gpiopin=4) in /boot/firmware/config.txt, followed by a reboot. The firmware's overlay_map substitutes w1-gpio-pi5 on BCM2712, so the same line works on Pi 3/4/5. W1, W1_MASTER_GPIO and W1_SLAVE_THERM are kernel modules that only the host can load. Even fully containerised Home Assistant OS tells users to edit config.txt on the boot partition.",
+      "evidence": "https://github.com/raspberrypi/linux/blob/rpi-6.18.y/arch/arm/boot/dts/overlays/README (w1-gpio); overlay_map.dts lines 569–577; bcm2712_defconfig CONFIG_W1=m etc.; https://github.com/thecode/ha-onewire-sysbus (README, /mnt/boot/config.txt).",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C44",
+      "claim": "Raspberry Pi OS's default config.txt leaves SPI off (`#dtparam=spi=on`). If SPI gets enabled on the host, BCM 10 (SPI0 MOSI, the buzzer) is claimed by the SPI pin mux. Both pinctrl drivers are `.strict = true`, so any process, in a container or native, then fails to request BCM 10 as a GPIO. Keeping SPI off is a host-only setting.",
+      "evidence": "https://github.com/RPi-Distro/pi-gen/blob/master/stage1/00-boot-files/files/config.txt; pinctrl-bcm2835.c line 1053 and pinctrl-rp1.c line 1366 (.strict = true) in rpi-6.18.y.",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "all"
+    },
+    {
+      "id": "C45",
+      "claim": "Raspberry Pi device trees put `cgroup_disable=memory` into the default bootargs (bcm270x.dtsi for Pi 0–4, bcm2712-rpi.dtsi for Pi 5). Container memory limits (docker --memory, Podman) therefore do not work on a stock install unless `cgroup_enable=memory` is added to cmdline.txt, which the downstream kernel supports.",
+      "evidence": "https://github.com/raspberrypi/linux/blob/rpi-6.18.y/arch/arm/boot/dts/broadcom/bcm270x.dtsi line 7; bcm2712-rpi.dtsi line 122; kernel/cgroup/cgroup.c __setup(\"cgroup_enable=\").",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C46",
+      "claim": "A container does not remove any host-level install step. Still required on the host:\n- dtoverlay=w1-gpio and a reboot\n- SPI kept off\n- gpio group/udev rules (present on Raspberry Pi OS only) and finding the numeric GID\n- installing the container runtime\n- optionally dtparam=strict_gpiod and cgroup_enable=memory\n- a host-side crash-reset mechanism (systemd unit or kernel parameter) for NFR-003\nA container adds device mapping and image-build steps on top.",
+      "evidence": "Synthesis of C08–C11, C28–C32, C43–C45.",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C47",
+      "claim": "Docker Engine 29.0 (released 2025-11-10) no longer provides Raspbian / Raspberry Pi OS 32-bit (armhf) packages; v28 was the last. 32-bit ARMv7 hosts such as a Pi 3 on 32-bit Raspberry Pi OS must use Docker's Debian armhf packages, which target ARMv7. Docker's Debian page lists Trixie 13 and Bookworm 12 with armhf (arm/v7).",
+      "evidence": "https://docs.docker.com/engine/release-notes/29/; https://docs.docker.com/engine/install/raspberry-pi-os/; https://docs.docker.com/engine/install/debian/",
+      "confidence": "high",
+      "decision_critical": true,
+      "affects": "docker"
+    },
+    {
+      "id": "C48",
+      "claim": "Official python images (e.g. 3.13-slim-trixie) are published for amd64, arm32v7 and arm64v8, so one multi-arch image can cover Pi 3 (armhf), Pi 4/5 (arm64) and developer PCs. There are no prebuilt gpiod wheels for armv7l and no lgpio wheels for cp313 or later, so the armv7 and Python 3.13+ variants need a compiler stage.",
+      "evidence": "https://github.com/docker-library/official-images/blob/master/library/python (Architectures lines); PyPI file lists for gpiod 2.5.0 and lgpio 0.2.2.0.",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker, podman"
+    },
+    {
+      "id": "C49",
+      "claim": "The best-known containerised precedent relies on privileged mode. Home Assistant Supervisor starts the HA Core container with privileged=True, /dev mounted and device-cgroup rules for the gpio/gpiomem udev subsystems. HA add-ons must opt in with `devicetree: true` to get /device-tree, and the docs note AppArmor must be disabled or given a custom profile for GPIO add-ons.",
+      "evidence": "https://github.com/home-assistant/supervisor/blob/main/supervisor/docker/homeassistant.py (cgroups_rules incl. PolicyGroup.GPIO; privileged=… != LANDINGPAGE); https://developers.home-assistant.io/docs/add-ons/configuration/",
+      "confidence": "high",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "C50",
+      "claim": "Community reports of gpiozero in Docker on the Pi 5 (gpiozero discussion #1117, Feb 2024 – Feb 2026) mostly ended up with privileged: true, mapping /dev/gpiomem4 and /dev/gpiochip0–4. Problems reported there include a missing swig when building lgpio, 'Cannot determine SOC peripheral base address' (RPi.GPIO fallback) and the gpiochip renumbering.",
+      "evidence": "https://github.com/gpiozero/gpiozero/discussions/1117 (content summarised via a fetch tool).",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "docker"
+    },
+    {
+      "id": "C51",
+      "claim": "DS18B20 1-Wire on the Pi 5 was unstable because PCIe ASPM delays RP1 GPIO writes. Kernel fixes were announced Jan 2024 (rpi-update pulls/5846, then 5882), and pinctrl-rp1 has a pace_pin_updates parameter (default true). Issue #6917 (2025-06-21, Pi 5 Bookworm, still open) reports sensors dropping out. This is host/kernel behaviour, identical natively and in a container, and the spec treats it as INVALID → heater off.",
+      "evidence": "https://forums.raspberrypi.com/viewtopic.php?t=362339 (jdb and PhilE, 2024-01-11/25); https://github.com/raspberrypi/linux/issues/6917; pinctrl-rp1.c lines 582–584 (pace_pin_updates).",
+      "confidence": "medium",
+      "decision_critical": false,
+      "affects": "all"
+    }
+  ],
+  "open_questions": [
+    "Hardware check: with the app stopped and BCM 22/23 as inputs with their default pull-down (the state after boot or after a strict_gpiod release), do the actual BrewberryPi relay boards stay OFF? This decides whether dtparam=strict_gpiod is an acceptable NFR-003 mechanism, especially for Docker.",
+    "Is the Bookworm 6.12.96+ gpiochip renumbering on the Pi 5 fixed in a later Bookworm kernel? rpi-6.12.y source at 6.12.112 (2026-10-05) still looks affected, and no Raspberry Pi acknowledgement was found.",
+    "Not tested on hardware here: reading /sys/bus/w1/devices/28-*/w1_slave from a non-privileged, non-root Docker or Podman container. The conclusion comes from moby defaults and the kernel attribute mode; a 5-minute test on a Pi would confirm it.",
+    "Does the packaged Raspberry Pi OS kernel (rpt builds) match the defconfig on AppArmor (CONFIG_LSM=\"\") and on cgroup_disable=memory? Only the raspberrypi/linux sources were checked.",
+    "Pi 3 on a 32-bit userland with a 64-bit kernel: does pip in an arm32v7 image report linux_armv8l and then reject lgpio's linux_armv7l wheels? Not researched.",
+    "Should the HAL choose the gpiochip by label (pinctrl-rp1 / pinctrl-bcm2711 / pinctrl-bcm2835) instead of relying on gpiozero's chip 0/4 logic? In a container that requires passing all /dev/gpiochip* nodes, or resolving the chip on the host when the container starts.",
+    "Should the HAL use gpiozero+lgpio (FIFO file, packaging problems on Python 3.13+, no Debian package) or the gpiod v2 binding directly (gpiozero has no gpiod factory; it would need its own small HAL and a mock for tests)?",
+    "Not researched here, may matter for the deployment choice: Docker or Podman memory and CPU overhead on a 1 GB Pi 3 (NFR-052), and how a web-UI-triggered update would work from inside a container (Docker socket access is root-equivalent)."
+  ]
+}

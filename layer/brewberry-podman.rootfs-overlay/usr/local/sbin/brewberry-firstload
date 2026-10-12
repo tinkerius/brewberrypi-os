@@ -5,15 +5,16 @@
 set -eu
 
 ACTIVE=localhost/brewberrypi:active
-PRELOAD=/usr/share/brewberrypi/preload.tar
+# 'dir:' format; policy.json accepts unsigned images from this path only.
+PRELOAD=/usr/share/brewberrypi/preload
 
 if podman image exists "$ACTIVE"; then
    exit 0
 fi
-[ -f "$PRELOAD" ] || { echo "no $ACTIVE and no preloaded image" >&2; exit 1; }
+[ -f "$PRELOAD/manifest.json" ] || { echo "no $ACTIVE and no preloaded image" >&2; exit 1; }
 
-ref=$(podman load -q -i "$PRELOAD" | sed -n 's/^Loaded image: //p' | head -n 1)
-[ -n "$ref" ] || { echo "podman load -i $PRELOAD reported no image" >&2; exit 1; }
-podman tag "$ref" "$ACTIVE"
+id=$(podman pull -q "dir:$PRELOAD")
+[ -n "$id" ] || { echo "podman pull dir:$PRELOAD reported no image" >&2; exit 1; }
+podman tag "$id" "$ACTIVE"
 sync -f /data
-echo "loaded $ref as $ACTIVE"
+echo "loaded the preloaded image ($id) as $ACTIVE"

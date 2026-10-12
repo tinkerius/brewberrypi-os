@@ -40,6 +40,7 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 | `scripts/build.sh` | Builds `deploy/<image>-<version>.img.xz` plus a `.sha256` |
 | `scripts/build-stub.sh` | Builds the contract stub for arm64 (`podman save` tarball); `build.sh` calls it unless `BREWBERRY_PRELOAD` names another image |
 | `scripts/lint.sh` | shellcheck, yamllint, layer metadata lint and the unit tests |
+| `tests/integration/signing.sh` | Signature policy against a local registry with cosign v2 |
 
 ### Build in CI
 
@@ -71,3 +72,19 @@ BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh
 
 From then on root and boot are read-only and only `/data` is written; changes anywhere else
 are lost at reboot. OS updates will go through maintenance mode (OS6).
+
+### App versions on the device
+
+The app comes from the private registry `ghcr.io/tinkerius/brewberrypi`. Only images signed with
+the app's pinned cosign key are accepted.
+
+```sh
+sudo brewberry-update login           # once: a GitHub classic PAT with read:packages only
+sudo brewberry-update list            # available versions
+sudo brewberry-update install 1.2.3   # pull, switch, watch 60 s, roll back if it fails
+sudo brewberry-update rollback        # back to the previous version
+sudo brewberry-update status
+```
+
+If the app keeps crashing (4 failed starts within 10 minutes), safe mode switches back to the
+previous version once; if that fails too, the app stays down with all outputs off.

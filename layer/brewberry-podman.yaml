@@ -13,8 +13,8 @@
 #
 # X-Env-Var-preload:
 # X-Env-Var-preload-Desc: Path on the build host to the app image to preload,
-#  as a 'podman save' (docker-archive) tarball. scripts/build.sh builds the
-#  contract stub and sets this.
+#  in 'dir:' format (podman save --format docker-dir). scripts/build.sh builds
+#  the contract stub and sets this.
 # X-Env-Var-preload-Required: y
 # X-Env-Var-preload-Valid: string
 # X-Env-Var-preload-Set: y
@@ -27,7 +27,12 @@ mmdebstrap:
     - conmon
     - netavark
   customize-hooks:
-    - install -D -m 0644 "$IGconf_app_preload" "$1/usr/share/brewberrypi/preload.tar"
+    - |-
+      set -eu
+      test -f "$IGconf_app_preload/manifest.json"
+      mkdir -p "$1/usr/share/brewberrypi"
+      cp -r "$IGconf_app_preload" "$1/usr/share/brewberrypi/preload"
+      chmod -R u=rwX,go=rX "$1/usr/share/brewberrypi/preload"
     - |-
       set -eu
       # Quadlet needs the numeric gpio GID; it is assigned during the build.

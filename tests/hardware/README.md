@@ -74,3 +74,41 @@ ssh brewberry@brewberrypi.local 'sudo sh -s -- <mode>' < tests/hardware/os3-chec
    is on after power-on (a phone slow-motion video is enough). Record the result in the app's
    hardware test protocol. Check whether the relay board actually switches.
 6. `disable` when done.
+
+## OS4: signed updates, rollback and safe mode
+
+The real app's images are signed in its own CI. For this test, `scripts/publish-test-stubs.sh`
+pushes stub versions to a **test repository** (never `ghcr.io/tinkerius/brewberrypi`), signed
+with a throwaway key: 0.2.0 healthy, 0.3.0 crashes on start, 0.4.0 unsigned, 0.5.0 signed with
+another key.
+
+1. On your machine (podman logged in to the registry, cosign v2.x):
+
+   ```sh
+   scripts/publish-test-stubs.sh ghcr.io/tinkerius/brewberrypi-os-test
+   scp work/test-signing/test.pub brewberry@brewberrypi.local:/tmp/
+   ```
+
+2. On the device, a registry token for that repository (a classic PAT with `read:packages`):
+
+   ```sh
+   ssh -t brewberry@brewberrypi.local 'sudo BREWBERRY_UPDATE_REPO=ghcr.io/tinkerius/brewberrypi-os-test brewberry-update login'
+   ```
+
+3. Install the test key and policy entry. They live in the RAM overlay only, so a reboot removes
+   them:
+
+   ```sh
+   ssh brewberry@brewberrypi.local 'sudo sh -s -- setup ghcr.io/tinkerius/brewberrypi-os-test /tmp/test.pub' < tests/hardware/os4-check.sh
+   ```
+
+4. Run the checks (about five minutes). Every line must say `PASS`:
+
+   ```sh
+   ssh brewberry@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os4-check.sh
+   ```
+
+   This covers the OS4 "done when" list: wrongly signed and unsigned images rejected, a version
+   that crashes on start rolled back, `previous` kept through garbage collection, and repeated
+   crashes switching to `previous` exactly once, then staying down with the outputs off.
+5. Reboot to remove the test key.

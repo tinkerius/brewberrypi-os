@@ -8,6 +8,7 @@
 # The app runs under Podman + Quadlet; the preloaded image is the contract stub
 # until the app is released (brewberry-podman). Host-side safety: strict_gpiod,
 # boot-time off levels, outputs-off reset, watchdogs (brewberry-safety).
+# Signed updates, rollback and safe mode (brewberry-update).
 
 device:
   layer: rpi3
@@ -33,3 +34,4 @@ layer:
   readonly: brewberry-readonly
   safety: brewberry-safety
   podman: brewberry-podman
+  update: brewberry-update

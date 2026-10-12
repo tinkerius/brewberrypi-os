@@ -140,3 +140,20 @@ read (FAT32, exFAT or ext4).
    This covers the OS5 "done when": the signed export installs offline, the tampered one is
    rejected. It also checks the config import and that the stick is unmounted afterwards.
 4. Reboot to remove the test rule.
+
+## OS6: maintenance mode
+
+Follows the procedure in [docs/os-update.md](../../docs/os-update.md), mode by mode. `on` and
+`off` reboot, so reconnect after each:
+
+```sh
+run() { ssh brewberry@brewberrypi.local "sudo sh -s -- $1" < tests/hardware/os6-check.sh; }
+run sealed     # all PASS
+run on         # reboots into maintenance mode
+run maint      # all PASS
+run upgrade    # apt full-upgrade must succeed
+run off        # seals and reboots
+run sealed     # all PASS: overlay and read-only boot are back
+```
+
+This covers the OS6 "done when". Afterwards, re-run the OS1 checks (`os1-check.sh status`).

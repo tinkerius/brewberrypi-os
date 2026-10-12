@@ -168,8 +168,8 @@ Unit `/etc/containers/systemd/brewberrypi.container`:
     - the relay state during the power-on window (app `Q-18`);
     - whether the internal pull-up stays effective after a line is released.
 - **Open questions:**
-  - One image for Pi 3/4/5, or two?
-  - Imager format: `cloudinit-rpi` or `systemd`?
+  - ~~One image for Pi 3/4/5, or two?~~ Two (OS7): the Pi 5 needs the 2712 kernel layer.
+  - ~~Imager format: `cloudinit-rpi` or `systemd`?~~ `cloudinit-rpi` (OS7), as on current Raspberry Pi OS: cloud-init with `rpi-cloud-init-mods`, NetworkManager through netplan, disabled by `brewberry-seal` after the first boot. See `docs/flashing.md`.
   - Cost of arm64 runners for a private repo.
   - Allow downgrades from the unauthenticated UI?
   - Cost of `podman system check` on a Pi 3, at every boot or only after failures?

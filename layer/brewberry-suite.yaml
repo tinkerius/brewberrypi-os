@@ -1,0 +1,32 @@
+# METABEGIN
+# X-Env-Layer-Name: brewberry-suite
+# X-Env-Layer-Category: suite
+# X-Env-Layer-Desc: BrewberryPi OS suite: rpi-image-gen's trixie-minbase with
+#  NetworkManager (wired and Wi-Fi) instead of systemd-networkd and iwd, as on
+#  Raspberry Pi OS, so the netplan network-config that Raspberry Pi Imager
+#  writes (Wi-Fi included) can be applied (OS7). Without raspi-config: its
+#  overlay toggle must not be used (ADR-0001), and cloud-init's
+#  cc_raspberry_pi would use it to switch SPI on over the buzzer pin.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: debian-trixie-arm64-multi,
+#  rpi-debian-trixie,
+#  rpi-essential-base,
+#  rpi-misc-skel,
+#  systemd-resolved,
+#  network-manager,
+#  openssh-server,
+#  systemd-timesyncd,
+#  wireless-regulatory
+# METAEND
+---
+mmdebstrap:
+  packages:
+    # rpi-misc-utils without raspi-config and flashrom.
+    - raspi-utils
+    - raspi-utils-core
+    - raspi-utils-dt
+    # Wi-Fi for NetworkManager (only recommended by network-manager, and the
+    # build installs no recommends) and iw for netplan's regulatory domain.
+    - wpasupplicant
+    - iw
+    - rfkill

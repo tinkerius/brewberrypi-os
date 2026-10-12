@@ -21,6 +21,7 @@ controller for a home-brewing mash kettle. It is built to behave like a games co
 |---|---|
 | [docs/adr/](docs/adr/) | Architecture decision records |
 | [docs/implementation-plan.md](docs/implementation-plan.md) | Milestones OS0–OS8 |
+| [docs/flashing.md](docs/flashing.md) | Flashing with Raspberry Pi Imager and its customisation |
 | [docs/os-update.md](docs/os-update.md) | OS update procedure (maintenance mode) |
 | [docs/research/](docs/research/) | Research behind the decisions (primary sources, fact-checked) |
 | Runtime contract (application repository: `docs/deployment/runtime-contract.md`) | What the app image expects from this OS |
@@ -43,6 +44,7 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 | `scripts/build.sh` | Builds `deploy/<image>-<version>.img.xz` plus a `.sha256` |
 | `scripts/usb-export.sh` | Puts a signed app version on a USB stick and verifies it against the device policy |
 | `scripts/build-stub.sh` | Builds the contract stub for arm64 (`podman save` tarball); `build.sh` calls it unless `BREWBERRY_PRELOAD` names another image |
+| `scripts/imager-manifest.py` | Raspberry Pi Imager manifest for the images (release URLs or local files) |
 | `scripts/lint.sh` | shellcheck, yamllint, layer metadata lint and the unit tests |
 | `tests/integration/signing.sh` | Signature policy against a local registry with cosign v2 |
 
@@ -50,11 +52,12 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 
 Every push and pull request runs `.github/workflows/build.yml`. It builds both images on
 `ubuntu-24.04-arm` runners and uploads them as the `brewberrypi-os-pi34` and `brewberrypi-os-pi5`
-artifacts (kept 30 days).
+artifacts (kept 30 days). A version tag (`v1.2.3`) also creates a **draft release** with both
+images, the Imager manifest and `SHA256SUMS`; publish it once the hardware checks pass.
 
-The admin user is `brewberry`. It has no password and logs in over SSH with a key only. Set the
-public key as the **repository variable** `BREWBERRY_SSH_PUBKEY` (Settings → Secrets and variables →
-Actions → Variables). Without it the build still succeeds, but nobody can log in.
+The admin user is `brewberry`. It has no password and logs in over SSH with a key only. The key
+usually comes from Imager's customisation; to build it into the image too, set the **repository
+variable** `BREWBERRY_SSH_PUBKEY` (Settings → Secrets and variables → Actions → Variables).
 
 ### Build locally
 
@@ -69,11 +72,12 @@ BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh
 ### Flash and log in
 
 1. Flash `brewberrypi-os-pi34-*.img.xz` (Pi 3/4) or `brewberrypi-os-pi5-*.img.xz` (Pi 5) with
-   Raspberry Pi Imager → *Use custom*. Skip OS
-   customisation for now; it comes with the Imager manifest in OS7.
-2. Boot a Pi 3 or 4 with Ethernet connected. On first boot it grows `/data` to fill the card,
-   seals itself (read-only boot, RAM overlay over the root) and **reboots once by itself**.
-3. `ssh brewberry@brewberrypi.local` (or use the IP address from your router).
+   Raspberry Pi Imager 2.x **through the manifest**, and set hostname, user, SSH key and Wi-Fi in
+   its customisation: see [docs/flashing.md](docs/flashing.md).
+2. Boot it. On first boot it applies the customisation, grows `/data` to fill the card, seals
+   itself (read-only boot, RAM overlay over the root) and **reboots once by itself**.
+3. `ssh <user>@<hostname>.local` (default `brewberry@brewberrypi.local`, or the IP address from
+   your router).
 4. `cat /etc/brewberry-release` shows the build version.
 
 From then on root and boot are read-only and only `/data` is written; changes anywhere else

@@ -14,6 +14,29 @@ PARAM=overlayroot=tmpfs:recurse=0
 
 die() { echo "brewberry-seal: $*" >&2; exit 1; }
 
+# First-boot report on the boot partition, readable on any computer from the
+# SD card: the journal is volatile and gone after the seal reboot, and a
+# device whose customisation failed has no login to look with.
+REPORT=/boot/firmware/brewberry-firstboot.txt
+report() {
+   echo "== BrewberryPi OS first-boot report, $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+   cat /etc/brewberry-release
+   echo; echo "== failed units"; systemctl --failed --no-legend --no-pager
+   echo; echo "== cloud-init"; cloud-init status --long
+   echo; echo "== network"; nmcli -t device; ip -br address
+   for u in cloud-init-main cloud-init-local cloud-init-network cloud-config cloud-final \
+            brewberry-growdata brewberry-datalayout brewberry-firstload NetworkManager; do
+      echo; echo "== journal: $u"; journalctl -b -u "$u" --no-pager -n 150
+   done
+   echo; echo "== /var/log/cloud-init.log (last 200 lines)"; tail -n 200 /var/log/cloud-init.log
+}
+mount -o remount,rw /boot/firmware
+report > "$REPORT.tmp" 2>&1 || true
+sync "$REPORT.tmp"
+mv "$REPORT.tmp" "$REPORT"
+sync /boot/firmware
+echo "wrote $REPORT"
+
 # Refuse to seal if the overlay could not come up: overlayroot runs from the
 # initramfs, so the initramfs the firmware loads must contain it.
 initramfs_ok=0

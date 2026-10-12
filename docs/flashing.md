@@ -54,6 +54,8 @@ Imager shows no interface options (SPI, I2C, 1-Wire, serial): the image's safety
    **reboots once by itself**.
 
 Don't pull the plug during the first boot. After the reboot, `ssh <user>@<hostname>.local`.
+If that doesn't work, put the card in a computer and read `brewberry-firstboot.txt` on the boot
+partition: the seal step writes what cloud-init and the first-boot services did.
 
 To change the customisation later (Wi-Fi, hostname), reflash the card. Reflashing also erases
 `/data`: copy `/data/config` to a stick's `brewberrypi/config/` first, and bring it back with

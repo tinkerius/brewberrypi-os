@@ -18,7 +18,7 @@ controller for a home-brewing mash kettle. It is built to behave like a games co
 
 ## Documentation
 
-**Setting up and running a BrewberryPi?** Read the [user manual](docs/user-manual.md): wiring,
+**Setting up and running a BrewberryPi?** Read the [user manual](docs/user-manual.md):
 flashing, configuration, app versions, USB, OS updates and troubleshooting.
 
 | Document | Purpose |

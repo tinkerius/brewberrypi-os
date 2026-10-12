@@ -1,0 +1,68 @@
+name: build
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install lint tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            shellcheck yamllint python3-yaml python3-debian python3-jsonschema
+
+      - name: Lint
+        run: scripts/lint.sh
+
+  image:
+    name: image (Pi 3/4)
+    needs: lint
+    # rpi-image-gen builds natively on arm64 only (ADR-0001).
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # git describe needs the tags for the image version.
+          fetch-depth: 0
+
+      - name: Install rpi-image-gen and its dependencies
+        run: |
+          . scripts/common.sh
+          fetch_rpi_image_gen
+          sudo apt-get update
+          # rpi-image-gen runs as the runner user and needs to traverse $HOME.
+          sudo chmod o+x "$HOME"
+          sudo "$RPI_IMAGE_GEN_DIR/install_deps.sh"
+
+      - name: Build image
+        env:
+          BREWBERRY_SSH_PUBKEY: ${{ vars.BREWBERRY_SSH_PUBKEY }}
+        run: |
+          if [ -z "$BREWBERRY_SSH_PUBKEY" ]; then
+            echo "::warning::Repository variable BREWBERRY_SSH_PUBKEY is not set; this image has no SSH login."
+          fi
+          scripts/build.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: brewberrypi-os-pi34
+          path: deploy/
+          # The image is already xz-compressed.
+          compression-level: 0
+          retention-days: 30
+          if-no-files-found: error

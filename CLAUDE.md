@@ -15,12 +15,16 @@ with version selection, rollback and safe mode.
 - `docs/adr/`: decisions (copy `0000-template.md`). Start with `0001-os-image-and-app-runtime.md`.
 - `docs/implementation-plan.md`: milestones OS0–OS8.
 - `docs/research/`: research summary and raw JSON (claims with sources).
-- Image config, overlays, units, scripts and the contract stub: created in milestones OS0–OS2.
+- `config/`: rpi-image-gen image configs (`brewberrypi-pi34.yaml`).
+- `layer/`: our own rpi-image-gen layers (`brewberry-base.yaml`).
+- `scripts/`: `build.sh`, `lint.sh`; `common.sh` pins the rpi-image-gen version.
+- Overlays, units and the contract stub: created in milestones OS1–OS2.
 
 ## Commands
 
-- Build image: _tbd in OS0_
-- Test: _tbd in OS0_
+- Build image: `BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh` (arm64 Debian/Ubuntu host, or QEMU binfmt; first run `sudo .cache/rpi-image-gen/install_deps.sh`). Output: `deploy/*.img.xz`.
+- Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint).
+- CI: `.github/workflows/build.yml` builds the image on `ubuntu-24.04-arm` and uploads it as an artifact.
 
 ## Rules
 

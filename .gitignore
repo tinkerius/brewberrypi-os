@@ -1,6 +1,7 @@
 # Build output
 /work/
 /deploy/
+/.cache/
 *.img
 *.img.xz
 *.zip

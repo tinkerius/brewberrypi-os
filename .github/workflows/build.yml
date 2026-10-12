@@ -51,11 +51,16 @@ jobs:
         run: tests/integration/signing.sh
 
   image:
-    name: image (Pi 3/4)
+    name: image (${{ matrix.board }})
     needs: lint
     # rpi-image-gen builds natively on arm64 only (ADR-0001).
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
+    strategy:
+      fail-fast: false
+      matrix:
+        # pi34: Raspberry Pi 3 and 4 (v8 kernel); pi5: Raspberry Pi 5 (2712 kernel).
+        board: [pi34, pi5]
     steps:
       - uses: actions/checkout@v4
         with:
@@ -78,11 +83,11 @@ jobs:
           if [ -z "$BREWBERRY_SSH_PUBKEY" ]; then
             echo "::warning::Repository variable BREWBERRY_SSH_PUBKEY is not set; this image has no SSH login."
           fi
-          scripts/build.sh
+          scripts/build.sh brewberrypi-${{ matrix.board }}.yaml
 
       - uses: actions/upload-artifact@v4
         with:
-          name: brewberrypi-os-pi34
+          name: brewberrypi-os-${{ matrix.board }}
           path: deploy/
           # The image is already xz-compressed.
           compression-level: 0

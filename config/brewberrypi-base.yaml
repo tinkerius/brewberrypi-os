@@ -1,0 +1,34 @@
+# BrewberryPi OS: everything except the board. Not built on its own; the
+# board configs (brewberrypi-pi34.yaml, brewberrypi-pi5.yaml) include it.
+#
+# Built with rpi-image-gen (see scripts/common.sh for the pinned version).
+# Layout (image-brewberry): p1 boot, p2 root (fixed), p3 DATA (grown on
+# first boot). The system seals itself after first boot (brewberry-readonly).
+# The app runs under Podman + Quadlet; the preloaded image is the contract stub
+# until the app is released (brewberry-podman). Host-side safety: strict_gpiod,
+# boot-time off levels, outputs-off reset, watchdogs (brewberry-safety).
+# Signed updates, rollback and safe mode (brewberry-update).
+
+device:
+  hostname: brewberrypi
+  user1: brewberry
+  # No password: the account is locked and reachable over SSH keys only.
+  user1sudo: nopasswd
+
+image:
+  layer: image-brewberry
+  boot_part_size: 512M
+  root_part_size: 3584M
+  data_part_size: 256M
+
+ssh:
+  # pubkey_user1 is passed by scripts/build.sh from BREWBERRY_SSH_PUBKEY.
+  pubkey_only: y
+
+layer:
+  base: trixie-minbase
+  app: brewberry-base
+  readonly: brewberry-readonly
+  safety: brewberry-safety
+  podman: brewberry-podman
+  update: brewberry-update

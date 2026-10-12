@@ -1,0 +1,13 @@
+# BrewberryPi OS image for Raspberry Pi 5.
+#
+# The rpi5 device layer brings the 2712 kernel (16K pages; ext4 is created with
+# 16K blocks to match). Everything else is shared with the Pi 3/4 image.
+
+include:
+  file: brewberrypi-base.yaml
+
+device:
+  layer: rpi5
+
+image:
+  name: brewberrypi-os-pi5

@@ -1,37 +1,13 @@
 # BrewberryPi OS image for Raspberry Pi 3 and 4.
 #
-# Built with rpi-image-gen (see scripts/build.sh for the pinned version).
-# The rpi3 device layer pulls in rpi-generic64: the v8 kernel and boot
-# firmware for all devices, so the same image boots on a Pi 3 and a Pi 4.
-# Layout (image-brewberry): p1 boot, p2 root (fixed), p3 DATA (grown on
-# first boot). The system seals itself after first boot (brewberry-readonly).
-# The app runs under Podman + Quadlet; the preloaded image is the contract stub
-# until the app is released (brewberry-podman). Host-side safety: strict_gpiod,
-# boot-time off levels, outputs-off reset, watchdogs (brewberry-safety).
-# Signed updates, rollback and safe mode (brewberry-update).
+# The rpi3 device layer pulls in rpi-generic64: the v8 kernel (4K pages) and
+# boot firmware for all devices, so the same image boots on a Pi 3 and a Pi 4.
+
+include:
+  file: brewberrypi-base.yaml
 
 device:
   layer: rpi3
-  hostname: brewberrypi
-  user1: brewberry
-  # No password: the account is locked and reachable over SSH keys only.
-  user1sudo: nopasswd
 
 image:
-  layer: image-brewberry
   name: brewberrypi-os-pi34
-  boot_part_size: 512M
-  root_part_size: 3584M
-  data_part_size: 256M
-
-ssh:
-  # pubkey_user1 is passed by scripts/build.sh from BREWBERRY_SSH_PUBKEY.
-  pubkey_only: y
-
-layer:
-  base: trixie-minbase
-  app: brewberry-base
-  readonly: brewberry-readonly
-  safety: brewberry-safety
-  podman: brewberry-podman
-  update: brewberry-update

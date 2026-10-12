@@ -157,3 +157,15 @@ run sealed     # all PASS: overlay and read-only boot are back
 ```
 
 This covers the OS6 "done when". Afterwards, re-run the OS1 checks (`os1-check.sh status`).
+
+## OS7: Raspberry Pi 5
+
+Flash `brewberrypi-os-pi5-*.img.xz` on a Pi 5 and run the OS1–OS4 checks above unchanged. Watch
+these Pi 5 differences:
+
+- the header GPIO chip is `pinctrl-rp1`, and its number varies by kernel (the app and the stub
+  find it by label; `os2-check.sh` lists what the container sees);
+- `strict_gpiod` sets `pinctrl_rp1.persist_gpio_outputs=n`;
+- the firmware's `gpio=` boot pins must work on RP1: in `os3-check.sh status`, all outputs must be
+  off before the app ever drives them, and the power-on window (Q-18) must be measured again;
+- ext4 uses 16K blocks to match the 16K-page kernel.

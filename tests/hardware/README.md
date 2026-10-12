@@ -49,3 +49,28 @@ Until OS3 adds the outputs-off reset, don't connect a relay board to a mains hea
 
 3. From another machine: `curl http://brewberrypi.local:8080/healthz` answers
    `{"status": "ok", "version": "0.1.0", "engine": "NoProcess"}`.
+
+## OS3: safety
+
+Use **LEDs or the relay board without the heater** on the default pins: heater BCM 23 and pump
+BCM 22 active-low (LED from 3V3 through a resistor to the pin: lit = on), buzzer BCM 10
+active-high. Run every mode with:
+
+```sh
+ssh brewberry@brewberrypi.local 'sudo sh -s -- <mode>' < tests/hardware/os3-check.sh
+```
+
+1. `status`: strict_gpiod, SPI off, 1-Wire, both watchdogs, the outputs-off hook and all outputs
+   off. Every line must say `PASS`.
+2. `enable`: lets the stub switch the heater on (`/data/config/stub.json`, `"allowHeat": true`).
+   The stub refuses this by default because it listens on the network without authentication.
+3. `kill9`, `hang` and `rm`: each switches the heater on, then kills the app with `kill -9`, stops
+   its watchdog pings, or removes the container. Each must end with `PASS  ...: heater off again`.
+   Write down the times; `hang` takes up to `WatchdogSec` (20 s).
+4. Power cut while heating: run `heat`, pull the plug, plug it back in. Watch the heater LED from
+   power-on: it must be off once the firmware applies `gpio=` and stay off. Run `status` again.
+5. **Power-on window (app `Q-18`)**: from plugging in until the firmware applies `gpio=`, the pins
+   are pulled low, which is "on" for an active-low relay. Measure how long the heater LED or relay
+   is on after power-on (a phone slow-motion video is enough). Record the result in the app's
+   hardware test protocol. Check whether the relay board actually switches.
+6. `disable` when done.

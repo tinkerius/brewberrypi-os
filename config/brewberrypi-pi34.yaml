@@ -6,7 +6,8 @@
 # Layout (image-brewberry): p1 boot, p2 root (fixed), p3 DATA (grown on
 # first boot). The system seals itself after first boot (brewberry-readonly).
 # The app runs under Podman + Quadlet; the preloaded image is the contract stub
-# until the app is released (brewberry-podman).
+# until the app is released (brewberry-podman). Host-side safety: strict_gpiod,
+# boot-time off levels, outputs-off reset, watchdogs (brewberry-safety).
 
 device:
   layer: rpi3
@@ -30,4 +31,5 @@ layer:
   base: trixie-minbase
   app: brewberry-base
   readonly: brewberry-readonly
+  safety: brewberry-safety
   podman: brewberry-podman

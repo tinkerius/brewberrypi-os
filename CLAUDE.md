@@ -20,15 +20,17 @@ with version selection, rollback and safe mode.
 - `layer/`: our own rpi-image-gen layers; files they install live in `<layer>.rootfs-overlay/`.
   - `brewberry-base`: mDNS, `/etc/brewberry-release`.
   - `brewberry-readonly`: `data.mount`, first-boot grow/layout/seal services, volatile journal.
-  - `brewberry-podman`: Podman config (storage on `/data`), the Quadlet unit `brewberrypi.container` (rendered at build time with the gpio GID), gpiochip udev rule, `brewberry-firstload`.
-- `stub/`: contract stub image (READY, WATCHDOG, `/healthz`, crash/hang/refuse on request), preloaded until the app is released.
-- `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh`, `os2-check.sh`).
+  - `brewberry-safety`: `config.txt` safety block (strict_gpiod, `gpio=` boot pins, w1-gpio, SPI off, watchdog), `brewberrypi-outputs-off`, `RuntimeWatchdogSec`.
+  - `brewberry-podman`: Podman config (storage on `/data`), the Quadlet unit `brewberrypi.container` (rendered at build time with the gpio GID; `WatchdogSec`, outputs-off `ExecStopPost`), gpiochip udev rule, `brewberry-firstload`.
+- `stub/`: contract stub image (READY, WATCHDOG, `/healthz`, crash/hang/refuse on request, heater test behind `allowHeat`), preloaded until the app is released.
+- `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh` … `os3-check.sh`).
+- `tests/unit/`: host-side unit tests (`outputs-off.sh`), run by `scripts/lint.sh`.
 - `scripts/`: `build.sh`, `lint.sh`; `common.sh` pins the rpi-image-gen version.
 
 ## Commands
 
 - Build image: `BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh` (arm64 Debian/Ubuntu host, or QEMU binfmt; first run `sudo .cache/rpi-image-gen/install_deps.sh`). Output: `deploy/*.img.xz`.
-- Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint, stub unit tests).
+- Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint, unit tests in `stub/` and `tests/unit/`).
 - CI: `.github/workflows/build.yml` builds the image on `ubuntu-24.04-arm` and uploads it as an artifact.
 
 ## Rules

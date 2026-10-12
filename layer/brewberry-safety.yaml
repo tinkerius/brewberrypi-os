@@ -1,0 +1,42 @@
+# METABEGIN
+# X-Env-Layer-Name: brewberry-safety
+# X-Env-Layer-Category: app
+# X-Env-Layer-Desc: Host-side safety (ADR-0001, runtime contract §6, OS3):
+#  config.txt with strict_gpiod, boot-time off levels for the default relay and
+#  buzzer pins, w1-gpio and SPI off; the outputs-off reset used by
+#  brewberrypi.service's ExecStopPost; the hardware watchdog driven by systemd.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: brewberry-readonly
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - raspi-utils-core
+    - jq
+  customize-hooks:
+    - |-
+      set -eu
+      cfg="$1/boot/firmware/config.txt"
+      grep -q '^dtparam=strict_gpiod' "$cfg" && exit 0
+      cat >> "$cfg" <<'EOF'
+
+      [all]
+      # --- BrewberryPi (ADR-0001, runtime contract §6) ---
+      # Released GPIO lines return to inputs instead of keeping their last level
+      # (persist_gpio_outputs=n).
+      dtparam=strict_gpiod
+      # Off levels as early as the firmware allows, for the app's default pins:
+      # heater BCM 23 and pump BCM 22 are active-low (driven high, pull-up), the
+      # buzzer BCM 10 is active-high (driven low). If config.json moves these
+      # pins, update these lines in maintenance mode. Before the firmware gets
+      # here the pins are pulled low (app question Q-18). enable_jtag_gpio must
+      # stay unset: it takes over BCM 22-27.
+      gpio=22,23=op,pu,dh
+      gpio=10=op,pd,dl
+      # DS18B20 on BCM 4.
+      dtoverlay=w1-gpio
+      # SPI stays off: BCM 10 is the buzzer.
+      dtparam=spi=off
+      # Hardware watchdog, driven by systemd (RuntimeWatchdogSec).
+      dtparam=watchdog=on
+      EOF

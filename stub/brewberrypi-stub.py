@@ -3,7 +3,14 @@
 
 Stands in for the real app image (tinkerius/brewberrypi) until it is released, so the OS side of
 the contract can be tested: READY=1, WATCHDOG=1 every BREWBERRYPI_WATCHDOG_MS, STOPPING=1, and
-GET /healthz on port 8080. It never touches GPIO.
+GET /healthz on port 8080.
+
+GPIO: only on request (POST /stub/heat?on=1), the stub drives the heater output like the app would
+(libgpiod v2, header chip found by label, pin and polarity from config.json, defaults BCM 23
+active-low) and keeps holding the line, so the host's outputs-off reset can be tested "while
+heating". This is off unless /config/stub.json has {"allowHeat": true}: the stub listens on the
+network without authentication. On SIGTERM it switches the heater off and releases the line first
+(contract §2).
 
 Failure modes, for testing supervision, rollback and safe mode:
 
@@ -18,8 +25,9 @@ Failure modes, for testing supervision, rollback and safe mode:
     POST /stub/crash        exit 1
     POST /stub/hang         stop the watchdog pings (the HTTP server keeps answering)
     POST /stub/exit?code=N  exit with code N
+    POST /stub/heat?on=1|0  heater output on or off (holds the GPIO line); needs allowHeat
 
-Only the Python standard library is used.
+Only the Python standard library is used, plus the gpiod module for /stub/heat.
 """
 
 import argparse
@@ -69,6 +77,74 @@ def read_stub_config(config_path: str) -> dict:
 
 class State:
     watchdog_alive = threading.Event()
+    config_path = "/config/config.json"
+    allow_heat = False
+
+
+HEADER_CHIP_LABELS = ("pinctrl-bcm2835", "pinctrl-bcm2711", "pinctrl-rp1")
+
+
+class Heater:
+    """The heater output, requested on first use and then held, like the app's HAL."""
+
+    request = None
+    pin = 23
+    lock = threading.Lock()
+
+    @classmethod
+    def set(cls, on: bool) -> None:
+        import gpiod  # only needed for this test feature
+        from gpiod.line import Direction, Value
+
+        with cls.lock:
+            if cls.request is None:
+                cls.pin, active_low = cls._pin_from_config()
+                chip = cls._header_chip()
+                settings = gpiod.LineSettings(
+                    direction=Direction.OUTPUT, active_low=active_low, output_value=Value.INACTIVE
+                )
+                cls.request = gpiod.request_lines(
+                    chip, consumer="brewberrypi-stub", config={cls.pin: settings}
+                )
+                log(f"heater: holding BCM {cls.pin} on {chip} (activeLow {active_low})")
+            cls.request.set_value(cls.pin, Value.ACTIVE if on else Value.INACTIVE)
+            log(f"heater {'ON' if on else 'off'}")
+
+    @classmethod
+    def off_and_release(cls) -> None:
+        with cls.lock:
+            if cls.request is None:
+                return
+            from gpiod.line import Value
+
+            cls.request.set_value(cls.pin, Value.INACTIVE)
+            cls.request.release()
+            cls.request = None
+            log("heater off, line released")
+
+    @staticmethod
+    def _pin_from_config() -> tuple[int, bool]:
+        try:
+            with open(State.config_path, encoding="utf-8") as f:
+                heating = json.load(f).get("hardware", {}).get("heating", {})
+        except FileNotFoundError:
+            heating = {}
+        return int(heating.get("pin", 23)), bool(heating.get("activeLow", True))
+
+    @staticmethod
+    def _header_chip() -> str:
+        import glob
+
+        import gpiod
+
+        for path in sorted(glob.glob("/dev/gpiochip*")):
+            try:
+                with gpiod.Chip(path) as chip:
+                    if chip.get_info().label in HEADER_CHIP_LABELS:
+                        return path
+            except OSError:
+                continue
+        raise RuntimeError("no GPIO chip labelled " + "/".join(HEADER_CHIP_LABELS))
 
 
 def exit_now(code: int) -> None:
@@ -100,6 +176,17 @@ class Handler(BaseHTTPRequestHandler):
             State.watchdog_alive.clear()
             log("hanging: watchdog pings stopped")
             self._reply(200, {"stub": "hanging"})
+        elif url.path == "/stub/heat":
+            on = parse_qs(url.query).get("on", ["0"])[0] == "1"
+            if on and not State.allow_heat:
+                self._reply(403, {"error": 'heater test disabled; set "allowHeat": true in stub.json'})
+                return
+            try:
+                Heater.set(on)
+            except Exception as error:  # noqa: BLE001 (report any GPIO failure to the tester)
+                self._reply(500, {"error": f"heater: {error}"})
+                return
+            self._reply(200, {"heater": "on" if on else "off"})
         elif url.path == "/stub/exit":
             code = int(parse_qs(url.query).get("code", ["1"])[0])
             self._reply(200, {"stub": f"exiting {code}"})
@@ -123,13 +210,17 @@ def main() -> int:
     parser.add_argument("--config", default="/config/config.json")
     parser.add_argument("--dummymode", action="store_true")
     args = parser.parse_args()
+    State.config_path = args.config
 
-    start = read_stub_config(args.config).get("start", os.environ.get("BREWBERRYPI_STUB_START", "ok"))
+    stub_config = read_stub_config(args.config)
+    start = stub_config.get("start", os.environ.get("BREWBERRYPI_STUB_START", "ok"))
+    State.allow_heat = stub_config.get("allowHeat") is True
     log(f"version {VERSION}, start mode {start}, uid {os.getuid()}")
 
     def on_term(signum: int, _frame: object) -> None:
         notify("STOPPING=1")
         log(f"signal {signum}: stopping")
+        Heater.off_and_release()
         sys.exit(0)
 
     signal.signal(signal.SIGTERM, on_term)

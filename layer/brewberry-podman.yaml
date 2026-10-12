@@ -7,7 +7,7 @@
 #  and brewberry-firstload, which imports the app image preloaded in the OS
 #  image and tags it active.
 # X-Env-Layer-Version: 1.0.0
-# X-Env-Layer-Requires: brewberry-readonly
+# X-Env-Layer-Requires: brewberry-readonly,brewberry-safety
 #
 # X-Env-VarPrefix: app
 #

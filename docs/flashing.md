@@ -13,7 +13,7 @@ this image.
 | `brewberrypi-os-pi34-<version>.img.xz` | Raspberry Pi 3, 4, 400, CM4 |
 | `brewberrypi-os-pi5-<version>.img.xz` | Raspberry Pi 5, 500, CM5 |
 
-A release (draft until the hardware checks pass) holds both images, the manifest and
+A release (draft until the hardware checks pass; pre-releases such as `v0.1.0-alpha.1` are published untested) holds both images, the manifest and
 `SHA256SUMS`. It is built by the `release` job in `.github/workflows/build.yml` when a version
 tag (`v1.2.3`) is pushed.
 

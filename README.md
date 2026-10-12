@@ -65,7 +65,8 @@ Every push and pull request runs `.github/workflows/build.yml`. It builds both i
 `ubuntu-24.04-arm` runners and uploads them as the `brewberrypi-os-pi34` and `brewberrypi-os-pi5`
 artifacts (kept 30 days). A version tag (`v1.2.3`) also creates a **draft release** with both
 images, the Imager manifest and `SHA256SUMS`; publish it once the hardware checks pass
-([docs/releasing.md](docs/releasing.md)).
+([docs/releasing.md](docs/releasing.md)). A pre-release tag (`v0.1.0-alpha.1`) is published at once
+as a GitHub pre-release, marked as untested on hardware.
 
 The image preloads the contract stub. To preload a released app version instead, set the
 repository variable `BREWBERRY_APP_VERSION` (`x.y.z`) and give CI read access to the app's package:

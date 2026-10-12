@@ -239,7 +239,7 @@ on demand:
 | `lint` | ubuntu-24.04 | `scripts/lint.sh` |
 | `signature policy` | ubuntu-24.04 | `tests/integration/signing.sh` with cosign v2.5.3 (checksum-pinned) |
 | `image (pi34)`, `image (pi5)` | ubuntu-24.04-arm | `scripts/build.sh`; uploads `brewberrypi-os-<board>` artifacts, kept 30 days |
-| `release` | ubuntu-24.04 | Tags only: draft release (see [releasing.md](releasing.md)) |
+| `release` | ubuntu-24.04 | Tags only: draft release, or a published pre-release for `v*-alpha.N` tags (see [releasing.md](releasing.md)) |
 
 Repository settings the build reads (Settings → Secrets and variables → Actions):
 

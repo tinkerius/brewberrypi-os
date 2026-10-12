@@ -140,17 +140,32 @@ jobs:
           sha256sum brewberrypi-os-*.img.xz brewberrypi-os.rpi-imager-manifest > SHA256SUMS
           cat SHA256SUMS
 
-      # A draft: it is published by hand once the hardware checks pass
-      # (tests/hardware/README.md).
-      - name: Draft release
+      # A version tag (v1.2.3) makes a draft: it is published by hand once the
+      # hardware checks pass (docs/releasing.md). A pre-release tag
+      # (v1.2.3-alpha.1, -beta.N, -rc.N) is published at once as a GitHub
+      # pre-release, never "Latest", with a warning that it is untested.
+      - name: Release
         env:
           GH_TOKEN: ${{ github.token }}
           TAG: ${{ github.ref_name }}
           NOTES: >-
             Flash with Raspberry Pi Imager 2.x through brewberrypi-os.rpi-imager-manifest
             to get its customisation (hostname, user, SSH key, Wi-Fi): see docs/flashing.md.
+            While the repository is private, download the images and write a local manifest
+            (scripts/imager-manifest.py --local).
+          PRERELEASE_NOTES: |
+            > [!WARNING]
+            > **Pre-release: not yet tested on hardware.** It builds and passes CI, but
+            > the hardware checks (tests/hardware/README.md) have not been run on these images.
+            > Never connect a mains heater: use LEDs or the relay board on its own. The image
+            > preloads the app named in `/etc/brewberry-release` (`BREWBERRY_OS_APP_PRELOAD`;
+            > `stub` is the contract stub, not the brewing app). Reflashing erases `/data`.
         run: |
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+          case $TAG in
+             v*-*) mode=(--prerelease --latest=false); notes="$PRERELEASE_NOTES"$'\n'"$NOTES" ;;
+             *)    mode=(--draft); notes=$NOTES ;;
+          esac
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag "${mode[@]}" \
             --title "BrewberryPi OS $TAG" --generate-notes \
-            --notes "$NOTES" \
+            --notes "$notes" \
             release/brewberrypi-os-*.img.xz release/brewberrypi-os.rpi-imager-manifest release/SHA256SUMS

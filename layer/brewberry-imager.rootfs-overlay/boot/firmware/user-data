@@ -1,0 +1,3 @@
+#cloud-config
+# BrewberryPi OS default: no customisation. Raspberry Pi Imager replaces this
+# file with the settings you choose (hostname, user, SSH key, Wi-Fi).

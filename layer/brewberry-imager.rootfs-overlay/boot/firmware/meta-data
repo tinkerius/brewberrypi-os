@@ -1,0 +1,4 @@
+# BrewberryPi OS: cloud-init's NoCloud source needs meta-data next to
+# user-data, and some Raspberry Pi Imager versions write only user-data and
+# network-config. Newer Imager versions replace this file.
+instance-id: brewberrypi-os

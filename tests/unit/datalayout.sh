@@ -42,6 +42,11 @@ check "seeds config.json with {} (built-in defaults)" \
 check "config.json is readable by the app (0644)" test "$(mode "$BREWBERRY_DATA_ROOT/config/config.json")" = 644
 check "no temporary file left" test ! -e "$BREWBERRY_DATA_ROOT/config/config.json.tmp"
 
+CONF=$ROOT_DIR/layer/brewberry-podman.rootfs-overlay/etc/containers/containers.conf.d/50-brewberry.conf
+tmpdir=$(sed -n 's/^image_copy_tmp_dir *= *"\(.*\)"/\1/p' "$CONF")
+check "Podman's image_copy_tmp_dir ($tmpdir) is a directory the layout creates" \
+   test -d "$BREWBERRY_DATA_ROOT${tmpdir#/data}" -a "${tmpdir#/data/}" != "$tmpdir"
+
 "$LAYOUT" > "$T/second.log"
 check "second run: nothing to do, nothing written" test ! -s "$T/second.log"
 

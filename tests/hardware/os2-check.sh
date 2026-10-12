@@ -20,6 +20,7 @@ check() { # <description> <command...>
 
 in_app() { podman exec brewberrypi "$@"; }
 
+config_seeded()       { test -f /data/config/config.json && jq -e 'type == "object"' /data/config/config.json; }
 graphroot_on_data()   { test "$(podman info --format '{{.Store.GraphRoot}}')" = /data/containers/storage; }
 active_tag_exists()   { podman image exists localhost/brewberrypi:active; }
 service_active()      { systemctl is-active --quiet brewberrypi.service; }
@@ -41,6 +42,7 @@ restart_waits_ready() {
    [ "$ms" -ge 2000 ] && systemctl is-active --quiet brewberrypi.service
 }
 
+check "/data/config/config.json exists (seeded {})"   config_seeded
 check "Podman graphroot is /data/containers/storage"  graphroot_on_data
 check "localhost/brewberrypi:active exists"            active_tag_exists
 check "brewberrypi.service is active"                  service_active

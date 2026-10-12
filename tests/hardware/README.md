@@ -8,7 +8,8 @@ These checks run on a real Raspberry Pi. They are the "done when" checks of the 
 1. Flash the CI image (Imager → *Use custom*) and boot it on a Pi 3 or 4 with Ethernet.
 2. **First boot** takes a little longer, then the Pi **reboots once by itself**. During that boot:
    - `brewberry-growdata` grows the DATA partition to the end of the card;
-   - `brewberry-datalayout` creates the `/data` directories;
+   - `brewberry-datalayout` creates the `/data` directories and seeds `/data/config/config.json`
+     with `{}` (the app's built-in defaults);
    - SSH host keys and the machine-id are created;
    - `brewberry-seal` sets `/boot/firmware` read-only in `/etc/fstab`, adds
      `overlayroot=tmpfs:recurse=0` to `cmdline.txt`, and reboots.
@@ -64,9 +65,11 @@ ssh brewberry@brewberrypi.local 'sudo sh -s -- <mode>' < tests/hardware/os3-chec
    off. Every line must say `PASS`.
 2. `enable`: lets the stub switch the heater on (`/data/config/stub.json`, `"allowHeat": true`).
    The stub refuses this by default because it listens on the network without authentication.
-3. `kill9`, `hang` and `rm`: each switches the heater on, then kills the app with `kill -9`, stops
-   its watchdog pings, or removes the container. Each must end with `PASS  ...: heater off again`.
-   Write down the times; `hang` takes up to `WatchdogSec` (20 s).
+3. `kill9`, `hang`, `pause` and `rm`: each switches the heater on, then kills the app with
+   `kill -9`, stops its watchdog pings, freezes the whole container (`podman pause`, as in the
+   app's hardware test H-10) or removes the container. Each must end with
+   `PASS  ...: heater off again`. Write down the times; `hang` and `pause` take up to
+   `WatchdogSec` (20 s).
 4. Power cut while heating: run `heat`, pull the plug, plug it back in. Watch the heater LED from
    power-on: it must be off once the firmware applies `gpio=` and stay off. Run `status` again.
 5. **Power-on window (app `Q-18`)**: from plugging in until the firmware applies `gpio=`, the pins
@@ -157,6 +160,31 @@ run sealed     # all PASS: overlay and read-only boot are back
 ```
 
 This covers the OS6 "done when". Afterwards, re-run the OS1 checks (`os1-check.sh status`).
+
+## OS8: end-to-end with the real app
+
+Needs an app release (≥ 1.0 for the milestone) from `tinkerius/brewberrypi`, and the app's
+[hardware test protocol](https://github.com/tinkerius/brewberrypi/blob/main/docs/deployment/hardware-test-protocol.md).
+
+1. **Through the update flow** (the OS8 "done when"): flash the current image (stub or an older app
+   preloaded), then on the device:
+
+   ```sh
+   sudo brewberry-update login             # classic PAT with read:packages
+   sudo brewberry-update install <x.y.z>   # must end with the new version active
+   sudo brewberry-update status
+   ```
+
+2. **As the preload** (for the release image): set the repository variable
+   `BREWBERRY_APP_VERSION=<x.y.z>` and give CI read access to the app's package (the secret
+   `BREWBERRY_GHCR_TOKEN`, or this repository under the package's *Manage Actions access*). The
+   image build fetches the arm64 image with `scripts/fetch-app.sh` and refuses it unless it is
+   signed with the pinned key and its labels say contract 1 and that version.
+   `/etc/brewberry-release` shows `BREWBERRY_OS_APP_PRELOAD`.
+3. Re-run the OS3 scenarios with the real app instead of the stub. `os3-check.sh` drives the stub's
+   heater endpoint, so here use the app's protocol (H-08 stop, H-09 `kill`, H-10 `pause`); the
+   relays must be off at the end of each.
+4. Run the app's protocol to the end (water-only brew, M12) and sign it off.
 
 ## OS7: Raspberry Pi 5 and Imager customisation
 

@@ -6,8 +6,11 @@
 # Environment:
 #   BREWBERRY_SSH_PUBKEY  SSH public key for the 'brewberry' user. Without it
 #                         the image has no way to log in.
-#   BREWBERRY_PRELOAD     app image to preload, in 'dir:' format. Default:
-#                         build the contract stub with scripts/build-stub.sh.
+#   BREWBERRY_APP_VERSION released app version (x.y.z) to preload, fetched and
+#                         verified by scripts/fetch-app.sh (log in to ghcr.io
+#                         first). Default: the contract stub (build-stub.sh).
+#   BREWBERRY_PRELOAD     app image to preload, in 'dir:' format, instead of
+#                         either (not verified; for development).
 #   RPI_IMAGE_GEN_DIR     rpi-image-gen checkout (default: .cache/rpi-image-gen)
 #
 # Needs an arm64 Debian/Ubuntu host (or qemu-user-static with binfmt) with
@@ -32,13 +35,20 @@ fetch_rpi_image_gen
 mkdir -p "$WORK_DIR"
 
 PRELOAD=${BREWBERRY_PRELOAD:-}
-if [ -z "$PRELOAD" ]; then
+PRELOAD_NAME=custom
+if [ -z "$PRELOAD" ] && [ -n "${BREWBERRY_APP_VERSION:-}" ]; then
+   PRELOAD=$WORK_DIR/preload/brewberrypi-$BREWBERRY_APP_VERSION
+   PRELOAD_NAME=$BREWBERRY_APP_VERSION
+   "$REPO_ROOT/scripts/fetch-app.sh" "$BREWBERRY_APP_VERSION" "$PRELOAD"
+elif [ -z "$PRELOAD" ]; then
    PRELOAD=$WORK_DIR/preload/brewberrypi-stub
+   PRELOAD_NAME=stub
    "$REPO_ROOT/scripts/build-stub.sh" "$PRELOAD"
 fi
 PRELOAD=$(realpath "$PRELOAD")
 
-overrides=("IGconf_brewberry_version=$VERSION" "IGconf_app_preload=$PRELOAD")
+overrides=("IGconf_brewberry_version=$VERSION" "IGconf_brewberry_preload=$PRELOAD_NAME"
+   "IGconf_app_preload=$PRELOAD")
 if [ -n "${BREWBERRY_SSH_PUBKEY:-}" ]; then
    overrides+=("IGconf_ssh_pubkey_user1=$BREWBERRY_SSH_PUBKEY")
 else

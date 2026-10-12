@@ -2,7 +2,14 @@
 # Grow the DATA partition (the last one on the boot device) to the end of the
 # card, then its ext4 filesystem. Runs before /data is mounted. Idempotent:
 # does nothing once both already fill the card.
+#
+# Growing the partition makes udev briefly drop /dev/disk/by-slot/data, which
+# cancels this boot's data.mount (and everything that needs /data). So after
+# growing the partition it reboots once; the filesystem is grown on the next
+# boot. A marker on the root (still writable on the first boot) stops a loop.
 set -eu
+
+REBOOTED=/var/lib/brewberry/growdata-rebooted
 
 DEV=$(readlink -f /dev/disk/by-slot/data)
 NAME=${DEV##*/}
@@ -14,7 +21,15 @@ rc=0
 out=$(growpart --dry-run "$DISK" "$PART" 2>&1) || rc=$?
 case $rc in
    0) echo "growing $DEV (partition $PART of $DISK)"
-      growpart "$DISK" "$PART" ;;
+      growpart "$DISK" "$PART"
+      if [ ! -e "$REBOOTED" ]; then
+         mkdir -p "$(dirname "$REBOOTED")"
+         date -u +%Y-%m-%dT%H:%M:%SZ > "$REBOOTED"
+         sync
+         echo "partition grown; rebooting once so /data mounts cleanly"
+         systemctl --no-block reboot
+         exit 0
+      fi ;;
    1) ;;
    *) printf '%s\n' "$out" >&2
       echo "growpart --dry-run $DISK $PART failed ($rc)" >&2

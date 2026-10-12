@@ -26,6 +26,8 @@ mmdebstrap:
          echo "brewberry-imager: raspi-config is in the image; it must not be (see brewberry-suite)" >&2
          exit 1
       fi
+      # netplan refuses to trust configuration others can read.
+      chmod 600 "$1"/usr/lib/netplan/*.yaml
       grep -rqs 'seedfrom: *file:///boot/firmware' "$1/etc/cloud/cloud.cfg.d" || {
          echo "brewberry-imager: no NoCloud seed in /boot/firmware (rpi-cloud-init-mods)" >&2
          exit 1

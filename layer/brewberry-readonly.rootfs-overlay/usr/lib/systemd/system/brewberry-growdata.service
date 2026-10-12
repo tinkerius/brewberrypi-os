@@ -1,9 +1,15 @@
 # Runs on every boot but only acts while the DATA partition or its filesystem
 # can still grow, which in practice is the first boot.
+#
+# Requires=, not BindsTo=: growing the partition makes udev briefly drop the
+# by-slot link, and BindsTo= would stop this unit in the middle (found on a
+# Pi 3 with v0.1.0-alpha.3). The same blip cancels data.mount's start job, so
+# brewberry-growdata reboots right after growing the partition (first boot
+# only) and grows the filesystem on the next boot, when nothing churns.
 [Unit]
 Description=Grow the BrewberryPi data partition to the end of the card
 DefaultDependencies=no
-BindsTo=dev-disk-by\x2dslot-data.device
+Requires=dev-disk-by\x2dslot-data.device
 After=dev-disk-by\x2dslot-data.device local-fs-pre.target
 Before=systemd-fsck@dev-disk-by\x2dslot-data.service data.mount shutdown.target
 Conflicts=shutdown.target

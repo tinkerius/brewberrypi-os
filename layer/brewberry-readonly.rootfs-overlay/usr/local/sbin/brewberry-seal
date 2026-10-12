@@ -22,7 +22,12 @@ report() {
    echo "== BrewberryPi OS first-boot report, $(date -u +%Y-%m-%dT%H:%M:%SZ)"
    cat /etc/brewberry-release
    echo; echo "== failed units"; systemctl --failed --no-legend --no-pager
+   echo; echo "== kernel command line"; cat /proc/cmdline
+   # Names and sizes only: Imager's user-data and network-config hold secrets.
+   echo; echo "== boot partition"; ls -la /boot/firmware
    echo; echo "== cloud-init"; cloud-init status --long
+   echo; echo "== cloud-init warnings and errors (whole log)"
+   grep -n -A12 -E 'WARNING|ERROR|Traceback' /var/log/cloud-init.log | head -n 300
    echo; echo "== network"; nmcli -t device; ip -br address
    for u in cloud-init-main cloud-init-local cloud-init-network cloud-config cloud-final \
             brewberry-growdata brewberry-datalayout brewberry-firstload NetworkManager; do

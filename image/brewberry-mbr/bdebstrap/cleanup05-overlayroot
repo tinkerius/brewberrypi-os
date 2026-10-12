@@ -1,6 +1,7 @@
 #!/bin/sh
-# Runs after rpi-image-gen's customize60-initramfs-tools has built the
-# initramfs (layer hooks run before it, so they can't check it). The
+# A cleanup-phase hook: rpi-image-gen's runner runs each phase's hooks
+# directory by directory (image before built-in), so only the cleanup phase
+# comes after its customize60-initramfs-tools, which builds the initramfs. The
 # initramfs the firmware loads must carry overlayroot and the grep its
 # script needs (busybox): without them the overlay fails at boot and the
 # root stays the plain partition (found on a Pi 3 with v0.1.0-alpha.1).

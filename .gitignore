@@ -11,3 +11,7 @@
 cosign.key
 auth.json
 .env
+
+# Python
+__pycache__/
+*.pyc

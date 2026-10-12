@@ -23,7 +23,7 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            shellcheck yamllint python3-yaml python3-debian python3-jsonschema
+            shellcheck yamllint jq python3-yaml python3-debian python3-jsonschema
 
       - name: Lint
         run: scripts/lint.sh

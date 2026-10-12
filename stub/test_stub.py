@@ -9,6 +9,7 @@ import sys
 import tempfile
 import time
 import unittest
+import urllib.error
 import urllib.request
 
 STUB = os.path.join(os.path.dirname(os.path.abspath(__file__)), "brewberrypi-stub.py")
@@ -97,6 +98,25 @@ class StubTest(unittest.TestCase):
         except OSError:
             pass  # the process may exit before the reply is complete
         self.assertEqual(proc.wait(5), 4)
+
+    def heat_status(self) -> int:
+        req = urllib.request.Request(f"http://127.0.0.1:{self.port}/stub/heat?on=1", method="POST")
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                return resp.status
+        except urllib.error.HTTPError as error:
+            return error.code
+
+    def test_heat_is_disabled_by_default(self) -> None:
+        self.start()
+        self.assertEqual(self.recv(), "READY=1")
+        self.assertEqual(self.heat_status(), 403)
+
+    def test_heat_without_gpio_fails_cleanly(self) -> None:
+        self.start({"allowHeat": True})
+        self.assertEqual(self.recv(), "READY=1")
+        self.assertEqual(self.heat_status(), 500)  # no gpiod / GPIO chip here
+        self.assertEqual(self.http("GET", "/healthz")["status"], "ok")
 
     def test_start_modes(self) -> None:
         for mode, code in (("crash", 1), ("config", 2), ("hwfail", 4)):

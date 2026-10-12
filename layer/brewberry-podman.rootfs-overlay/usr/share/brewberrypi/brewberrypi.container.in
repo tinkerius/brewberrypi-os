@@ -2,8 +2,9 @@
 # by layer/brewberry-podman.yaml, which fills in the host gpio group's GID and
 # lists /dev/gpiochip0..31, each optional because chip numbers vary by kernel.
 #
-# Added in later milestones: WatchdogSec and the outputs-off ExecStopPost (OS3),
-# start limits, RestartMode=direct, safe mode and /update (OS4).
+# Safety (OS3, runtime contract §6): the outputs-off reset runs after every
+# stop, and the app must ping the watchdog. Never remove either.
+# Added in OS4: start limits, RestartMode=direct, safe mode and /update.
 
 [Unit]
 Description=BrewberryPi
@@ -25,11 +26,18 @@ NoNewPrivileges=true
 DropCapability=ALL
 Network=host
 Volume=/data/config:/config:ro
+# The container does not get WATCHDOG_USEC; the app pings at this interval.
+Environment=BREWBERRYPI_WATCHDOG_MS=5000
 @GPIO_DEVICES@
 
 [Service]
 Restart=on-failure
 TimeoutStartSec=60
+WatchdogSec=20
+# Runs on every exit path (clean stop, crash, kill -9, watchdog, failed start),
+# before Quadlet's own cleanup: removes the container, then drives every output
+# from /data/config/config.json to its off level.
+ExecStopPost=+/usr/local/sbin/brewberrypi-outputs-off %t/%N.cid
 
 [Install]
 WantedBy=multi-user.target

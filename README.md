@@ -36,9 +36,10 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 | `layer/` | Our own rpi-image-gen layers; `*.rootfs-overlay/` holds the files they install |
 | `stub/` | Contract stub image, preloaded until the app is released; `test_stub.py` |
 | `tests/hardware/` | Checks that run on a real Pi (milestone "done when" checks) |
+| `tests/unit/` | Host-side unit tests, e.g. the outputs-off reset with a fake `pinctrl` |
 | `scripts/build.sh` | Builds `deploy/<image>-<version>.img.xz` plus a `.sha256` |
 | `scripts/build-stub.sh` | Builds the contract stub for arm64 (`podman save` tarball); `build.sh` calls it unless `BREWBERRY_PRELOAD` names another image |
-| `scripts/lint.sh` | shellcheck, yamllint, layer metadata lint and the stub's unit tests |
+| `scripts/lint.sh` | shellcheck, yamllint, layer metadata lint and the unit tests |
 
 ### Build in CI
 

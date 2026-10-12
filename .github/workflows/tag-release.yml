@@ -1,0 +1,54 @@
+name: tag release
+
+# Tags main and starts the build on that tag, whose 'release' job then creates
+# the release (docs/releasing.md): a draft for v1.2.3, a published pre-release
+# for v1.2.3-alpha.N, -beta.N or -rc.N. The same as pushing the tag by hand,
+# for when that is not at hand (Actions tab -> tag release -> Run workflow).
+# A tag pushed with GITHUB_TOKEN starts no workflow by itself, so the build is
+# dispatched explicitly.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Tag to create on main: v1.2.3 (draft release) or v1.2.3-alpha.1 (pre-release)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  tag:
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          fetch-depth: 0
+
+      - name: Tag main and start the build
+        env:
+          VERSION: ${{ inputs.version }}
+          GH_TOKEN: ${{ github.token }}
+          ACTOR: ${{ github.actor }}
+        run: |
+          if ! [[ $VERSION =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]]; then
+             echo "::error::'$VERSION' is not v1.2.3 or v1.2.3-alpha.N/-beta.N/-rc.N"
+             exit 1
+          fi
+          if git rev-parse -q --verify "refs/tags/$VERSION" > /dev/null; then
+             echo "::error::tag $VERSION exists already; tags are never moved"
+             exit 1
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          case $VERSION in
+             *-*) note=" (pre-release, untested on hardware)" ;;
+             *) note="" ;;
+          esac
+          git tag -a "$VERSION" -m "BrewberryPi OS $VERSION$note (requested by $ACTOR)"
+          git push origin "refs/tags/$VERSION"
+          gh workflow run build.yml --repo "$GITHUB_REPOSITORY" --ref "$VERSION"
+          echo "tagged $(git rev-parse --short HEAD) as $VERSION; build started"

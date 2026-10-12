@@ -13,9 +13,26 @@
 mmdebstrap:
   packages:
     - overlayroot
+    # overlayroot's initramfs script needs grep and other shell tools; the
+    # initramfs gets them only from busybox (BUSYBOX=auto). Without it the
+    # overlay silently fails and the root stays the plain partition.
+    - busybox
     - cloud-guest-utils
     - fdisk
     - e2fsprogs
   customize-hooks:
     - mkdir -p "$1/data"
     - $BDEBSTRAP_HOOKS/enable-units "$1" data.mount brewberry-datalayout.service brewberry-seal.service
+    - |-
+      set -eu
+      # Every initramfs built so far must carry overlayroot and grep
+      # (brewberry-seal checks the same before it seals).
+      for f in "$1"/boot/initrd.img-* "$1"/boot/firmware/initramfs*; do
+         [ -f "$f" ] || continue
+         list=$(chroot "$1" lsinitramfs "${f#"$1"}")
+         printf '%s\n' "$list" | grep -q 'scripts/init-bottom/overlayroot' ||
+            { echo "brewberry-readonly: ${f#"$1"} has no overlayroot script" >&2; exit 1; }
+         printf '%s\n' "$list" | grep -Eq '(^|/)bin/grep$' ||
+            { echo "brewberry-readonly: ${f#"$1"} has no grep (busybox); overlayroot would fail" >&2; exit 1; }
+         echo "brewberry-readonly: ${f#"$1"} has overlayroot and grep"
+      done

@@ -39,7 +39,7 @@ with version selection, rollback and safe mode.
 
 - Build image: `BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh [brewberrypi-pi5.yaml]` (arm64 Debian/Ubuntu host, or QEMU binfmt; first run `sudo .cache/rpi-image-gen/install_deps.sh`). Output: `deploy/*.img.xz`.
 - Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint, unit tests in `stub/` and `tests/unit/`).
-- CI: `.github/workflows/build.yml`: lint, the signature policy test, and the image builds for `pi34` and `pi5` on `ubuntu-24.04-arm` (uploaded as artifacts). A `v*` tag also creates a draft release (images, Imager manifest, `SHA256SUMS`).
+- CI: `.github/workflows/build.yml`: lint, the signature policy test, and the image builds for `pi34` and `pi5` on `ubuntu-24.04-arm` (uploaded as artifacts). A `v*` tag also creates a draft release (images, Imager manifest, `SHA256SUMS`); a pre-release tag (`v0.1.0-alpha.1`) is published at once as a GitHub pre-release with an untested-on-hardware warning.
 - Imager manifest for local images: `scripts/imager-manifest.py --local deploy/*.img.xz > brewberrypi-os.rpi-imager-manifest`.
 - On the device (root): `brewberry-update login|list|status|install <x.y.z>|rollback`, `brewberry-usb list|install <x.y.z>|import-config`, `brewberry-maint status|on|off`.
 

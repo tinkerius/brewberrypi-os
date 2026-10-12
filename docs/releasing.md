@@ -2,7 +2,8 @@
 
 A release is a GitHub release with both images, the Raspberry Pi Imager manifest and `SHA256SUMS`.
 Pushing a version tag creates it as a **draft**. It is published by hand once the hardware checks
-pass on the draft's own images.
+pass on the draft's own images. A **pre-release** tag is published at once instead, marked as
+untested (see [Pre-releases](#pre-releases)).
 
 ## Versions
 
@@ -16,6 +17,20 @@ pass on the draft's own images.
 - Bump MAJOR for changes that break devices in the field: the runtime contract version, the
   partition layout, or the signing keys. Bump MINOR for features and PATCH for fixes and package
   updates.
+
+## Pre-releases
+
+For images to try out before the hardware checks have passed, tag a pre-release:
+`vMAJOR.MINOR.PATCH-alpha.N` (or `-beta.N`, `-rc.N`), for example `v0.1.0-alpha.1`. The `release`
+job publishes it immediately as a GitHub **pre-release** (never marked "Latest"), and its notes
+start with a warning: not tested on hardware, never connect a mains heater, which app it preloads,
+and that reflashing erases `/data`. Everything else (artifacts, manifest, `SHA256SUMS`) is the same
+as for a release. Follow up with a normal version tag once the checks pass.
+
+```sh
+git tag -a v0.1.0-alpha.1 -m "BrewberryPi OS v0.1.0-alpha.1 (pre-release, untested on hardware)"
+git push origin v0.1.0-alpha.1
+```
 
 ## Before tagging
 
@@ -46,7 +61,8 @@ they all pass, the `release` job:
 2. writes `brewberrypi-os.rpi-imager-manifest` with download URLs for this release
    (`scripts/imager-manifest.py --url-base …`);
 3. writes `SHA256SUMS` for the images and the manifest;
-4. creates the draft release "BrewberryPi OS v0.1.0" with generated notes and those files.
+4. creates the draft release "BrewberryPi OS v0.1.0" with generated notes and those files (for a
+   pre-release tag: the published pre-release, see above).
 
 If a job fails, no release is created. Fix the problem on `main` and tag the next patch version.
 Don't move a pushed tag.

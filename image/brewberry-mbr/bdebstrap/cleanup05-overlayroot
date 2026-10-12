@@ -1,0 +1,23 @@
+#!/bin/sh
+# A cleanup-phase hook: rpi-image-gen's runner runs each phase's hooks
+# directory by directory (image before built-in), so only the cleanup phase
+# comes after its customize60-initramfs-tools, which builds the initramfs. The
+# initramfs the firmware loads must carry overlayroot and the grep its
+# script needs (busybox): without them the overlay fails at boot and the
+# root stays the plain partition (found on a Pi 3 with v0.1.0-alpha.1).
+
+set -eu
+
+found=0
+for f in "$1"/boot/firmware/initramfs*; do
+   [ -f "$f" ] || continue
+   found=1
+   name=${f#"$1"}
+   list=$(chroot "$1" lsinitramfs "$name")
+   printf '%s\n' "$list" | grep -q 'scripts/init-bottom/overlayroot' ||
+      { echo "overlayroot check: $name has no overlayroot script" >&2; exit 1; }
+   printf '%s\n' "$list" | grep -Eq '(^|/)bin/grep$' ||
+      { echo "overlayroot check: $name has no grep (busybox); overlayroot would fail" >&2; exit 1; }
+   echo "overlayroot check: $name has overlayroot and grep"
+done
+[ "$found" -eq 1 ] || { echo "overlayroot check: no initramfs in /boot/firmware" >&2; exit 1; }

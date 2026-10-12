@@ -13,6 +13,10 @@
 mmdebstrap:
   packages:
     - overlayroot
+    # overlayroot's initramfs script needs grep and other shell tools; the
+    # initramfs gets them only from busybox (BUSYBOX=auto). Without it the
+    # overlay silently fails and the root stays the plain partition.
+    - busybox
     - cloud-guest-utils
     - fdisk
     - e2fsprogs

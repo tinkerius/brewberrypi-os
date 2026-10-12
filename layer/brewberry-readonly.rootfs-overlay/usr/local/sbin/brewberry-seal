@@ -19,11 +19,13 @@ die() { echo "brewberry-seal: $*" >&2; exit 1; }
 initramfs_ok=0
 for f in /boot/firmware/initramfs*; do
    [ -f "$f" ] || continue
-   if lsinitramfs "$f" | grep -q 'scripts/init-bottom/overlayroot'; then
-      initramfs_ok=1
-   else
+   list=$(lsinitramfs "$f")
+   printf '%s\n' "$list" | grep -q 'scripts/init-bottom/overlayroot' ||
       die "$f has no overlayroot script; not sealing"
-   fi
+   # The script needs grep (busybox); without it the overlay fails silently.
+   printf '%s\n' "$list" | grep -Eq '(^|/)bin/grep$' ||
+      die "$f has no grep (busybox), so overlayroot would fail; not sealing"
+   initramfs_ok=1
 done
 [ "$initramfs_ok" -eq 1 ] || die "no initramfs in /boot/firmware; not sealing"
 

@@ -30,7 +30,8 @@ heater_off() { test "$(level "$HEATER")" = hi; }
 heater_on() { test "$(level "$HEATER")" = lo; }
 strict_gpiod() {
    grep -q 'persist_gpio_outputs=n' /proc/cmdline ||
-      grep -qx N /sys/module/pinctrl_bcm2835/parameters/persist_gpio_outputs 2>/dev/null
+      grep -qx N /sys/module/pinctrl_bcm2835/parameters/persist_gpio_outputs 2>/dev/null ||
+      grep -qx N /sys/module/pinctrl_rp1/parameters/persist_gpio_outputs 2>/dev/null  # Pi 5
 }
 
 post() { # <path>: HTTP POST to the app from inside its container

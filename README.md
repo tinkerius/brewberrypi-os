@@ -32,7 +32,9 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 
 | Path | Content |
 |---|---|
-| `config/brewberrypi-pi34.yaml` | Image for Raspberry Pi 3 and 4 |
+| `config/brewberrypi-base.yaml` | Everything except the board, included by the board configs |
+| `config/brewberrypi-pi34.yaml` | Image for Raspberry Pi 3 and 4 (v8 kernel) |
+| `config/brewberrypi-pi5.yaml` | Image for Raspberry Pi 5 (2712 kernel, 16K pages) |
 | `image/brewberry-mbr/` | Partition layout: p1 boot, p2 root (fixed), p3 `DATA` for `/data` |
 | `layer/` | Our own rpi-image-gen layers; `*.rootfs-overlay/` holds the files they install |
 | `stub/` | Contract stub image, preloaded until the app is released; `test_stub.py` |
@@ -46,8 +48,9 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 
 ### Build in CI
 
-Every push and pull request runs `.github/workflows/build.yml`. It builds the image on an
-`ubuntu-24.04-arm` runner and uploads it as the `brewberrypi-os-pi34` artifact (kept 30 days).
+Every push and pull request runs `.github/workflows/build.yml`. It builds both images on
+`ubuntu-24.04-arm` runners and uploads them as the `brewberrypi-os-pi34` and `brewberrypi-os-pi5`
+artifacts (kept 30 days).
 
 The admin user is `brewberry`. It has no password and logs in over SSH with a key only. Set the
 public key as the **repository variable** `BREWBERRY_SSH_PUBKEY` (Settings → Secrets and variables →
@@ -65,7 +68,8 @@ BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh
 
 ### Flash and log in
 
-1. Flash `brewberrypi-os-pi34-*.img.xz` with Raspberry Pi Imager → *Use custom*. Skip OS
+1. Flash `brewberrypi-os-pi34-*.img.xz` (Pi 3/4) or `brewberrypi-os-pi5-*.img.xz` (Pi 5) with
+   Raspberry Pi Imager → *Use custom*. Skip OS
    customisation for now; it comes with the Imager manifest in OS7.
 2. Boot a Pi 3 or 4 with Ethernet connected. On first boot it grows `/data` to fill the card,
    seals itself (read-only boot, RAM overlay over the root) and **reboots once by itself**.

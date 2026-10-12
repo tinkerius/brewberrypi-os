@@ -16,7 +16,7 @@ with version selection, rollback and safe mode.
 - `docs/implementation-plan.md`: milestones OS0–OS8.
 - `docs/research/`: research summary and raw JSON (claims with sources).
 - `docs/os-update.md`: OS update procedure (maintenance mode).
-- `config/`: rpi-image-gen image configs (`brewberrypi-pi34.yaml`).
+- `config/`: rpi-image-gen image configs: `brewberrypi-base.yaml` (shared), `brewberrypi-pi34.yaml` (Pi 3/4), `brewberrypi-pi5.yaml` (Pi 5).
 - `image/brewberry-mbr/`: our rpi-image-gen image layer (MBR p1 boot, p2 root, p3 `DATA`).
 - `layer/`: our own rpi-image-gen layers; files they install live in `<layer>.rootfs-overlay/`.
   - `brewberry-base`: mDNS, `/etc/brewberry-release`.
@@ -32,9 +32,9 @@ with version selection, rollback and safe mode.
 
 ## Commands
 
-- Build image: `BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh` (arm64 Debian/Ubuntu host, or QEMU binfmt; first run `sudo .cache/rpi-image-gen/install_deps.sh`). Output: `deploy/*.img.xz`.
+- Build image: `BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh [brewberrypi-pi5.yaml]` (arm64 Debian/Ubuntu host, or QEMU binfmt; first run `sudo .cache/rpi-image-gen/install_deps.sh`). Output: `deploy/*.img.xz`.
 - Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint, unit tests in `stub/` and `tests/unit/`).
-- CI: `.github/workflows/build.yml`: lint, the signature policy test, and the image build on `ubuntu-24.04-arm` (uploaded as an artifact).
+- CI: `.github/workflows/build.yml`: lint, the signature policy test, and the image builds for `pi34` and `pi5` on `ubuntu-24.04-arm` (uploaded as artifacts).
 - On the device (root): `brewberry-update login|list|status|install <x.y.z>|rollback`, `brewberry-usb list|install <x.y.z>|import-config`, `brewberry-maint status|on|off`.
 
 ## Rules

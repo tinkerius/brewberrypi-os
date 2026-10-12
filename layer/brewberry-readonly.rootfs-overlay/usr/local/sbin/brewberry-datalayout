@@ -1,9 +1,10 @@
 #!/bin/sh
-# Create the /data layout (ADR-0001). Runs on every boot; only creates what is
-# missing, so a healthy /data is not written to.
+# Create the /data layout and the seed config (ADR-0001). Runs on every boot;
+# only creates what is missing, so a healthy /data is not written to.
 set -eu
 
-D=/data
+# BREWBERRY_DATA_ROOT is for tests only (tests/unit/datalayout.sh).
+D=${BREWBERRY_DATA_ROOT:-/data}
 
 mountpoint -q "$D" || { echo "$D is not mounted" >&2; exit 1; }
 
@@ -21,5 +22,20 @@ ensure_dir 0755 "$D/containers/storage"  # Podman graphroot (OS2)
 ensure_dir 0755 "$D/tmp"                 # Podman pull staging (OS2)
 ensure_dir 0755 "$D/update"              # update requests, state, tags.json (OS4)
 ensure_dir 0700 "$D/secrets"             # registry auth.json (OS4)
+
+# The app is started with --config /config/config.json and exits with code 2
+# (configuration error, not restarted) if the file is missing. An empty object
+# means the app's built-in defaults: the specification's config.example.json
+# with the built-in recipe catalogue, and the default pins (heater BCM 23,
+# pump BCM 22, buzzer BCM 10) that config.txt and the outputs-off reset use.
+CONFIG=$D/config/config.json
+if [ ! -e "$CONFIG" ]; then
+   printf '{}\n' > "$CONFIG.tmp"
+   chmod 0644 "$CONFIG.tmp"
+   sync "$CONFIG.tmp"
+   mv "$CONFIG.tmp" "$CONFIG"
+   echo "created $CONFIG (built-in defaults)"
+   created=1
+fi
 
 [ "$created" -eq 0 ] || sync -f "$D"

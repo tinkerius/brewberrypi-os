@@ -44,6 +44,7 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 | `scripts/build.sh` | Builds `deploy/<image>-<version>.img.xz` plus a `.sha256` |
 | `scripts/usb-export.sh` | Puts a signed app version on a USB stick and verifies it against the device policy |
 | `scripts/build-stub.sh` | Builds the contract stub for arm64 (`podman save` tarball); `build.sh` calls it unless `BREWBERRY_PRELOAD` names another image |
+| `scripts/fetch-app.sh` | Fetches a signed app release (arm64) as the image's preload and verifies it; `build.sh` uses it when `BREWBERRY_APP_VERSION` is set |
 | `scripts/imager-manifest.py` | Raspberry Pi Imager manifest for the images (release URLs or local files) |
 | `scripts/lint.sh` | shellcheck, yamllint, layer metadata lint and the unit tests |
 | `tests/integration/signing.sh` | Signature policy against a local registry with cosign v2 |
@@ -54,6 +55,11 @@ Every push and pull request runs `.github/workflows/build.yml`. It builds both i
 `ubuntu-24.04-arm` runners and uploads them as the `brewberrypi-os-pi34` and `brewberrypi-os-pi5`
 artifacts (kept 30 days). A version tag (`v1.2.3`) also creates a **draft release** with both
 images, the Imager manifest and `SHA256SUMS`; publish it once the hardware checks pass.
+
+The image preloads the contract stub. To preload a released app version instead, set the
+repository variable `BREWBERRY_APP_VERSION` (`x.y.z`) and give CI read access to the app's package:
+the secret `BREWBERRY_GHCR_TOKEN` (classic PAT, `read:packages`), or add this repository under the
+package's *Manage Actions access*. The build refuses an image that isn't signed with the pinned key.
 
 The admin user is `brewberry`. It has no password and logs in over SSH with a key only. The key
 usually comes from Imager's customisation; to build it into the image too, set the **repository

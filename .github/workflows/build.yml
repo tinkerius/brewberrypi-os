@@ -58,6 +58,10 @@ jobs:
     # rpi-image-gen builds natively on arm64 only (ADR-0001).
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
+    permissions:
+      contents: read
+      # Pull the app release to preload (BREWBERRY_APP_VERSION).
+      packages: read
     strategy:
       fail-fast: false
       matrix:
@@ -78,9 +82,23 @@ jobs:
           sudo chmod o+x "$HOME"
           sudo "$RPI_IMAGE_GEN_DIR/install_deps.sh"
 
+      # With the repository variable BREWBERRY_APP_VERSION (x.y.z), the image
+      # preloads that app release instead of the contract stub (OS8). The token
+      # needs read access to the app's package: the secret BREWBERRY_GHCR_TOKEN
+      # (classic PAT, read:packages), or GITHUB_TOKEN once this repository is
+      # granted access in the package's settings (Manage Actions access).
+      - name: Log in to GHCR for the app preload
+        if: vars.BREWBERRY_APP_VERSION != ''
+        env:
+          TOKEN: ${{ secrets.BREWBERRY_GHCR_TOKEN || github.token }}
+        run: |
+          sudo apt-get install -y --no-install-recommends skopeo jq
+          echo "$TOKEN" | skopeo login ghcr.io -u "${{ github.actor }}" --password-stdin
+
       - name: Build image
         env:
           BREWBERRY_SSH_PUBKEY: ${{ vars.BREWBERRY_SSH_PUBKEY }}
+          BREWBERRY_APP_VERSION: ${{ vars.BREWBERRY_APP_VERSION }}
         run: |
           if [ -z "$BREWBERRY_SSH_PUBKEY" ]; then
             echo "::warning::Repository variable BREWBERRY_SSH_PUBKEY is not set; this image has no SSH login."

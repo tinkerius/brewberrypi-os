@@ -11,6 +11,8 @@
 #   enable   allow the stub's heater test (/data/config/stub.json) and restart
 #   kill9    heater on, then kill -9 the app       -> heater must go off
 #   hang     heater on, then stop watchdog pings   -> killed within ~20 s, off
+#   pause    heater on, then freeze the container (podman pause; the app's
+#            hardware test H-10)                   -> killed within ~20 s, off
 #   rm       heater on, then podman rm -f the app  -> heater must go off
 #   heat     heater on and leave it on (for the power-cut test)
 #   disable  remove the heater test permission again and restart
@@ -67,6 +69,8 @@ scenario() { # <name> <action...>
 kill9()  { kill -9 "$(podman inspect -f '{{.State.Pid}}' brewberrypi)"; }
 hang()   { post /stub/hang; }
 remove() { podman rm -f -t 0 brewberrypi >/dev/null; }
+freeze() { podman pause brewberrypi >/dev/null; }
+app_running() { test "$(podman inspect -f '{{.State.Status}}' brewberrypi)" = running; }
 
 status() {
    check "strict_gpiod: persist_gpio_outputs is off" strict_gpiod
@@ -90,7 +94,9 @@ case ${1:-status} in
    kill9)   scenario "kill -9" kill9 ;;
    hang)    scenario "hang (watchdog)" hang ;;
    rm)      scenario "container removed" remove ;;
+   pause)   scenario "frozen container (watchdog)" freeze
+            check "frozen container: replaced by a running one" app_running ;;
    heat)    wait_active && post "/stub/heat?on=1" && sleep 1 && check "heater is on: now pull the plug" heater_on ;;
-   *)       echo "usage: os3-check.sh status|enable|kill9|hang|rm|heat|disable" >&2; exit 2 ;;
+   *)       echo "usage: os3-check.sh status|enable|kill9|hang|pause|rm|heat|disable" >&2; exit 2 ;;
 esac
 exit "$fail"

@@ -22,16 +22,16 @@ with version selection, rollback and safe mode.
 - `layer/`: our own rpi-image-gen layers; files they install live in `<layer>.rootfs-overlay/`.
   - `brewberry-suite`: the base suite (trixie-minbase with NetworkManager instead of networkd/iwd, no raspi-config).
   - `brewberry-base`: mDNS, `/etc/brewberry-release`.
-  - `brewberry-readonly`: `data.mount`, first-boot grow/layout/seal services, volatile journal, `brewberry-maint` (maintenance mode), apt guard while sealed.
+  - `brewberry-readonly`: `data.mount`, first-boot grow/layout (seeds `config.json` = `{}`)/seal services, volatile journal, `brewberry-maint` (maintenance mode), apt guard while sealed.
   - `brewberry-safety`: `config.txt` safety block (strict_gpiod, `gpio=` boot pins, w1-gpio, SPI off, watchdog), `brewberrypi-outputs-off`, `RuntimeWatchdogSec`.
   - `brewberry-podman`: Podman config (storage on `/data`), the Quadlet unit `brewberrypi.container` (rendered at build time with the gpio GID; `WatchdogSec`, outputs-off `ExecStopPost`, start limits, safe mode), gpiochip udev rule, `brewberry-firstload` (imports the `dir:` preload).
   - `brewberry-imager`: cloud-init + `rpi-cloud-init-mods` for Imager's `cloudinit-rpi` customisation; `brewberry-seal` disables cloud-init after first boot.
   - `brewberry-update`: `policy.json` (default reject; app's pinned cosign key in `keys/app-cosign.pub` for the registry and for USB `dir:` exports under `/media/brewberry-usb`; unsigned only from the preload dir), registries.d, the `brewberry-update` and `brewberry-usb` CLIs, `brewberrypi-safemode`.
 - `stub/`: contract stub image (READY, WATCHDOG, `/healthz`, crash/hang/refuse on request, heater test behind `allowHeat`), preloaded until the app is released.
 - `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh` … `os7-check.sh`).
-- `tests/unit/`: host-side unit tests with fakes (`outputs-off.sh`, `update.sh`, `usb.sh`, `maint.sh`, `imager-manifest.sh`), run by `scripts/lint.sh`.
+- `tests/unit/`: host-side unit tests with fakes (`outputs-off.sh`, `update.sh`, `usb.sh`, `maint.sh`, `datalayout.sh`, `imager-manifest.sh`), run by `scripts/lint.sh`.
 - `tests/integration/signing.sh`: policy test with a local registry and cosign v2 (CI job `signature policy`).
-- `scripts/`: `build.sh`, `build-stub.sh`, `lint.sh`, `imager-manifest.py` (Imager manifest), `publish-test-stubs.sh` (OS4 test images), `usb-export.sh`; `common.sh` pins the rpi-image-gen version.
+- `scripts/`: `build.sh`, `build-stub.sh`, `lint.sh`, `imager-manifest.py` (Imager manifest), `fetch-app.sh` (verified app release as the preload, `BREWBERRY_APP_VERSION`), `publish-test-stubs.sh` (OS4 test images), `usb-export.sh`; `common.sh` pins the rpi-image-gen version.
 
 ## Commands
 

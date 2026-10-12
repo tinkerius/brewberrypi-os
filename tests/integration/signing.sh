@@ -4,7 +4,8 @@
 # device's policy.json and registries.d (registry host and key path rewritten
 # to the test setup). A correctly signed image must be accepted; unsigned,
 # wrongly signed and other-repository images must be rejected, from the
-# registry and from a USB 'dir:' export (tampered exports too).
+# registry, from a USB 'dir:' export (tampered exports too) and as the
+# build-time preload (scripts/fetch-app.sh).
 #
 # Usage: tests/integration/signing.sh   (needs podman, skopeo, jq and cosign v2
 #        on PATH, and network access to mirror.gcr.io, Google's Docker Hub mirror, which has no
@@ -46,6 +47,26 @@ push tinkerius/brewberrypi:1.0.0 good
 push tinkerius/brewberrypi:1.0.1
 push tinkerius/brewberrypi:1.0.2 other
 push tinkerius/elsewhere:1.0.0 good
+
+# App releases for scripts/fetch-app.sh: arm64 with the app's labels. No RUN
+# step, so building for arm64 needs no emulation.
+push_app() { # <tag> <signing key prefix|-> <contract label> <version label>
+   local ref=$REG/tinkerius/brewberrypi:$1 digest
+   printf 'FROM mirror.gcr.io/library/busybox:1.36\nLABEL org.brewberrypi.runtime-contract="%s" org.opencontainers.image.version="%s"\n' \
+      "$3" "$4" > "$T/Containerfile"
+   podman build -q --platform linux/arm64 -t "$ref" -f "$T/Containerfile" "$T" > /dev/null
+   podman push -q --tls-verify=false "$ref"
+   if [ "$2" != - ]; then
+      digest=$(skopeo inspect --tls-verify=false "docker://$ref" | jq -r .Digest)
+      cosign sign --yes --key "$T/$2.key" --tlog-upload=false --allow-insecure-registry \
+         "${ref%:*}@$digest" > /dev/null 2>&1
+   fi
+}
+push_app 2.0.0 good 1 2.0.0
+push_app 2.0.1 - 1 2.0.1
+push_app 2.0.2 other 1 2.0.2
+push_app 2.0.3 good 2 2.0.3
+push_app 2.0.4 good 1 9.9.9
 
 # The device's files, pointed at the test registry and key.
 mkdir "$T/stick"
@@ -107,4 +128,26 @@ expect_dir "USB export without its signature: rejected" reject "$T/stick/unsigne
 expect_dir "USB export signed with another key: rejected" reject "$T/stick/otherkey"
 expect_dir "USB export of another repository: rejected" reject "$T/stick/elsewhere"
 expect_dir "signed export outside the USB mount path: rejected" reject "$T/elsewhere-path/good"
+
+# Build-time preload (OS8): only a signed arm64 release with the right labels.
+expect_fetch() { # <description> <accept | words of the expected refusal> <x.y.z>
+   local got dest=$T/preload/$3 err
+   if err=$("$ROOT/scripts/fetch-app.sh" "$3" "$dest" --repo "$REG/tinkerius/brewberrypi" --key "$T/good.pub" \
+         --insecure 2>&1 > /dev/null) && [ -f "$dest/manifest.json" ]; then
+      got=accept
+   elif [ -e "$dest" ]; then
+      got="refused, but left $dest behind"
+   elif [[ $err == *"$2"* ]]; then
+      got=$2
+   else
+      got="refused with: ${err//$'\n'/ }"
+   fi
+   if [ "$got" = "$2" ]; then echo "ok    $1"; else echo "FAIL  $1: $got"; failures=1; fi
+}
+expect_fetch "preload: signed arm64 release: accepted" accept 2.0.0
+expect_fetch "preload: unsigned: rejected" "signature does not verify" 2.0.1
+expect_fetch "preload: signed with another key: rejected" "signature does not verify" 2.0.2
+expect_fetch "preload: other runtime contract: rejected" "runtime contract label is '2'" 2.0.3
+expect_fetch "preload: version label differs from the tag: rejected" "version label is '9.9.9'" 2.0.4
+expect_fetch "preload: not arm64: rejected" "not arm64" 1.0.0
 exit "$failures"

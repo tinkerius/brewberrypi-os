@@ -15,6 +15,14 @@
 # X-Env-Var-version-Required: n
 # X-Env-Var-version-Valid: string
 # X-Env-Var-version-Set: y
+#
+# X-Env-Var-preload: stub
+# X-Env-Var-preload-Desc: The app image the OS image preloads: 'stub' (the
+#  contract stub), an app release version, or 'custom'. Set by
+#  scripts/build.sh.
+# X-Env-Var-preload-Required: n
+# X-Env-Var-preload-Valid: string
+# X-Env-Var-preload-Set: y
 # METAEND
 ---
 mmdebstrap:
@@ -26,5 +34,6 @@ mmdebstrap:
       cat > "$1/etc/brewberry-release" <<EOF
       BREWBERRY_OS_VERSION=${IGconf_brewberry_version}
       BREWBERRY_OS_IMAGE=${IGconf_image_name}
+      BREWBERRY_OS_APP_PRELOAD=${IGconf_brewberry_preload}
       BREWBERRY_OS_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
       EOF

@@ -360,11 +360,22 @@ journalctl -u brewberry-firstload -b            # loading the app on first boot
 sudo brewberry-update status
 ```
 
+### The first boot report
+
+Before the Pi seals itself at the end of the first boot, it writes
+`brewberry-firstboot.txt` to the boot partition: failed services, the cloud-init (Imager
+customisation) status and log, the network state, and the logs of the first-boot services. Put
+the SD card in any computer and open the file on the small FAT partition (`bootfs`). Look at it
+first when the hostname, user, password or Wi-Fi from Imager weren't applied, or nothing answers
+on the network.
+
 ### I can't find the Pi on the network
 
 - Wait a few minutes after the first power-on: the Pi reboots once by itself.
 - Use the IP address from your router instead of `<hostname>.local`.
 - Wi-Fi settings are only applied on the first boot. If they were wrong, reflash.
+- Check [the first boot report](#the-first-boot-report): if cloud-init found no Imager settings,
+  the card was flashed with *Use custom* instead of the manifest, or customisation was skipped.
 - `Permission denied (publickey)`: the key you use isn't the one you gave Imager. Passwords
   don't work over SSH.
 

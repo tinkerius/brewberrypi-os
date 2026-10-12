@@ -22,19 +22,19 @@ with version selection, rollback and safe mode.
   - `brewberry-readonly`: `data.mount`, first-boot grow/layout/seal services, volatile journal.
   - `brewberry-safety`: `config.txt` safety block (strict_gpiod, `gpio=` boot pins, w1-gpio, SPI off, watchdog), `brewberrypi-outputs-off`, `RuntimeWatchdogSec`.
   - `brewberry-podman`: Podman config (storage on `/data`), the Quadlet unit `brewberrypi.container` (rendered at build time with the gpio GID; `WatchdogSec`, outputs-off `ExecStopPost`, start limits, safe mode), gpiochip udev rule, `brewberry-firstload` (imports the `dir:` preload).
-  - `brewberry-update`: `policy.json` (default reject, app's pinned cosign key in `keys/app-cosign.pub`, unsigned only from the preload dir), registries.d, the `brewberry-update` CLI, `brewberrypi-safemode`.
+  - `brewberry-update`: `policy.json` (default reject; app's pinned cosign key in `keys/app-cosign.pub` for the registry and for USB `dir:` exports under `/media/brewberry-usb`; unsigned only from the preload dir), registries.d, the `brewberry-update` and `brewberry-usb` CLIs, `brewberrypi-safemode`.
 - `stub/`: contract stub image (READY, WATCHDOG, `/healthz`, crash/hang/refuse on request, heater test behind `allowHeat`), preloaded until the app is released.
-- `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh` … `os4-check.sh`).
-- `tests/unit/`: host-side unit tests with fakes (`outputs-off.sh`, `update.sh`), run by `scripts/lint.sh`.
+- `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh` … `os5-check.sh`).
+- `tests/unit/`: host-side unit tests with fakes (`outputs-off.sh`, `update.sh`, `usb.sh`), run by `scripts/lint.sh`.
 - `tests/integration/signing.sh`: policy test with a local registry and cosign v2 (CI job `signature policy`).
-- `scripts/`: `build.sh`, `build-stub.sh`, `lint.sh`, `publish-test-stubs.sh` (OS4 test images); `common.sh` pins the rpi-image-gen version.
+- `scripts/`: `build.sh`, `build-stub.sh`, `lint.sh`, `publish-test-stubs.sh` (OS4 test images), `usb-export.sh`; `common.sh` pins the rpi-image-gen version.
 
 ## Commands
 
 - Build image: `BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh` (arm64 Debian/Ubuntu host, or QEMU binfmt; first run `sudo .cache/rpi-image-gen/install_deps.sh`). Output: `deploy/*.img.xz`.
 - Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint, unit tests in `stub/` and `tests/unit/`).
 - CI: `.github/workflows/build.yml`: lint, the signature policy test, and the image build on `ubuntu-24.04-arm` (uploaded as an artifact).
-- On the device (root): `brewberry-update login|list|status|install <x.y.z>|rollback`.
+- On the device (root): `brewberry-update login|list|status|install <x.y.z>|rollback`, `brewberry-usb list|install <x.y.z>|import-config`.
 
 ## Rules
 

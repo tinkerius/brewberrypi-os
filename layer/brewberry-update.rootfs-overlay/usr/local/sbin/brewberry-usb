@@ -1,0 +1,142 @@
+#!/bin/bash
+# Offline updates and config import from a USB stick (ADR-0001, OS5). Run as root.
+#
+#   brewberry-usb list               versions and config files on the stick
+#   brewberry-usb install <x.y.z>    install brewberrypi/images/<x.y.z> from the stick
+#                                    (signature checked like a registry pull)
+#   brewberry-usb import-config      copy brewberrypi/config/*.json to /data/config
+#
+# Stick layout (scripts/usb-export.sh writes it):
+#   brewberrypi/images/<x.y.z>/   'dir:' export of ghcr.io/tinkerius/brewberrypi:<x.y.z>,
+#                                 with its cosign signature (skopeo copy --all)
+#   brewberrypi/config/*.json     config.json and recipe files
+#
+# The stick is mounted read-only (nosuid, nodev, noexec) at /media/brewberry-usb,
+# the only USB path policy.json accepts signed images from, and unmounted again.
+set -euo pipefail
+
+# BREWBERRY_UPDATE_ROOT and BREWBERRY_USB_DIR are for tests (tests/unit/usb.sh):
+# a root prefix for /data, and an already mounted stick.
+ROOT=${BREWBERRY_UPDATE_ROOT:-}
+MNT=/media/brewberry-usb
+CONFIG_DIR=$ROOT/data/config
+MAX_CONFIG_BYTES=1048576
+DEFAULT_PINS="heating:23 pump:22 buzzer:10"
+
+log() { echo "brewberry-usb: $*" >&2; }
+die() { log "$*"; exit 1; }
+
+STICK=""
+mounted=0
+cleanup() { if [ "$mounted" = 1 ]; then umount "$MNT" || log "could not unmount $MNT"; fi; }
+trap cleanup EXIT
+
+# Mount the first USB stick that has a brewberrypi/ folder; sets STICK.
+mount_stick() {
+   if [ -n "${BREWBERRY_USB_DIR:-}" ]; then
+      STICK=$BREWBERRY_USB_DIR
+      return
+   fi
+   mountpoint -q "$MNT" && die "$MNT is already mounted"
+   mkdir -p "$MNT"
+   local link dev seen=" "
+   for link in /dev/disk/by-id/usb-*; do
+      [ -e "$link" ] || continue
+      dev=$(readlink -f "$link")
+      case $seen in *" $dev "*) continue ;; esac
+      seen="$seen$dev "
+      mount -o ro,nosuid,nodev,noexec "$dev" "$MNT" 2> /dev/null || continue
+      if [ -d "$MNT/brewberrypi" ]; then
+         mounted=1
+         STICK=$MNT
+         log "using $dev"
+         return
+      fi
+      umount "$MNT"
+   done
+   die "no USB stick with a brewberrypi/ folder found"
+}
+
+versions() { # release versions on the stick, newest first
+   [ -d "$STICK/brewberrypi/images" ] || return 0
+   find "$STICK/brewberrypi/images" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
+      grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1nr -k2,2nr -k3,3nr || true
+}
+
+config_files() {
+   [ -d "$STICK/brewberrypi/config" ] || return 0
+   find "$STICK/brewberrypi/config" -mindepth 1 -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sort
+}
+
+cmd_list() {
+   mount_stick
+   echo "versions:"
+   versions | sed 's/^/  /'
+   echo "config files:"
+   config_files | sed 's/^/  /'
+}
+
+cmd_install() {
+   local version=$1
+   mount_stick
+   [ -d "$STICK/brewberrypi/images/$version" ] || die "no brewberrypi/images/$version on the stick"
+   brewberry-update install "$version" --from-dir "$STICK/brewberrypi/images/$version"
+}
+
+# Validate every file first, then back up the current config and write all of
+# them atomically. Nothing is changed if any file is invalid.
+cmd_import_config() {
+   mount_stick
+   local files f src backup
+   files=$(config_files)
+   [ -n "$files" ] || die "no brewberrypi/config/*.json on the stick"
+   for f in $files; do
+      src=$STICK/brewberrypi/config/$f
+      [[ $f =~ ^[A-Za-z0-9._-]+\.json$ ]] || die "$f: file names may only contain letters, digits, '.', '_' and '-'"
+      [ "$(stat -c %s "$src")" -le "$MAX_CONFIG_BYTES" ] || die "$f: larger than $MAX_CONFIG_BYTES bytes"
+      jq empty "$src" 2> /dev/null || die "$f: not valid JSON; nothing imported"
+   done
+
+   mkdir -p "$CONFIG_DIR"
+   backup=$CONFIG_DIR/backup/$(date -u +%Y%m%dT%H%M%SZ)
+   if compgen -G "$CONFIG_DIR/*.json" > /dev/null; then
+      mkdir -p "$backup"
+      cp -p "$CONFIG_DIR"/*.json "$backup/"
+      log "previous config saved in ${backup#"$ROOT"}"
+   fi
+   for f in $files; do
+      cp "$STICK/brewberrypi/config/$f" "$CONFIG_DIR/$f.tmp"
+      chmod 0644 "$CONFIG_DIR/$f.tmp"
+      sync "$CONFIG_DIR/$f.tmp"
+      mv "$CONFIG_DIR/$f.tmp" "$CONFIG_DIR/$f"
+      log "imported $f"
+   done
+   sync "$CONFIG_DIR"
+
+   warn_boot_pins
+   log "the app reads its config at start: systemctl restart brewberrypi (this ends a running brew)"
+}
+
+# config.txt sets the default pins to their off level at boot; other pins are
+# only switched off by the reset after a stop.
+warn_boot_pins() {
+   [ -f "$CONFIG_DIR/config.json" ] || return 0
+   local entry name pin got
+   for entry in $DEFAULT_PINS; do
+      name=${entry%%:*}
+      pin=${entry#*:}
+      got=$(jq -r --arg n "$name" '.hardware[$n].pin // empty' "$CONFIG_DIR/config.json" 2> /dev/null || true)
+      if [ -n "$got" ] && [ "$got" != "$pin" ]; then
+         log "WARNING: $name is on BCM $got, but config.txt switches BCM $pin off at boot."
+         log "         Update the gpio= lines in config.txt in maintenance mode."
+      fi
+   done
+}
+
+[ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run as root"
+case ${1:-} in
+   list) cmd_list ;;
+   install) [ $# -eq 2 ] || die "usage: brewberry-usb install <MAJOR.MINOR.PATCH>"; cmd_install "$2" ;;
+   import-config) cmd_import_config ;;
+   *) sed -n '2,7s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

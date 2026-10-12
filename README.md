@@ -38,6 +38,7 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 | `tests/hardware/` | Checks that run on a real Pi (milestone "done when" checks) |
 | `tests/unit/` | Host-side unit tests, e.g. the outputs-off reset with a fake `pinctrl` |
 | `scripts/build.sh` | Builds `deploy/<image>-<version>.img.xz` plus a `.sha256` |
+| `scripts/usb-export.sh` | Puts a signed app version on a USB stick and verifies it against the device policy |
 | `scripts/build-stub.sh` | Builds the contract stub for arm64 (`podman save` tarball); `build.sh` calls it unless `BREWBERRY_PRELOAD` names another image |
 | `scripts/lint.sh` | shellcheck, yamllint, layer metadata lint and the unit tests |
 | `tests/integration/signing.sh` | Signature policy against a local registry with cosign v2 |
@@ -88,3 +89,22 @@ sudo brewberry-update status
 
 If the app keeps crashing (4 failed starts within 10 minutes), safe mode switches back to the
 previous version once; if that fails too, the app stays down with all outputs off.
+
+### Offline: USB stick
+
+On a machine with registry access, put a version and/or config files on a stick:
+
+```sh
+scripts/usb-export.sh 1.2.3 /media/stick              # brewberrypi/images/1.2.3, signature included
+mkdir -p /media/stick/brewberrypi/config && cp config.json /media/stick/brewberrypi/config/
+```
+
+Plug it into the Pi, then:
+
+```sh
+sudo brewberry-usb list
+sudo brewberry-usb install 1.2.3       # checked against the pinned key like a registry pull
+sudo brewberry-usb import-config       # validates, backs up /data/config, then copies
+```
+
+The stick is mounted read-only and only while the command runs.

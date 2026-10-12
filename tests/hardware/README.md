@@ -112,3 +112,31 @@ another key.
    that crashes on start rolled back, `previous` kept through garbage collection, and repeated
    crashes switching to `previous` exactly once, then staying down with the outputs off.
 5. Reboot to remove the test key.
+
+## OS5: USB offline update and config import
+
+Uses the test repository, key and versions from OS4. The stick needs any filesystem the Pi can
+read (FAT32, exFAT or ext4).
+
+1. On your machine, with the stick mounted (here at `/media/stick`):
+
+   ```sh
+   scripts/usb-export.sh 0.2.0 /media/stick --repo ghcr.io/tinkerius/brewberrypi-os-test --key work/test-signing/test.pub
+   tests/hardware/os5-tamper.sh /media/stick          # adds a tampered copy as 9.9.9
+   mkdir -p /media/stick/brewberrypi/config
+   cp <your config.json> /media/stick/brewberrypi/config/
+   ```
+
+   `usb-export.sh` verifies the export against the device policy before it finishes.
+2. Unmount the stick and plug it into the Pi.
+3. Install the USB test rule (RAM only, a reboot removes it) and run the checks; every line must
+   say `PASS`:
+
+   ```sh
+   ssh brewberry@brewberrypi.local 'sudo sh -s -- setup ghcr.io/tinkerius/brewberrypi-os-test /tmp/test.pub' < tests/hardware/os5-check.sh
+   ssh brewberry@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os5-check.sh
+   ```
+
+   This covers the OS5 "done when": the signed export installs offline, the tampered one is
+   rejected. It also checks the config import and that the stick is unmounted afterwards.
+4. Reboot to remove the test rule.

@@ -1,0 +1,52 @@
+# METABEGIN
+# X-Env-Layer-Name: brewberry-podman
+# X-Env-Layer-Category: app
+# X-Env-Layer-Desc: App runtime (ADR-0001, OS2): rootful Podman with its
+#  storage and pull staging on /data, the Quadlet unit brewberrypi.container
+#  running localhost/brewberrypi:active, GPIO device access for the gpio group,
+#  and brewberry-firstload, which imports the app image preloaded in the OS
+#  image and tags it active.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: brewberry-readonly
+#
+# X-Env-VarPrefix: app
+#
+# X-Env-Var-preload:
+# X-Env-Var-preload-Desc: Path on the build host to the app image to preload,
+#  as a 'podman save' (docker-archive) tarball. scripts/build.sh builds the
+#  contract stub and sets this.
+# X-Env-Var-preload-Required: y
+# X-Env-Var-preload-Valid: string
+# X-Env-Var-preload-Set: y
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - podman
+    - crun
+    - conmon
+    - netavark
+  customize-hooks:
+    - install -D -m 0644 "$IGconf_app_preload" "$1/usr/share/brewberrypi/preload.tar"
+    - |-
+      set -eu
+      # Quadlet needs the numeric gpio GID; it is assigned during the build.
+      gid=$(awk -F: '$1 == "gpio" { print $3 }' "$1/etc/group")
+      [ -n "$gid" ] || { echo "brewberry-podman: no gpio group in the image" >&2; exit 1; }
+      tmpl="$1/usr/share/brewberrypi/brewberrypi.container.in"
+      mkdir -p "$1/etc/containers/systemd"
+      awk -v gid="$gid" '
+         /@GPIO_DEVICES@/ { for (n = 0; n < 32; n++) printf "AddDevice=-/dev/gpiochip%d\n", n; next }
+         { gsub(/@GPIO_GID@/, gid); print }
+      ' "$tmpl" > "$1/etc/containers/systemd/brewberrypi.container"
+      rm "$tmpl"
+      # Fail the build if Quadlet (the image's own Podman) cannot convert it.
+      chroot "$1" env QUADLET_UNIT_DIRS=/etc/containers/systemd \
+         /usr/libexec/podman/quadlet -dryrun -no-kmsg-log > "$1/tmp/quadlet.out" 2>&1 || true
+      if ! grep -q -- '---brewberrypi.service---' "$1/tmp/quadlet.out"; then
+         cat "$1/tmp/quadlet.out" >&2
+         echo "brewberry-podman: Quadlet rejected brewberrypi.container" >&2
+         exit 1
+      fi
+      rm "$1/tmp/quadlet.out"
+    - $BDEBSTRAP_HOOKS/enable-units "$1" brewberry-firstload.service

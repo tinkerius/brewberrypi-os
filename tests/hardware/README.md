@@ -34,3 +34,18 @@ These checks run on a real Raspberry Pi. They are the "done when" checks of the 
 
 OS1 is done when all 20 cycles pass. `/data/os1-checksums.log` keeps the history; delete it
 afterwards.
+
+## OS2: Podman and the app unit
+
+The image preloads the **contract stub** (`stub/`), not the real app. It never touches GPIO.
+Until OS3 adds the outputs-off reset, don't connect a relay board to a mains heater.
+
+1. Flash and boot as for OS1 (first boot also imports the stub as `localhost/brewberrypi:active`).
+2. Run the checks; every line must say `PASS`:
+
+   ```sh
+   ssh brewberry@brewberrypi.local 'sudo sh -s' < tests/hardware/os2-check.sh
+   ```
+
+3. From another machine: `curl http://brewberrypi.local:8080/healthz` answers
+   `{"status": "ok", "version": "0.1.0", "engine": "NoProcess"}`.

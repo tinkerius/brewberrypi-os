@@ -1,0 +1,29 @@
+# BrewberryPi contract stub image (runtime contract version 1).
+# Same base, user and entrypoint as the app image (tinkerius/brewberrypi Containerfile), so the
+# host is tested against the same conditions. Build: scripts/build-stub.sh
+FROM docker.io/library/debian:trixie-slim
+
+ARG VERSION=0.0.0
+# Default start mode: ok, crash, hwfail, config or hang (see brewberrypi-stub.py).
+ARG START=ok
+
+LABEL org.opencontainers.image.title="BrewberryPi contract stub" \
+      org.opencontainers.image.source="https://github.com/tinkerius/brewberrypi-os" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.brewberrypi.runtime-contract="1"
+
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends python3 \
+ && rm -rf /var/lib/apt/lists/* \
+ && useradd --system --uid 10001 --user-group --no-create-home --home-dir /nonexistent brewberrypi
+
+COPY brewberrypi-stub.py /usr/local/bin/brewberrypi
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    BREWBERRYPI_STUB_VERSION="${VERSION}" \
+    BREWBERRYPI_STUB_START="${START}"
+USER 10001:10001
+EXPOSE 8080
+ENTRYPOINT ["brewberrypi"]
+CMD ["--config", "/config/config.json"]

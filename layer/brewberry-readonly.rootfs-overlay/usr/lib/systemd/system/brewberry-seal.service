@@ -8,6 +8,7 @@ ConditionKernelCommandLine=!overlayroot
 ConditionPathExists=!/etc/brewberry/maintenance
 After=multi-user.target first-boot-complete.target systemd-machine-id-commit.service
 After=ssh-hostkeys-generate.service brewberry-growdata.service brewberry-datalayout.service
+After=brewberry-firstload.service
 After=cloud-final.service
 
 [Service]

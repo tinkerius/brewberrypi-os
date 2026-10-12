@@ -2,7 +2,7 @@
 # Static checks: shell scripts, YAML, and rpi-image-gen layer metadata.
 #
 # Usage: scripts/lint.sh
-# Needs shellcheck, yamllint and python3-yaml.
+# Needs shellcheck, yamllint and python3-yaml. Also runs the stub's unit tests.
 
 set -euo pipefail
 
@@ -20,4 +20,5 @@ fetch_rpi_image_gen
 for layer in layer/*.yaml image/*/image.yaml; do
    "$RPI_IMAGE_GEN_DIR/rpi-image-gen" metadata --lint "$layer"
 done
+python3 -m unittest discover -s stub
 echo "lint ok"

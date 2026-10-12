@@ -20,14 +20,15 @@ with version selection, rollback and safe mode.
 - `layer/`: our own rpi-image-gen layers; files they install live in `<layer>.rootfs-overlay/`.
   - `brewberry-base`: mDNS, `/etc/brewberry-release`.
   - `brewberry-readonly`: `data.mount`, first-boot grow/layout/seal services, volatile journal.
-- `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh`).
+  - `brewberry-podman`: Podman config (storage on `/data`), the Quadlet unit `brewberrypi.container` (rendered at build time with the gpio GID), gpiochip udev rule, `brewberry-firstload`.
+- `stub/`: contract stub image (READY, WATCHDOG, `/healthz`, crash/hang/refuse on request), preloaded until the app is released.
+- `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh`, `os2-check.sh`).
 - `scripts/`: `build.sh`, `lint.sh`; `common.sh` pins the rpi-image-gen version.
-- Podman config, the app unit and the contract stub: created in milestone OS2.
 
 ## Commands
 
 - Build image: `BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh` (arm64 Debian/Ubuntu host, or QEMU binfmt; first run `sudo .cache/rpi-image-gen/install_deps.sh`). Output: `deploy/*.img.xz`.
-- Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint).
+- Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint, stub unit tests).
 - CI: `.github/workflows/build.yml` builds the image on `ubuntu-24.04-arm` and uploads it as an artifact.
 
 ## Rules

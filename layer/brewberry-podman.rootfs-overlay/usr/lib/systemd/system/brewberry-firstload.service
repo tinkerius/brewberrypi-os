@@ -1,0 +1,14 @@
+[Unit]
+Description=Import the preloaded BrewberryPi app image
+Requires=data.mount
+After=data.mount brewberry-datalayout.service
+Before=brewberrypi.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/brewberry-firstload
+TimeoutStartSec=15min
+
+[Install]
+WantedBy=multi-user.target

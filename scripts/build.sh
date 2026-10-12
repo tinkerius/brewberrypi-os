@@ -6,6 +6,8 @@
 # Environment:
 #   BREWBERRY_SSH_PUBKEY  SSH public key for the 'brewberry' user. Without it
 #                         the image has no way to log in.
+#   BREWBERRY_PRELOAD     app image to preload ('podman save' tarball). Default:
+#                         build the contract stub with scripts/build-stub.sh.
 #   RPI_IMAGE_GEN_DIR     rpi-image-gen checkout (default: .cache/rpi-image-gen)
 #
 # Needs an arm64 Debian/Ubuntu host (or qemu-user-static with binfmt) with
@@ -29,7 +31,14 @@ IMAGE_NAME=$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]
 fetch_rpi_image_gen
 mkdir -p "$WORK_DIR"
 
-overrides=("IGconf_brewberry_version=$VERSION")
+PRELOAD=${BREWBERRY_PRELOAD:-}
+if [ -z "$PRELOAD" ]; then
+   PRELOAD=$WORK_DIR/preload/brewberrypi-stub.tar
+   "$REPO_ROOT/scripts/build-stub.sh" "$PRELOAD"
+fi
+PRELOAD=$(realpath "$PRELOAD")
+
+overrides=("IGconf_brewberry_version=$VERSION" "IGconf_app_preload=$PRELOAD")
 if [ -n "${BREWBERRY_SSH_PUBKEY:-}" ]; then
    overrides+=("IGconf_ssh_pubkey_user1=$BREWBERRY_SSH_PUBKEY")
 else

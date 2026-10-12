@@ -6,7 +6,7 @@
 # Environment:
 #   BREWBERRY_SSH_PUBKEY  SSH public key for the 'brewberry' user. Without it
 #                         the image has no way to log in.
-#   BREWBERRY_PRELOAD     app image to preload ('podman save' tarball). Default:
+#   BREWBERRY_PRELOAD     app image to preload, in 'dir:' format. Default:
 #                         build the contract stub with scripts/build-stub.sh.
 #   RPI_IMAGE_GEN_DIR     rpi-image-gen checkout (default: .cache/rpi-image-gen)
 #
@@ -33,7 +33,7 @@ mkdir -p "$WORK_DIR"
 
 PRELOAD=${BREWBERRY_PRELOAD:-}
 if [ -z "$PRELOAD" ]; then
-   PRELOAD=$WORK_DIR/preload/brewberrypi-stub.tar
+   PRELOAD=$WORK_DIR/preload/brewberrypi-stub
    "$REPO_ROOT/scripts/build-stub.sh" "$PRELOAD"
 fi
 PRELOAD=$(realpath "$PRELOAD")

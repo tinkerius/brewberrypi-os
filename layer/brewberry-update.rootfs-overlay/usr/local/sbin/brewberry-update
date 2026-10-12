@@ -1,0 +1,228 @@
+#!/bin/bash
+# Select the BrewberryPi app version on the device (ADR-0001, OS4). Run as root.
+#
+#   brewberry-update login           store the registry token (/data/secrets/auth.json)
+#   brewberry-update list            available versions (also written to /data/update/tags.json)
+#   brewberry-update status          active and previous image, last result
+#   brewberry-update install <x.y.z> pull (signature checked by policy.json), switch,
+#                                    watch for 60 s, roll back on failure
+#   brewberry-update rollback        switch back to the previous image
+#
+# Images: localhost/brewberrypi:active runs; :previous is the one before and is
+# never garbage-collected. Nothing else is kept. Never 'podman image prune -a'.
+set -euo pipefail
+
+# BREWBERRY_UPDATE_REPO is for the hardware test only (tests/hardware/os4-check.sh),
+# together with a temporary policy entry that a reboot removes.
+REPO=${BREWBERRY_UPDATE_REPO:-ghcr.io/tinkerius/brewberrypi}
+ACTIVE=localhost/brewberrypi:active
+PREVIOUS=localhost/brewberrypi:previous
+SERVICE=brewberrypi.service
+CONTRACT=1
+# BREWBERRY_UPDATE_ROOT and BREWBERRY_SOAK_S are for tests (tests/unit/update.sh).
+ROOT=${BREWBERRY_UPDATE_ROOT:-}
+SOAK_S=${BREWBERRY_SOAK_S:-60}
+UPDATE_DIR=$ROOT/data/update
+STATE=$UPDATE_DIR/state.json
+SAFEMODE_MARK=$UPDATE_DIR/safemode.json
+LOCK=$ROOT/run/brewberry-update.lock
+export REGISTRY_AUTH_FILE=$ROOT/data/secrets/auth.json
+
+log() { echo "brewberry-update: $*" >&2; }
+die() { log "$*"; exit 1; }
+
+image_id() { podman image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
+label() { podman image inspect -f "{{index .Labels \"$2\"}}" "$1" 2>/dev/null || true; }
+
+# Atomic write of a small file on /data: temp file, fsync, rename, fsync dir.
+write_atomic() { # <path>  (content on stdin)
+   local tmp=$1.tmp
+   cat > "$tmp"
+   sync "$tmp"
+   mv "$tmp" "$1"
+   sync "$(dirname "$1")"
+}
+
+state() { # <phase> <message> [version]
+   jq -n --arg phase "$1" --arg message "$2" --arg version "${3:-}" \
+      --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{time: $time, phase: $phase, version: $version, message: $message}' | write_atomic "$STATE"
+   log "$1: $2"
+}
+
+lock() {
+   exec 9> "$LOCK"
+   flock -n 9 || die "another update or safe-mode switch is running"
+}
+
+need_auth() {
+   [ -s "$REGISTRY_AUTH_FILE" ] || die "no registry token; run: brewberry-update login"
+}
+
+# Restart the app and watch it: it must reach READY (systemctl restart waits for
+# it) and then run for SOAK_S without a restart. Returns 0 if healthy, 2 for a
+# configuration error (exit code 2 or 3: the image is not to blame, runtime
+# contract §2), 1 otherwise.
+restart_and_soak() {
+   systemctl reset-failed "$SERVICE" 2>/dev/null || true
+   if ! systemctl restart "$SERVICE"; then
+      config_error && return 2
+      return 1
+   fi
+   local restarts
+   restarts=$(systemctl show -p NRestarts --value "$SERVICE")
+   log "running; watching for ${SOAK_S}s"
+   sleep "$SOAK_S"
+   if systemctl is-active --quiet "$SERVICE" &&
+      [ "$(systemctl show -p NRestarts --value "$SERVICE")" = "$restarts" ]; then
+      return 0
+   fi
+   config_error && return 2
+   return 1
+}
+
+config_error() {
+   case $(systemctl show -p ExecMainStatus --value "$SERVICE") in
+      2 | 3) return 0 ;;
+      *) return 1 ;;
+   esac
+}
+
+# Remove every image that is neither active nor previous (and dangling layers).
+gc() {
+   local keep_a keep_p id
+   keep_a=$(image_id "$ACTIVE")
+   keep_p=$(image_id "$PREVIOUS")
+   for id in $(podman images -q --no-trunc | sed 's/^sha256://' | sort -u); do
+      [ "$id" = "$keep_a" ] || [ "$id" = "$keep_p" ] && continue
+      podman rmi -f -i "$id" > /dev/null || log "could not remove image $id"
+   done
+   podman image prune -f > /dev/null || true
+}
+
+cmd_login() {
+   install -d -m 0700 "$(dirname "$REGISTRY_AUTH_FILE")"
+   echo "Registry token for $REPO: a GitHub classic PAT with read:packages only." >&2
+   podman login --authfile "$REGISTRY_AUTH_FILE" "${REPO%%/*}"
+   chmod 0600 "$REGISTRY_AUTH_FILE"
+   sync -f "$(dirname "$REGISTRY_AUTH_FILE")"
+}
+
+cmd_list() {
+   need_auth
+   local tags
+   # Release tags only (MAJOR.MINOR.PATCH), newest first; signature tags
+   # (sha256-...) and anything else are left out.
+   tags=$(skopeo list-tags "docker://$REPO" | jq -c '
+      .Tags | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$")))
+      | sort_by(split(".") | map(tonumber)) | reverse')
+   jq -n --argjson tags "$tags" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      --arg active "$(label "$ACTIVE" org.opencontainers.image.version)" \
+      '{time: $time, active: $active, tags: $tags}' | write_atomic "$UPDATE_DIR/tags.json"
+   echo "$tags" | jq -r '.[]'
+}
+
+cmd_status() {
+   local ref
+   for ref in "$ACTIVE" "$PREVIOUS"; do
+      printf '%-32s %-10s %s\n' "$ref" "$(label "$ref" org.opencontainers.image.version)" \
+         "$(image_id "$ref" | cut -c1-12)"
+   done
+   echo
+   systemctl is-active "$SERVICE" || true
+   [ -f "$STATE" ] && jq . "$STATE"
+   [ -f "$SAFEMODE_MARK" ] && { echo "safe mode:"; jq . "$SAFEMODE_MARK"; }
+   return 0
+}
+
+cmd_install() {
+   local version=$1 new old prev_before rc
+   [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "not a release version (MAJOR.MINOR.PATCH): $version"
+   need_auth
+   lock
+
+   state pulling "pulling $REPO:$version" "$version"
+   if ! podman pull -q "$REPO:$version" > /dev/null; then
+      state failed "pull failed or the signature was rejected; nothing changed" "$version"
+      exit 1
+   fi
+   new=$(image_id "$REPO:$version")
+   podman untag "$new" "$REPO:$version" || true
+   old=$(image_id "$ACTIVE")
+
+   if [ "$new" = "$old" ]; then
+      state "done" "$version is already active" "$version"
+      return 0
+   fi
+   if [ "$(label "$new" org.brewberrypi.runtime-contract)" != "$CONTRACT" ]; then
+      gc
+      state failed "$version does not implement runtime contract $CONTRACT; nothing changed" "$version"
+      exit 1
+   fi
+
+   prev_before=$(image_id "$PREVIOUS")
+   state switching "switching to $version" "$version"
+   [ -n "$old" ] && podman tag "$old" "$PREVIOUS"
+   podman tag "$new" "$ACTIVE"
+   rm -f "$SAFEMODE_MARK"
+
+   rc=0
+   restart_and_soak || rc=$?
+   case $rc in
+      0)
+         gc
+         state "done" "$version is active" "$version"
+         ;;
+      2)
+         gc
+         state config-error "$version refuses the configuration (exit code $(systemctl show -p ExecMainStatus --value "$SERVICE")); fix /data/config, the image is kept" "$version"
+         exit 1
+         ;;
+      *)
+         log "$version failed; rolling back"
+         if [ -n "$old" ]; then
+            podman tag "$old" "$ACTIVE"
+            if [ -n "$prev_before" ]; then podman tag "$prev_before" "$PREVIOUS"; else podman untag "$old" "$PREVIOUS" || true; fi
+         fi
+         gc
+         systemctl reset-failed "$SERVICE" 2>/dev/null || true
+         systemctl restart "$SERVICE" || true
+         state rolled-back "$version failed to start or crashed within ${SOAK_S}s; rejected, back to the previous version" "$version"
+         exit 1
+         ;;
+   esac
+}
+
+cmd_rollback() {
+   local a p rc
+   lock
+   a=$(image_id "$ACTIVE")
+   p=$(image_id "$PREVIOUS")
+   [ -n "$p" ] || die "there is no previous image"
+   state switching "rolling back to $(label "$p" org.opencontainers.image.version)"
+   podman tag "$p" "$ACTIVE"
+   podman tag "$a" "$PREVIOUS"
+   rm -f "$SAFEMODE_MARK"
+   rc=0
+   restart_and_soak || rc=$?
+   if [ "$rc" -eq 1 ]; then
+      podman tag "$a" "$ACTIVE"
+      podman tag "$p" "$PREVIOUS"
+      systemctl reset-failed "$SERVICE" 2>/dev/null || true
+      systemctl restart "$SERVICE" || true
+      state failed "the previous image failed too; switched back"
+      exit 1
+   fi
+   state "done" "rolled back to $(label "$ACTIVE" org.opencontainers.image.version)"
+}
+
+[ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run as root"
+install -d -m 0755 "$UPDATE_DIR"
+case ${1:-} in
+   login) cmd_login ;;
+   list) cmd_list ;;
+   status) cmd_status ;;
+   install) [ $# -eq 2 ] || die "usage: brewberry-update install <MAJOR.MINOR.PATCH>"; cmd_install "$2" ;;
+   rollback) cmd_rollback ;;
+   *) sed -n '2,12s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

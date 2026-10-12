@@ -4,13 +4,19 @@
 #
 # Safety (OS3, runtime contract §6): the outputs-off reset runs after every
 # stop, and the app must ping the watchdog. Never remove either.
-# Added in OS4: start limits, RestartMode=direct, safe mode and /update.
+# Supervision (OS4): exit codes 1 and 4 (and watchdog kills) are restarted; the
+# 4th start within 10 minutes that fails ends in safe mode, which falls back to
+# the previous image once. Exit codes 2 and 3 (configuration errors) are not
+# restarted and never switch images.
 
 [Unit]
 Description=BrewberryPi
 Requires=data.mount
 Wants=brewberry-firstload.service
 After=data.mount brewberry-datalayout.service brewberry-firstload.service
+StartLimitIntervalSec=10min
+StartLimitBurst=4
+OnFailure=brewberrypi-safemode.service
 
 [Container]
 Image=localhost/brewberrypi:active
@@ -32,6 +38,10 @@ Environment=BREWBERRYPI_WATCHDOG_MS=5000
 
 [Service]
 Restart=on-failure
+# Without this, OnFailure= would fire on every crash (systemd 257).
+RestartMode=direct
+RestartSec=3
+RestartPreventExitStatus=2 3
 TimeoutStartSec=60
 WatchdogSec=20
 # Runs on every exit path (clean stop, crash, kill -9, watchdog, failed start),

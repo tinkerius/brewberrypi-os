@@ -1,0 +1,54 @@
+#!/bin/bash
+# Safe mode (ADR-0001, runtime contract §6): OnFailure= of brewberrypi.service,
+# so it runs only when systemd gives up (start limit hit, or a configuration
+# error that is not restarted). Outputs are already off (ExecStopPost).
+#
+# Once: switch localhost/brewberrypi:active to :previous and start again. If
+# the image it switched to fails too, or there is no previous image, the app
+# stays down. Configuration errors (exit code 2 or 3) never switch images.
+# brewberry-update clears the marker after a successful install or rollback.
+set -euo pipefail
+
+ACTIVE=localhost/brewberrypi:active
+PREVIOUS=localhost/brewberrypi:previous
+SERVICE=brewberrypi.service
+# BREWBERRY_UPDATE_ROOT is for tests (tests/unit/update.sh).
+ROOT=${BREWBERRY_UPDATE_ROOT:-}
+MARK=$ROOT/data/update/safemode.json
+
+log() { echo "brewberrypi-safemode: $*"; }
+image_id() { podman image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
+
+status=$(systemctl show -p ExecMainStatus --value "$SERVICE")
+case $status in
+   2 | 3) log "configuration error (exit code $status): fix /data/config; the app stays down"; exit 0 ;;
+esac
+
+exec 9> "$ROOT/run/brewberry-update.lock"
+if ! flock -n 9; then
+   log "an update is running; it handles the failure"
+   exit 0
+fi
+
+active=$(image_id "$ACTIVE")
+previous=$(image_id "$PREVIOUS")
+if [ -z "$previous" ]; then
+   log "no previous image; the app stays down"
+   exit 0
+fi
+if [ -f "$MARK" ] && [ "$(jq -r .to "$MARK" 2>/dev/null)" = "$active" ]; then
+   log "the previous image failed as well; the app stays down"
+   exit 0
+fi
+
+podman tag "$previous" "$ACTIVE"
+podman tag "$active" "$PREVIOUS"
+jq -n --arg from "$active" --arg to "$previous" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+   '{time: $time, from: $from, to: $to}' > "$MARK.tmp"
+sync "$MARK.tmp"
+mv "$MARK.tmp" "$MARK"
+sync "$(dirname "$MARK")"
+log "switched to the previous image; starting again"
+
+systemctl reset-failed "$SERVICE"
+systemctl --no-block start "$SERVICE"

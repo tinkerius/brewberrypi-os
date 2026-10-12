@@ -1,0 +1,8 @@
+[Unit]
+Description=BrewberryPi safe mode: fall back to the previous app version once
+After=data.mount
+Requires=data.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/brewberrypi-safemode

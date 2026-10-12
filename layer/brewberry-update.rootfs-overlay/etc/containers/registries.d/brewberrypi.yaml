@@ -1,0 +1,4 @@
+# cosign v2 signatures are stored as sha256-<digest>.sig tags next to the image.
+docker:
+  ghcr.io/tinkerius/brewberrypi:
+    use-sigstore-attachments: true

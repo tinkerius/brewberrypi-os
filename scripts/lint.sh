@@ -14,7 +14,7 @@ cd "$REPO_ROOT"
 shellcheck -x scripts/*.sh
 # rpi-image-gen hooks get their IGconf_* variables from the build environment.
 shellcheck -e SC2154,SC1091 image/*/*.sh image/*/bdebstrap/*
-shellcheck layer/*.rootfs-overlay/usr/local/sbin/* tests/hardware/*.sh tests/unit/*.sh
+shellcheck layer/*.rootfs-overlay/usr/local/sbin/* tests/hardware/*.sh tests/unit/*.sh tests/integration/*.sh
 yamllint -s config/ .github/
 fetch_rpi_image_gen
 for layer in layer/*.yaml image/*/image.yaml; do

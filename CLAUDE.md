@@ -16,9 +16,13 @@ with version selection, rollback and safe mode.
 - `docs/implementation-plan.md`: milestones OS0–OS8.
 - `docs/research/`: research summary and raw JSON (claims with sources).
 - `config/`: rpi-image-gen image configs (`brewberrypi-pi34.yaml`).
-- `layer/`: our own rpi-image-gen layers (`brewberry-base.yaml`).
+- `image/brewberry-mbr/`: our rpi-image-gen image layer (MBR p1 boot, p2 root, p3 `DATA`).
+- `layer/`: our own rpi-image-gen layers; files they install live in `<layer>.rootfs-overlay/`.
+  - `brewberry-base`: mDNS, `/etc/brewberry-release`.
+  - `brewberry-readonly`: `data.mount`, first-boot grow/layout/seal services, volatile journal.
+- `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh`).
 - `scripts/`: `build.sh`, `lint.sh`; `common.sh` pins the rpi-image-gen version.
-- Overlays, units and the contract stub: created in milestones OS1–OS2.
+- Podman config, the app unit and the contract stub: created in milestone OS2.
 
 ## Commands
 

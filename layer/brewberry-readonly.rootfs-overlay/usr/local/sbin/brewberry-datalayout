@@ -1,0 +1,25 @@
+#!/bin/sh
+# Create the /data layout (ADR-0001). Runs on every boot; only creates what is
+# missing, so a healthy /data is not written to.
+set -eu
+
+D=/data
+
+mountpoint -q "$D" || { echo "$D is not mounted" >&2; exit 1; }
+
+created=0
+ensure_dir() { # <mode> <path>
+   if [ ! -d "$2" ]; then
+      install -d -m "$1" "$2"
+      echo "created $2"
+      created=1
+   fi
+}
+
+ensure_dir 0755 "$D/config"              # config.json and recipes, ro in the app
+ensure_dir 0755 "$D/containers/storage"  # Podman graphroot (OS2)
+ensure_dir 0755 "$D/tmp"                 # Podman pull staging (OS2)
+ensure_dir 0755 "$D/update"              # update requests, state, tags.json (OS4)
+ensure_dir 0700 "$D/secrets"             # registry auth.json (OS4)
+
+[ "$created" -eq 0 ] || sync -f "$D"

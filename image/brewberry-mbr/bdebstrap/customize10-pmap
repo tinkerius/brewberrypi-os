@@ -1,0 +1,16 @@
+#!/bin/sh
+
+set -eu
+
+# Pre-defined IDs for pre-image.sh: the vfat volume ID and the root UUID.
+BOOT_LABEL=$(uuidgen | sed 's/-.*//' | tr 'a-f' 'A-F')
+ROOT_UUID=$(uuidgen)
+
+printf 'BOOT_LABEL=%s\nROOT_UUID=%s\n' "$BOOT_LABEL" "$ROOT_UUID" \
+   > "${IGconf_image_outputdir}/img_uuids"
+
+# Install provision map
+pmap="${IGconf_image_assetdir:-}/device/provisionmap-${IGconf_image_pmap:-}.json"
+if [ -f "$pmap" ]; then
+   cp "$pmap" "${IGconf_image_outputdir}/provisionmap.json"
+fi

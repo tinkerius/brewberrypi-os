@@ -32,7 +32,9 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 | Path | Content |
 |---|---|
 | `config/brewberrypi-pi34.yaml` | Image for Raspberry Pi 3 and 4 |
-| `layer/` | Our own rpi-image-gen layers |
+| `image/brewberry-mbr/` | Partition layout: p1 boot, p2 root (fixed), p3 `DATA` for `/data` |
+| `layer/` | Our own rpi-image-gen layers; `*.rootfs-overlay/` holds the files they install |
+| `tests/hardware/` | Checks that run on a real Pi (milestone "done when" checks) |
 | `scripts/build.sh` | Builds `deploy/<image>-<version>.img.xz` plus a `.sha256` |
 | `scripts/lint.sh` | shellcheck, yamllint and layer metadata lint |
 
@@ -59,6 +61,10 @@ BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh
 
 1. Flash `brewberrypi-os-pi34-*.img.xz` with Raspberry Pi Imager → *Use custom*. Skip OS
    customisation for now; it comes with the Imager manifest in OS7.
-2. Boot a Pi 3 or 4 with Ethernet connected.
+2. Boot a Pi 3 or 4 with Ethernet connected. On first boot it grows `/data` to fill the card,
+   seals itself (read-only boot, RAM overlay over the root) and **reboots once by itself**.
 3. `ssh brewberry@brewberrypi.local` (or use the IP address from your router).
 4. `cat /etc/brewberry-release` shows the build version.
+
+From then on root and boot are read-only and only `/data` is written; changes anywhere else
+are lost at reboot. OS updates will go through maintenance mode (OS6).

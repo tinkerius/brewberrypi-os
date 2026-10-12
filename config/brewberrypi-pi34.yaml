@@ -1,9 +1,10 @@
-# BrewberryPi OS image for Raspberry Pi 3 and 4 (OS0: skeleton).
+# BrewberryPi OS image for Raspberry Pi 3 and 4.
 #
 # Built with rpi-image-gen (see scripts/build.sh for the pinned version).
 # The rpi3 device layer pulls in rpi-generic64: the v8 kernel and boot
 # firmware for all devices, so the same image boots on a Pi 3 and a Pi 4.
-# Partition layout, read-only root and /data come in OS1.
+# Layout (image-brewberry): p1 boot, p2 root (fixed), p3 DATA (grown on
+# first boot). The system seals itself after first boot (brewberry-readonly).
 
 device:
   layer: rpi3
@@ -13,10 +14,11 @@ device:
   user1sudo: nopasswd
 
 image:
-  layer: image-rpios
+  layer: image-brewberry
   name: brewberrypi-os-pi34
   boot_part_size: 512M
-  root_part_size: 3G
+  root_part_size: 3584M
+  data_part_size: 256M
 
 ssh:
   # pubkey_user1 is passed by scripts/build.sh from BREWBERRY_SSH_PUBKEY.
@@ -25,3 +27,4 @@ ssh:
 layer:
   base: trixie-minbase
   app: brewberry-base
+  readonly: brewberry-readonly

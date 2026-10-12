@@ -1,0 +1,3 @@
+// While sealed, package changes would land in the RAM overlay and vanish at
+// reboot (and fill memory). OS updates go through maintenance mode (OS6).
+DPkg::Pre-Invoke { "if grep -q 'overlayroot=' /proc/cmdline && [ -d /media/root-ro ]; then echo 'BrewberryPi OS is sealed: run brewberry-maint on first' >&2; exit 1; fi"; };

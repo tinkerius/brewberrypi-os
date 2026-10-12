@@ -21,6 +21,7 @@ controller for a home-brewing mash kettle. It is built to behave like a games co
 |---|---|
 | [docs/adr/](docs/adr/) | Architecture decision records |
 | [docs/implementation-plan.md](docs/implementation-plan.md) | Milestones OS0–OS8 |
+| [docs/os-update.md](docs/os-update.md) | OS update procedure (maintenance mode) |
 | [docs/research/](docs/research/) | Research behind the decisions (primary sources, fact-checked) |
 | Runtime contract (application repository: `docs/deployment/runtime-contract.md`) | What the app image expects from this OS |
 
@@ -72,7 +73,9 @@ BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh
 4. `cat /etc/brewberry-release` shows the build version.
 
 From then on root and boot are read-only and only `/data` is written; changes anywhere else
-are lost at reboot. OS updates will go through maintenance mode (OS6).
+are lost at reboot. OS updates go through maintenance mode: see
+[docs/os-update.md](docs/os-update.md) (`brewberry-maint on`, `apt full-upgrade`,
+`brewberry-maint off`).
 
 ### App versions on the device
 

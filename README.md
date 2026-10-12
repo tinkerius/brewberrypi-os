@@ -24,6 +24,8 @@ flashing, configuration, app versions, USB, OS updates and troubleshooting.
 | Document | Purpose |
 |---|---|
 | [docs/user-manual.md](docs/user-manual.md) | Installing, configuring and running BrewberryPi OS |
+| [docs/development.md](docs/development.md) | Developer guide: build host, building, layers, tests, CI, workflow |
+| [docs/releasing.md](docs/releasing.md) | Release procedure: versions, tag, draft, hardware checks, publish |
 | [docs/adr/](docs/adr/) | Architecture decision records |
 | [docs/implementation-plan.md](docs/implementation-plan.md) | Milestones OS0–OS8 |
 | [docs/flashing.md](docs/flashing.md) | Flashing with Raspberry Pi Imager and its customisation |
@@ -32,6 +34,9 @@ flashing, configuration, app versions, USB, OS updates and troubleshooting.
 | Runtime contract (application repository: `docs/deployment/runtime-contract.md`) | What the app image expects from this OS |
 
 ## Development
+
+The full developer guide is [docs/development.md](docs/development.md); releases follow
+[docs/releasing.md](docs/releasing.md).
 
 The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image-gen), pinned in
 `scripts/common.sh`.
@@ -48,7 +53,7 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 | `tests/unit/` | Host-side unit tests, e.g. the outputs-off reset with a fake `pinctrl` |
 | `scripts/build.sh` | Builds `deploy/<image>-<version>.img.xz` plus a `.sha256` |
 | `scripts/usb-export.sh` | Puts a signed app version on a USB stick and verifies it against the device policy |
-| `scripts/build-stub.sh` | Builds the contract stub for arm64 (`podman save` tarball); `build.sh` calls it unless `BREWBERRY_PRELOAD` names another image |
+| `scripts/build-stub.sh` | Builds the contract stub for arm64 (`podman save` in `dir:` format); `build.sh` calls it unless `BREWBERRY_PRELOAD` names another image |
 | `scripts/fetch-app.sh` | Fetches a signed app release (arm64) as the image's preload and verifies it; `build.sh` uses it when `BREWBERRY_APP_VERSION` is set |
 | `scripts/imager-manifest.py` | Raspberry Pi Imager manifest for the images (release URLs or local files) |
 | `scripts/lint.sh` | shellcheck, yamllint, layer metadata lint and the unit tests |
@@ -59,7 +64,8 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 Every push and pull request runs `.github/workflows/build.yml`. It builds both images on
 `ubuntu-24.04-arm` runners and uploads them as the `brewberrypi-os-pi34` and `brewberrypi-os-pi5`
 artifacts (kept 30 days). A version tag (`v1.2.3`) also creates a **draft release** with both
-images, the Imager manifest and `SHA256SUMS`; publish it once the hardware checks pass.
+images, the Imager manifest and `SHA256SUMS`; publish it once the hardware checks pass
+([docs/releasing.md](docs/releasing.md)).
 
 The image preloads the contract stub. To preload a released app version instead, set the
 repository variable `BREWBERRY_APP_VERSION` (`x.y.z`) and give CI read access to the app's package:

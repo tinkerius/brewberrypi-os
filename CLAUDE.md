@@ -16,6 +16,7 @@ with version selection, rollback and safe mode.
 - `docs/implementation-plan.md`: milestones OS0–OS8.
 - `docs/research/`: research summary and raw JSON (claims with sources).
 - `docs/user-manual.md`: user manual for the OS (flashing, configuration, app versions, USB, OS updates, troubleshooting). Hardware, wiring and the app's config format belong in the app repo. Keep it in sync when commands or behaviour change.
+- `docs/development.md`: developer guide (build host, building, how layers work, tests, CI settings, workflow, maintenance tasks). `docs/releasing.md`: release procedure (versions, tag → draft release, hardware checks, publish). Keep both in sync when scripts, CI or layers change.
 - `docs/os-update.md`: OS update procedure (maintenance mode).
 - `docs/flashing.md`: flashing with Raspberry Pi Imager through the manifest (customisation).
 - `config/`: rpi-image-gen image configs: `brewberrypi-base.yaml` (shared), `brewberrypi-pi34.yaml` (Pi 3/4), `brewberrypi-pi5.yaml` (Pi 5).

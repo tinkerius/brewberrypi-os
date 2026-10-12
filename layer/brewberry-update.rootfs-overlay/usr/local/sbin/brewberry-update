@@ -4,8 +4,11 @@
 #   brewberry-update login           store the registry token (/data/secrets/auth.json)
 #   brewberry-update list            available versions (also written to /data/update/tags.json)
 #   brewberry-update status          active and previous image, last result
-#   brewberry-update install <x.y.z> pull (signature checked by policy.json), switch,
-#                                    watch for 60 s, roll back on failure
+#   brewberry-update install <x.y.z> [--from-dir <dir>]
+#                                    pull from the registry, or from a 'dir:' export
+#                                    (USB, via brewberry-usb), signature checked by
+#                                    policy.json; switch, watch for 60 s, roll back
+#                                    on failure
 #   brewberry-update rollback        switch back to the previous image
 #
 # Images: localhost/brewberrypi:active runs; :previous is the one before and is
@@ -135,19 +138,25 @@ cmd_status() {
    return 0
 }
 
-cmd_install() {
-   local version=$1 new old prev_before rc
+cmd_install() { # <version> [dir: export]
+   local version=$1 from_dir=${2:-} source new old prev_before rc
    [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "not a release version (MAJOR.MINOR.PATCH): $version"
-   need_auth
+   if [ -n "$from_dir" ]; then
+      [ -f "$from_dir/manifest.json" ] || die "no image in $from_dir"
+      source=dir:$from_dir
+   else
+      need_auth
+      source=$REPO:$version
+   fi
    lock
 
-   state pulling "pulling $REPO:$version" "$version"
-   if ! podman pull -q "$REPO:$version" > /dev/null; then
+   state pulling "pulling $source" "$version"
+   if ! new=$(podman pull -q "$source"); then
       state failed "pull failed or the signature was rejected; nothing changed" "$version"
       exit 1
    fi
-   new=$(image_id "$REPO:$version")
-   podman untag "$new" "$REPO:$version" || true
+   new=$(image_id "$new")
+   [ -n "$from_dir" ] || podman untag "$new" "$source" || true
    old=$(image_id "$ACTIVE")
 
    if [ "$new" = "$old" ]; then
@@ -157,6 +166,11 @@ cmd_install() {
    if [ "$(label "$new" org.brewberrypi.runtime-contract)" != "$CONTRACT" ]; then
       gc
       state failed "$version does not implement runtime contract $CONTRACT; nothing changed" "$version"
+      exit 1
+   fi
+   if [ "$(label "$new" org.opencontainers.image.version)" != "$version" ]; then
+      gc
+      state failed "the image says it is version '$(label "$new" org.opencontainers.image.version)', not $version; nothing changed" "$version"
       exit 1
    fi
 
@@ -222,7 +236,10 @@ case ${1:-} in
    login) cmd_login ;;
    list) cmd_list ;;
    status) cmd_status ;;
-   install) [ $# -eq 2 ] || die "usage: brewberry-update install <MAJOR.MINOR.PATCH>"; cmd_install "$2" ;;
+   install)
+      if [ $# -eq 2 ]; then cmd_install "$2"
+      elif [ $# -eq 4 ] && [ "$3" = --from-dir ]; then cmd_install "$2" "$4"
+      else die "usage: brewberry-update install <MAJOR.MINOR.PATCH> [--from-dir <dir>]"; fi ;;
    rollback) cmd_rollback ;;
-   *) sed -n '2,12s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+   *) sed -n '2,15s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

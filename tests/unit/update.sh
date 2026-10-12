@@ -31,6 +31,10 @@ case "$1 ${2:-}" in
          *) l=$(echo "$4" | sed 's/.*Labels "\([^"]*\)".*/\1/'); sed -n "s/^$l=//p" "$FAKE/labels/$id" ;;
       esac ;;
    "pull -q")
+      if [ "${3#dir:}" != "$3" ]; then
+         [ -f "${3#dir:}/fake-id" ] || { echo "rejected by policy" >&2; exit 125; }
+         id=$(cat "${3#dir:}/fake-id"); touch "$FAKE/images/$id"; echo "$id"; exit 0
+      fi
       tag=${3##*:}
       [ -f "$FAKE/registry/$tag" ] || { echo "rejected by policy" >&2; exit 125; }
       id=$(cat "$FAKE/registry/$tag"); touch "$FAKE/images/$id"
@@ -86,9 +90,9 @@ fixture() {
    mkdir -p "$FAKE"/{tags,images,labels,registry,behave,sys} "$BREWBERRY_UPDATE_ROOT"/{data/secrets,run}
    echo token > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
    : > "$FAKE/log"
-   local v id behave contract
-   while read -r v id behave contract; do
-      printf 'org.opencontainers.image.version=%s\norg.brewberrypi.runtime-contract=%s\n' "$v" "$contract" > "$FAKE/labels/$id"
+   local v id behave contract labelled
+   while read -r v id behave contract labelled; do
+      printf 'org.opencontainers.image.version=%s\norg.brewberrypi.runtime-contract=%s\n' "${labelled:-$v}" "$contract" > "$FAKE/labels/$id"
       echo "$behave" > "$FAKE/behave/$id"
       [ "$v" = 1.0.0 ] || echo "$id" > "$FAKE/registry/$v"
    done <<'END'
@@ -99,6 +103,7 @@ fixture() {
 1.5.0 id150 config 1
 1.6.0 id160 ok 2
 1.7.0 id170 ok 1
+1.8.0 id180 ok 1 1.8.1
 END
    touch "$FAKE/images/id100"
    echo id100 > "$FAKE/tags/localhost_brewberrypi_active"
@@ -145,6 +150,18 @@ expect "wrong runtime contract: nothing changed, image removed" "$RC $(tag_of ac
 
 fixture; run "$UPDATE" install 1.5.0
 expect "configuration error: image kept, not rolled back" "$RC $(tag_of active) $(tag_of previous) $(phase)" "1 id150 id100 config-error"
+
+fixture; run "$UPDATE" install 1.8.0
+expect "version label differs from the tag: nothing changed" "$RC $(tag_of active) $(images) $(phase)" "1 id100 id100 failed"
+
+fixture; mkdir -p "$T/stick/1.1.0"; echo '{}' > "$T/stick/1.1.0/manifest.json"; echo id110 > "$T/stick/1.1.0/fake-id"
+rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
+run "$UPDATE" install 1.1.0 --from-dir "$T/stick/1.1.0"
+expect "install from a dir: export (no registry token needed)" "$RC $(tag_of active) $(tag_of previous) $(phase)" "0 id110 id100 done"
+
+fixture; mkdir -p "$T/stick/1.2.0"; echo '{}' > "$T/stick/1.2.0/manifest.json"
+run "$UPDATE" install 1.2.0 --from-dir "$T/stick/1.2.0"
+expect "dir: export rejected by policy: nothing changed" "$RC $(tag_of active) $(phase)" "1 id100 failed"
 
 fixture; run "$UPDATE" install latest
 expect "non-release tag refused before pulling" "$RC $(tag_of active) $(grep -c . "$FAKE/log")" "1 id100 0"

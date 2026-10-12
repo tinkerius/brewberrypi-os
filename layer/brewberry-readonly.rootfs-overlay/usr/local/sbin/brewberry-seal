@@ -1,5 +1,6 @@
 #!/bin/sh
 # Seal the system after first boot (ADR-0001):
+#  0. cloud-init disabled (its Imager customisation is done),
 #  1. /boot/firmware read-only in /etc/fstab,
 #  2. overlayroot=tmpfs:recurse=0 on the kernel command line,
 #  3. reboot.
@@ -25,6 +26,15 @@ for f in /boot/firmware/initramfs*; do
    fi
 done
 [ "$initramfs_ok" -eq 1 ] || die "no initramfs in /boot/firmware; not sealing"
+
+# 0. cloud-init has applied the Imager customisation (this runs after
+#    cloud-final). It must not run again: not on every sealed boot, and not in
+#    maintenance mode, where it would re-apply the customisation.
+if [ -d /etc/cloud ] && [ ! -e /etc/cloud/cloud-init.disabled ]; then
+   touch /etc/cloud/cloud-init.disabled
+   sync -f /etc/cloud
+   echo "disabled cloud-init"
+fi
 
 # 1. Read-only boot partition from the next boot on.
 if ! grep -Eq '^[^#]+[[:space:]]/boot/firmware[[:space:]]+vfat[[:space:]]+ro,' "$FSTAB"; then

@@ -16,25 +16,29 @@ with version selection, rollback and safe mode.
 - `docs/implementation-plan.md`: milestones OS0–OS8.
 - `docs/research/`: research summary and raw JSON (claims with sources).
 - `docs/os-update.md`: OS update procedure (maintenance mode).
+- `docs/flashing.md`: flashing with Raspberry Pi Imager through the manifest (customisation).
 - `config/`: rpi-image-gen image configs: `brewberrypi-base.yaml` (shared), `brewberrypi-pi34.yaml` (Pi 3/4), `brewberrypi-pi5.yaml` (Pi 5).
 - `image/brewberry-mbr/`: our rpi-image-gen image layer (MBR p1 boot, p2 root, p3 `DATA`).
 - `layer/`: our own rpi-image-gen layers; files they install live in `<layer>.rootfs-overlay/`.
+  - `brewberry-suite`: the base suite (trixie-minbase with NetworkManager instead of networkd/iwd, no raspi-config).
   - `brewberry-base`: mDNS, `/etc/brewberry-release`.
   - `brewberry-readonly`: `data.mount`, first-boot grow/layout/seal services, volatile journal, `brewberry-maint` (maintenance mode), apt guard while sealed.
   - `brewberry-safety`: `config.txt` safety block (strict_gpiod, `gpio=` boot pins, w1-gpio, SPI off, watchdog), `brewberrypi-outputs-off`, `RuntimeWatchdogSec`.
   - `brewberry-podman`: Podman config (storage on `/data`), the Quadlet unit `brewberrypi.container` (rendered at build time with the gpio GID; `WatchdogSec`, outputs-off `ExecStopPost`, start limits, safe mode), gpiochip udev rule, `brewberry-firstload` (imports the `dir:` preload).
+  - `brewberry-imager`: cloud-init + `rpi-cloud-init-mods` for Imager's `cloudinit-rpi` customisation; `brewberry-seal` disables cloud-init after first boot.
   - `brewberry-update`: `policy.json` (default reject; app's pinned cosign key in `keys/app-cosign.pub` for the registry and for USB `dir:` exports under `/media/brewberry-usb`; unsigned only from the preload dir), registries.d, the `brewberry-update` and `brewberry-usb` CLIs, `brewberrypi-safemode`.
 - `stub/`: contract stub image (READY, WATCHDOG, `/healthz`, crash/hang/refuse on request, heater test behind `allowHeat`), preloaded until the app is released.
-- `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh` … `os6-check.sh`).
-- `tests/unit/`: host-side unit tests with fakes (`outputs-off.sh`, `update.sh`, `usb.sh`, `maint.sh`), run by `scripts/lint.sh`.
+- `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh` … `os7-check.sh`).
+- `tests/unit/`: host-side unit tests with fakes (`outputs-off.sh`, `update.sh`, `usb.sh`, `maint.sh`, `imager-manifest.sh`), run by `scripts/lint.sh`.
 - `tests/integration/signing.sh`: policy test with a local registry and cosign v2 (CI job `signature policy`).
-- `scripts/`: `build.sh`, `build-stub.sh`, `lint.sh`, `publish-test-stubs.sh` (OS4 test images), `usb-export.sh`; `common.sh` pins the rpi-image-gen version.
+- `scripts/`: `build.sh`, `build-stub.sh`, `lint.sh`, `imager-manifest.py` (Imager manifest), `publish-test-stubs.sh` (OS4 test images), `usb-export.sh`; `common.sh` pins the rpi-image-gen version.
 
 ## Commands
 
 - Build image: `BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh [brewberrypi-pi5.yaml]` (arm64 Debian/Ubuntu host, or QEMU binfmt; first run `sudo .cache/rpi-image-gen/install_deps.sh`). Output: `deploy/*.img.xz`.
 - Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint, unit tests in `stub/` and `tests/unit/`).
-- CI: `.github/workflows/build.yml`: lint, the signature policy test, and the image builds for `pi34` and `pi5` on `ubuntu-24.04-arm` (uploaded as artifacts).
+- CI: `.github/workflows/build.yml`: lint, the signature policy test, and the image builds for `pi34` and `pi5` on `ubuntu-24.04-arm` (uploaded as artifacts). A `v*` tag also creates a draft release (images, Imager manifest, `SHA256SUMS`).
+- Imager manifest for local images: `scripts/imager-manifest.py --local deploy/*.img.xz > brewberrypi-os.rpi-imager-manifest`.
 - On the device (root): `brewberry-update login|list|status|install <x.y.z>|rollback`, `brewberry-usb list|install <x.y.z>|import-config`, `brewberry-maint status|on|off`.
 
 ## Rules

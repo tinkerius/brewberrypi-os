@@ -158,7 +158,28 @@ run sealed     # all PASS: overlay and read-only boot are back
 
 This covers the OS6 "done when". Afterwards, re-run the OS1 checks (`os1-check.sh status`).
 
-## OS7: Raspberry Pi 5
+## OS7: Raspberry Pi 5 and Imager customisation
+
+### Imager customisation
+
+On both a Pi 3/4 and a Pi 5, following [docs/flashing.md](../../docs/flashing.md):
+
+1. Write a local manifest for the CI images (`scripts/imager-manifest.py --local ...`) and open it
+   in Raspberry Pi Imager 2.x.
+2. Check that Imager offers customisation but no interface options (SPI, I2C, 1-Wire, serial).
+3. Customise a **non-default hostname**, a user, your SSH public key, Wi-Fi (SSID, password,
+   country) and the time zone. Flash, then boot **without Ethernet**.
+4. After the self-reboot, log in over Wi-Fi and run the checks; every line must say `PASS`:
+
+   ```sh
+   ssh <user>@<hostname>.local 'sudo sh -s -- <hostname> <user> "<ssid>"' < tests/hardware/os7-check.sh
+   ```
+
+5. Reboot once more and run the checks again (cloud-init must stay off, Wi-Fi must come back).
+6. Flash once without customisation and boot with Ethernet: `ssh brewberry@brewberrypi.local`
+   works with the key built in from `BREWBERRY_SSH_PUBKEY`.
+
+### Raspberry Pi 5
 
 Flash `brewberrypi-os-pi5-*.img.xz` on a Pi 5 and run the OS1–OS4 checks above unchanged. Watch
 these Pi 5 differences:

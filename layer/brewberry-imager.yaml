@@ -1,0 +1,32 @@
+# METABEGIN
+# X-Env-Layer-Name: brewberry-imager
+# X-Env-Layer-Category: app
+# X-Env-Layer-Desc: First-boot customisation from Raspberry Pi Imager (OS7):
+#  cloud-init with Raspberry Pi OS's vendor configuration, so the image takes
+#  Imager's 'cloudinit-rpi' format (hostname, user, SSH key, Wi-Fi). The
+#  release manifest (scripts/imager-manifest.py) offers no interface options.
+#  brewberry-seal disables cloud-init after the first boot.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: brewberry-suite,brewberry-readonly
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - cloud-init
+    # NoCloud seed in /boot/firmware, netplan with NetworkManager.
+    - rpi-cloud-init-mods
+  customize-hooks:
+    - |-
+      set -eu
+      # cloud-init's cc_raspberry_pi switches SPI, I2C, 1-Wire and serial with
+      # raspi-config. SPI uses BCM 10 (the buzzer), and the safety block in
+      # config.txt keeps it off. Fail the build if a dependency brought
+      # raspi-config back.
+      if [ -e "$1/usr/bin/raspi-config" ]; then
+         echo "brewberry-imager: raspi-config is in the image; it must not be (see brewberry-suite)" >&2
+         exit 1
+      fi
+      grep -rqs 'seedfrom: *file:///boot/firmware' "$1/etc/cloud/cloud.cfg.d" || {
+         echo "brewberry-imager: no NoCloud seed in /boot/firmware (rpi-cloud-init-mods)" >&2
+         exit 1
+      }

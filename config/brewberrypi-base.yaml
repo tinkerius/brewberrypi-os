@@ -7,7 +7,9 @@
 # The app runs under Podman + Quadlet; the preloaded image is the contract stub
 # until the app is released (brewberry-podman). Host-side safety: strict_gpiod,
 # boot-time off levels, outputs-off reset, watchdogs (brewberry-safety).
-# Signed updates, rollback and safe mode (brewberry-update).
+# Signed updates, rollback and safe mode (brewberry-update). NetworkManager
+# (brewberry-suite) and cloud-init for Raspberry Pi Imager's customisation on
+# the first boot (brewberry-imager).
 
 device:
   hostname: brewberrypi
@@ -22,13 +24,16 @@ image:
   data_part_size: 256M
 
 ssh:
-  # pubkey_user1 is passed by scripts/build.sh from BREWBERRY_SSH_PUBKEY.
+  # pubkey_user1 is passed by scripts/build.sh from BREWBERRY_SSH_PUBKEY
+  # (optional: Imager can add a key). Password logins stay off, even if
+  # Imager is asked for them.
   pubkey_only: y
 
 layer:
-  base: trixie-minbase
+  base: brewberry-suite
   app: brewberry-base
   readonly: brewberry-readonly
   safety: brewberry-safety
   podman: brewberry-podman
   update: brewberry-update
+  imager: brewberry-imager

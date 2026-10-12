@@ -54,6 +54,10 @@ git tag -a v0.1.0 -m "BrewberryPi OS v0.1.0"
 git push origin v0.1.0
 ```
 
+Without git at hand (or where tags can't be pushed), run the **tag release** workflow instead:
+Actions → *tag release* → *Run workflow*, with the version (`v0.1.0` or `v0.1.0-alpha.1`). It
+tags `main` and starts the build on the tag; the result is the same.
+
 The tag runs `.github/workflows/build.yml`: `lint`, `signature policy` and both image builds. If
 they all pass, the `release` job:
 

@@ -1,0 +1,3 @@
+# GPIO character devices for the gpio group, which the app container gets via
+# GroupAdd=. Chip numbers vary by kernel, so match them all.
+SUBSYSTEM=="gpio", KERNEL=="gpiochip*", GROUP="gpio", MODE="0660"

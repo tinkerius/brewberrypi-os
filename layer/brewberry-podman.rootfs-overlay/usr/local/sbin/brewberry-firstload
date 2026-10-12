@@ -1,0 +1,19 @@
+#!/bin/sh
+# Make sure localhost/brewberrypi:active exists. On first boot, or after /data
+# was wiped, import the app image preloaded in the OS image and tag it active.
+# Does nothing when the tag already exists.
+set -eu
+
+ACTIVE=localhost/brewberrypi:active
+PRELOAD=/usr/share/brewberrypi/preload.tar
+
+if podman image exists "$ACTIVE"; then
+   exit 0
+fi
+[ -f "$PRELOAD" ] || { echo "no $ACTIVE and no preloaded image" >&2; exit 1; }
+
+ref=$(podman load -q -i "$PRELOAD" | sed -n 's/^Loaded image: //p' | head -n 1)
+[ -n "$ref" ] || { echo "podman load -i $PRELOAD reported no image" >&2; exit 1; }
+podman tag "$ref" "$ACTIVE"
+sync -f /data
+echo "loaded $ref as $ACTIVE"

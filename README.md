@@ -34,9 +34,11 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 | `config/brewberrypi-pi34.yaml` | Image for Raspberry Pi 3 and 4 |
 | `image/brewberry-mbr/` | Partition layout: p1 boot, p2 root (fixed), p3 `DATA` for `/data` |
 | `layer/` | Our own rpi-image-gen layers; `*.rootfs-overlay/` holds the files they install |
+| `stub/` | Contract stub image, preloaded until the app is released; `test_stub.py` |
 | `tests/hardware/` | Checks that run on a real Pi (milestone "done when" checks) |
 | `scripts/build.sh` | Builds `deploy/<image>-<version>.img.xz` plus a `.sha256` |
-| `scripts/lint.sh` | shellcheck, yamllint and layer metadata lint |
+| `scripts/build-stub.sh` | Builds the contract stub for arm64 (`podman save` tarball); `build.sh` calls it unless `BREWBERRY_PRELOAD` names another image |
+| `scripts/lint.sh` | shellcheck, yamllint, layer metadata lint and the stub's unit tests |
 
 ### Build in CI
 

@@ -1,0 +1,35 @@
+# BrewberryPi app (runtime contract version 1, ADR-0001). Rendered at build time
+# by layer/brewberry-podman.yaml, which fills in the host gpio group's GID and
+# lists /dev/gpiochip0..31, each optional because chip numbers vary by kernel.
+#
+# Added in later milestones: WatchdogSec and the outputs-off ExecStopPost (OS3),
+# start limits, RestartMode=direct, safe mode and /update (OS4).
+
+[Unit]
+Description=BrewberryPi
+Requires=data.mount
+Wants=brewberry-firstload.service
+After=data.mount brewberry-datalayout.service brewberry-firstload.service
+
+[Container]
+Image=localhost/brewberrypi:active
+Pull=never
+ContainerName=brewberrypi
+Notify=true
+# The app image's user (tinkerius/brewberrypi Containerfile); never root.
+User=10001
+Group=10001
+GroupAdd=@GPIO_GID@
+ReadOnly=true
+NoNewPrivileges=true
+DropCapability=ALL
+Network=host
+Volume=/data/config:/config:ro
+@GPIO_DEVICES@
+
+[Service]
+Restart=on-failure
+TimeoutStartSec=60
+
+[Install]
+WantedBy=multi-user.target

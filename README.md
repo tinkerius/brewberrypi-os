@@ -13,12 +13,17 @@ controller for a home-brewing mash kettle. It is built to behave like a games co
 | Phase | Content | Status |
 |---|---|---|
 | Design | [ADR-0001](docs/adr/0001-os-image-and-app-runtime.md), research in [docs/research](docs/research/) | ✅ done (2026-10-09) |
-| Implementation | Milestones OS0–OS8 in [docs/implementation-plan.md](docs/implementation-plan.md) | ⏳ next |
+| Implementation | Milestones OS0–OS7 in [docs/implementation-plan.md](docs/implementation-plan.md) | ✅ merged; on-device checks pending |
+| End-to-end with the real app | OS8 | ⏳ waits for the app's first release |
 
 ## Documentation
 
+**Setting up and running a BrewberryPi?** Read the [user manual](docs/user-manual.md):
+flashing, configuration, app versions, USB, OS updates and troubleshooting.
+
 | Document | Purpose |
 |---|---|
+| [docs/user-manual.md](docs/user-manual.md) | Installing, configuring and running BrewberryPi OS |
 | [docs/adr/](docs/adr/) | Architecture decision records |
 | [docs/implementation-plan.md](docs/implementation-plan.md) | Milestones OS0–OS8 |
 | [docs/flashing.md](docs/flashing.md) | Flashing with Raspberry Pi Imager and its customisation |
@@ -75,53 +80,18 @@ sudo .cache/rpi-image-gen/install_deps.sh        # once
 BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh
 ```
 
-### Flash and log in
+### Flash, configure and run
 
-1. Flash `brewberrypi-os-pi34-*.img.xz` (Pi 3/4) or `brewberrypi-os-pi5-*.img.xz` (Pi 5) with
-   Raspberry Pi Imager 2.x **through the manifest**, and set hostname, user, SSH key and Wi-Fi in
-   its customisation: see [docs/flashing.md](docs/flashing.md).
-2. Boot it. On first boot it applies the customisation, grows `/data` to fill the card, seals
-   itself (read-only boot, RAM overlay over the root) and **reboots once by itself**.
-3. `ssh <user>@<hostname>.local` (default `brewberry@brewberrypi.local`, or the IP address from
-   your router).
-4. `cat /etc/brewberry-release` shows the build version.
+Flashing, first boot, configuration, app versions (`brewberry-update`), USB (`brewberry-usb`),
+OS updates (`brewberry-maint`) and troubleshooting are in the
+[user manual](docs/user-manual.md). For a quick test of a local build:
 
-From then on root and boot are read-only and only `/data` is written; changes anywhere else
-are lost at reboot. OS updates go through maintenance mode: see
-[docs/os-update.md](docs/os-update.md) (`brewberry-maint on`, `apt full-upgrade`,
-`brewberry-maint off`).
+1. Write an Imager manifest for it, then flash through it with Raspberry Pi Imager 2.x and set
+   user, SSH key and Wi-Fi in its customisation ([docs/flashing.md](docs/flashing.md)):
 
-### App versions on the device
+   ```sh
+   scripts/imager-manifest.py --local deploy/*.img.xz > brewberrypi-os.rpi-imager-manifest
+   ```
 
-The app comes from the private registry `ghcr.io/tinkerius/brewberrypi`. Only images signed with
-the app's pinned cosign key are accepted.
-
-```sh
-sudo brewberry-update login           # once: a GitHub classic PAT with read:packages only
-sudo brewberry-update list            # available versions
-sudo brewberry-update install 1.2.3   # pull, switch, watch 60 s, roll back if it fails
-sudo brewberry-update rollback        # back to the previous version
-sudo brewberry-update status
-```
-
-If the app keeps crashing (4 failed starts within 10 minutes), safe mode switches back to the
-previous version once; if that fails too, the app stays down with all outputs off.
-
-### Offline: USB stick
-
-On a machine with registry access, put a version and/or config files on a stick:
-
-```sh
-scripts/usb-export.sh 1.2.3 /media/stick              # brewberrypi/images/1.2.3, signature included
-mkdir -p /media/stick/brewberrypi/config && cp config.json /media/stick/brewberrypi/config/
-```
-
-Plug it into the Pi, then:
-
-```sh
-sudo brewberry-usb list
-sudo brewberry-usb install 1.2.3       # checked against the pinned key like a registry pull
-sudo brewberry-usb import-config       # validates, backs up /data/config, then copies
-```
-
-The stick is mounted read-only and only while the command runs.
+2. Boot it. It reboots once by itself after the first boot.
+3. `ssh brewberry@brewberrypi.local`, then `cat /etc/brewberry-release` shows the build version.

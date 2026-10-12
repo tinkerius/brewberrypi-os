@@ -1,0 +1,12 @@
+[Unit]
+Description=Create the BrewberryPi /data layout
+Requires=data.mount
+After=data.mount
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/brewberry-datalayout
+
+[Install]
+WantedBy=multi-user.target

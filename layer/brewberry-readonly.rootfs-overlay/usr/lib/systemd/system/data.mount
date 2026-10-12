@@ -1,0 +1,20 @@
+# /data is mounted here, not in /etc/fstab, so that overlayroot never covers
+# it with a RAM layer (ADR-0001). It is only wanted by local-fs.target: if it
+# fails, the system still boots for SSH, and units that need /data (the app)
+# require data.mount and stay down.
+[Unit]
+Description=BrewberryPi data partition
+Wants=brewberry-growdata.service
+After=brewberry-growdata.service
+Requires=systemd-fsck@dev-disk-by\x2dslot-data.service
+After=systemd-fsck@dev-disk-by\x2dslot-data.service
+Before=local-fs.target
+
+[Mount]
+What=/dev/disk/by-slot/data
+Where=/data
+Type=ext4
+Options=noatime,errors=remount-ro
+
+[Install]
+WantedBy=local-fs.target

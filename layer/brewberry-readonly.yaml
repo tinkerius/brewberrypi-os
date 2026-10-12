@@ -1,0 +1,21 @@
+# METABEGIN
+# X-Env-Layer-Name: brewberry-readonly
+# X-Env-Layer-Category: app
+# X-Env-Layer-Desc: Read-only root and writable /data (ADR-0001, OS1). Mounts
+#  the DATA partition at /data with data.mount, grows it on first boot, creates
+#  the /data layout, caps the volatile journal, and seals the system after
+#  first boot: overlayroot=tmpfs:recurse=0 and a read-only /boot/firmware.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: brewberry-base
+# X-Env-Layer-RequiresProvider: image,systemd
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - overlayroot
+    - cloud-guest-utils
+    - fdisk
+    - e2fsprogs
+  customize-hooks:
+    - mkdir -p "$1/data"
+    - $BDEBSTRAP_HOOKS/enable-units "$1" data.mount brewberry-datalayout.service brewberry-seal.service

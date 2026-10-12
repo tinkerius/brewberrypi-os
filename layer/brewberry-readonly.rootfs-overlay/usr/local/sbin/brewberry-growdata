@@ -1,0 +1,42 @@
+#!/bin/sh
+# Grow the DATA partition (the last one on the boot device) to the end of the
+# card, then its ext4 filesystem. Runs before /data is mounted. Idempotent:
+# does nothing once both already fill the card.
+set -eu
+
+DEV=$(readlink -f /dev/disk/by-slot/data)
+NAME=${DEV##*/}
+PART=$(cat "/sys/class/block/$NAME/partition")
+DISK=/dev/$(lsblk -ndo PKNAME "$DEV")
+
+# growpart --dry-run: 0 = can grow, 1 = nothing to do, anything else = error.
+rc=0
+out=$(growpart --dry-run "$DISK" "$PART" 2>&1) || rc=$?
+case $rc in
+   0) echo "growing $DEV (partition $PART of $DISK)"
+      growpart "$DISK" "$PART" ;;
+   1) ;;
+   *) printf '%s\n' "$out" >&2
+      echo "growpart --dry-run $DISK $PART failed ($rc)" >&2
+      exit 1 ;;
+esac
+
+part_bytes=$(blockdev --getsize64 "$DEV")
+block_size=$(dumpe2fs -h "$DEV" 2>/dev/null | sed -n 's/^Block size:[[:space:]]*//p')
+block_count=$(dumpe2fs -h "$DEV" 2>/dev/null | sed -n 's/^Block count:[[:space:]]*//p')
+part_blocks=$((part_bytes / block_size))
+
+# Leave slack for rounding (16 MiB): resize2fs grows in whole groups.
+if [ $((part_blocks - block_count)) -gt $((16 * 1024 * 1024 / block_size)) ]; then
+   echo "resizing filesystem on $DEV: $block_count -> $part_blocks blocks"
+   # Offline resize needs a freshly checked filesystem. e2fsck exit codes 0-3
+   # mean clean or fixed.
+   rc=0
+   e2fsck -f -y "$DEV" || rc=$?
+   if [ "$rc" -ge 4 ]; then
+      echo "e2fsck failed on $DEV ($rc)" >&2
+      exit 1
+   fi
+   resize2fs "$DEV"
+   sync
+fi

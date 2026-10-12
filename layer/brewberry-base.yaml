@@ -1,0 +1,30 @@
+# METABEGIN
+# X-Env-Layer-Name: brewberry-base
+# X-Env-Layer-Category: app
+# X-Env-Layer-Desc: BrewberryPi OS base layer. Announces the device as
+#  <hostname>.local over mDNS and writes /etc/brewberry-release so a running
+#  device shows which build it was flashed with.
+# X-Env-Layer-Version: 0.1.0
+# X-Env-Layer-Requires: device-user-admin,openssh-server
+#
+# X-Env-VarPrefix: brewberry
+#
+# X-Env-Var-version: dev
+# X-Env-Var-version-Desc: BrewberryPi OS version, set by scripts/build.sh from
+#  git describe.
+# X-Env-Var-version-Required: n
+# X-Env-Var-version-Valid: string
+# X-Env-Var-version-Set: y
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - avahi-daemon
+  customize-hooks:
+    - |-
+      set -eu
+      cat > "$1/etc/brewberry-release" <<EOF
+      BREWBERRY_OS_VERSION=${IGconf_brewberry_version}
+      BREWBERRY_OS_IMAGE=${IGconf_image_name}
+      BREWBERRY_OS_BUILD_DATE=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+      EOF

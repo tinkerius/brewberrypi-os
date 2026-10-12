@@ -1,0 +1,5 @@
+#!/bin/bash
+
+set -eu
+
+chroot "$1" apt install -y dosfstools e2fsprogs

@@ -1,0 +1,18 @@
+# Seals the system once after first boot, when everything that has to write to
+# root or boot (machine-id, SSH host keys, /data growth, Imager/cloud-init
+# customisation) is done. Skipped once the overlay is active, and in
+# maintenance mode (OS6).
+[Unit]
+Description=Seal BrewberryPi OS (read-only boot, overlay root) and reboot
+ConditionKernelCommandLine=!overlayroot
+ConditionPathExists=!/etc/brewberry/maintenance
+After=multi-user.target first-boot-complete.target systemd-machine-id-commit.service
+After=ssh-hostkeys-generate.service brewberry-growdata.service brewberry-datalayout.service
+After=cloud-final.service
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/brewberry-seal
+
+[Install]
+WantedBy=multi-user.target

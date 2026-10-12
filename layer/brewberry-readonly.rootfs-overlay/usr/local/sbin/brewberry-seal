@@ -1,0 +1,50 @@
+#!/bin/sh
+# Seal the system after first boot (ADR-0001):
+#  1. /boot/firmware read-only in /etc/fstab,
+#  2. overlayroot=tmpfs:recurse=0 on the kernel command line,
+#  3. reboot.
+# Every step is idempotent, so a power cut at any point is repaired by the
+# next boot running this again. brewberry-maint (OS6) reverses it.
+set -eu
+
+FSTAB=/etc/fstab
+CMDLINE=/boot/firmware/cmdline.txt
+PARAM=overlayroot=tmpfs:recurse=0
+
+die() { echo "brewberry-seal: $*" >&2; exit 1; }
+
+# Refuse to seal if the overlay could not come up: overlayroot runs from the
+# initramfs, so the initramfs the firmware loads must contain it.
+initramfs_ok=0
+for f in /boot/firmware/initramfs*; do
+   [ -f "$f" ] || continue
+   if lsinitramfs "$f" | grep -q 'scripts/init-bottom/overlayroot'; then
+      initramfs_ok=1
+   else
+      die "$f has no overlayroot script; not sealing"
+   fi
+done
+[ "$initramfs_ok" -eq 1 ] || die "no initramfs in /boot/firmware; not sealing"
+
+# 1. Read-only boot partition from the next boot on.
+if ! grep -Eq '^[^#]+[[:space:]]/boot/firmware[[:space:]]+vfat[[:space:]]+ro,' "$FSTAB"; then
+   sed -i -E 's|^([^#]+[[:space:]]/boot/firmware[[:space:]]+vfat[[:space:]]+)rw,|\1ro,|' "$FSTAB"
+   grep -Eq '^[^#]+[[:space:]]/boot/firmware[[:space:]]+vfat[[:space:]]+ro,' "$FSTAB" ||
+      die "could not set /boot/firmware read-only in $FSTAB"
+   sync "$FSTAB"
+   echo "set /boot/firmware read-only in $FSTAB"
+fi
+
+# 2. Overlay root from the next boot on. cmdline.txt is a single line.
+if ! grep -q "$PARAM" "$CMDLINE"; then
+   mount -o remount,rw /boot/firmware
+   tmp=$CMDLINE.brewberry-seal
+   printf '%s %s\n' "$PARAM" "$(cat "$CMDLINE")" > "$tmp"
+   sync "$tmp"
+   mv "$tmp" "$CMDLINE"
+   sync /boot/firmware
+   echo "added $PARAM to $CMDLINE"
+fi
+
+echo "sealed; rebooting"
+systemctl --no-block reboot

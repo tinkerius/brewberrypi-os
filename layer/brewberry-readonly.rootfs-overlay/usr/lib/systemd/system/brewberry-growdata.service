@@ -1,0 +1,15 @@
+# Runs on every boot but only acts while the DATA partition or its filesystem
+# can still grow, which in practice is the first boot.
+[Unit]
+Description=Grow the BrewberryPi data partition to the end of the card
+DefaultDependencies=no
+BindsTo=dev-disk-by\x2dslot-data.device
+After=dev-disk-by\x2dslot-data.device local-fs-pre.target
+Before=systemd-fsck@dev-disk-by\x2dslot-data.service data.mount shutdown.target
+Conflicts=shutdown.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/brewberry-growdata
+TimeoutStartSec=15min

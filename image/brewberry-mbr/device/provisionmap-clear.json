@@ -1,0 +1,25 @@
+[
+   {
+      "attributes": {
+         "PMAPversion": "1.2.0",
+         "system_type": "flat"
+      }
+   },
+   {
+      "partitions": [
+         {
+            "image": "boot",
+            "comment": "kernel + device tree + initramfs"
+         },
+         {
+            "image": "root",
+            "comment": "root filesystem, read-only overlay at runtime"
+         },
+         {
+            "image": "data",
+            "comment": "/data, grown on first boot",
+            "expand-to-fit": true
+         }
+      ]
+   }
+]

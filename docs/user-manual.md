@@ -53,8 +53,8 @@ Reflashing the SD card erases everything, `/data` included.
 - A microSD card, 8 GB or more.
 - The BrewberryPi hardware, wired as the app's documentation describes.
 - A network: Wi-Fi or Ethernet.
-- On your computer: [Raspberry Pi Imager](https://www.raspberrypi.com/software/) **2.x** and an
-  SSH key pair. To make one: `ssh-keygen -t ed25519`.
+- On your computer: [Raspberry Pi Imager](https://www.raspberrypi.com/software/) **2.x** (1.8 works
+  too), and for key logins an SSH key pair. To make one: `ssh-keygen -t ed25519`.
 - For online app updates: a GitHub account with access to `ghcr.io/tinkerius/brewberrypi`.
 
 ## 3. Installing
@@ -94,7 +94,7 @@ SSH keys.
    |---|---|
    | Hostname | For example `brewberrypi` (the default). The Pi is then `brewberrypi.local` on your network. |
    | User | A name of your own, with a password for logging in at the Pi's screen and keyboard. Not `brewberry`: that is the image's built-in account, and Imager can't set its password. |
-   | SSH | Turn it on with **public-key authentication** and paste your public key (`~/.ssh/id_ed25519.pub`). Passwords are never accepted over SSH. |
+   | SSH | Turn it on. **Allow public-key authentication only** with your public key (**ADD SSH KEY**, or paste `~/.ssh/id_ed25519.pub`) is the safer choice; **Use password authentication** lets you log in with the user's password. |
    | Wi-Fi | Network name, password and Wi-Fi country. Leave it empty if you use Ethernet. |
    | Time zone, keyboard | Your own. |
 
@@ -364,7 +364,8 @@ sudo brewberry-update status
 
 Before the Pi seals itself at the end of the first boot, it writes
 `brewberry-firstboot.txt` to the boot partition: failed services, the cloud-init (Imager
-customisation) status and log, the network state, and the logs of the first-boot services. Put
+customisation) status and log, the network state, the SSH settings (password logins on or off,
+authorized keys per user), and the logs of the first-boot services. Put
 the SD card in any computer and open the file on the small FAT partition (`bootfs`). Look at it
 first when the hostname, user, password or Wi-Fi from Imager weren't applied, or nothing answers
 on the network.
@@ -376,8 +377,10 @@ on the network.
 - Wi-Fi settings are only applied on the first boot. If they were wrong, reflash.
 - Check [the first boot report](#the-first-boot-report): if cloud-init found no Imager settings,
   the card was flashed with *Use custom* instead of the manifest, or customisation was skipped.
-- `Permission denied (publickey)`: the key you use isn't the one you gave Imager. Passwords
-  don't work over SSH.
+- `Permission denied (publickey)`: Imager's SSH setting was *public-key authentication only* (or
+  SSH had no setting) and the key you use isn't the one you gave Imager. The first boot report's
+  `== ssh` section shows whether passwords are on and how many keys each user has. To switch to
+  password logins, reflash with *Use password authentication*.
 
 ### The app is down or in safe mode
 

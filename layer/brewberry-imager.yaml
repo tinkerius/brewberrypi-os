@@ -5,6 +5,7 @@
 #  cloud-init with Raspberry Pi OS's vendor configuration, so the image takes
 #  Imager's 'cloudinit-rpi' format (hostname, user, SSH key, Wi-Fi). The
 #  release manifest (scripts/imager-manifest.py) offers no interface options.
+#  SSH password logins follow Imager's choice, and are off by default.
 #  brewberry-seal disables cloud-init after the first boot.
 # X-Env-Layer-Version: 1.0.0
 # X-Env-Layer-Requires: brewberry-suite,brewberry-readonly
@@ -39,6 +40,15 @@ mmdebstrap:
       print(si["distro"], si["default_user"]["name"])')
       [ "$distro" = "debian brewberry" ] || {
          echo "brewberry-imager: cloud-init uses distro/default user '$distro', not 'debian brewberry'" >&2
+         exit 1
+      }
+      # Imager's SSH choice (cloud-init's 50-cloud-init.conf) must come before
+      # the image's default (90-brewberry.conf); rpi-image-gen's pubkey_only
+      # file would refuse passwords whatever Imager says.
+      grep -qx 'Include /etc/ssh/sshd_config.d/\*.conf' "$1/etc/ssh/sshd_config" &&
+         [ -f "$1/etc/ssh/sshd_config.d/90-brewberry.conf" ] &&
+         [ ! -e "$1/etc/ssh/sshd_config.d/01pubkey-only.conf" ] || {
+         echo "brewberry-imager: sshd does not read Imager's choice before 90-brewberry.conf" >&2
          exit 1
       }
       grep -rqs 'seedfrom: *file:///boot/firmware' "$1/etc/cloud/cloud.cfg.d" || {

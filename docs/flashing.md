@@ -3,8 +3,9 @@
 Flash with **Raspberry Pi Imager 2.x** through the release's manifest
 `brewberrypi-os.rpi-imager-manifest`. Imager then offers its customisation: hostname, user with
 SSH key, Wi-Fi and time zone. A plain *Use custom* image gets no customisation; Imager 2.x only
-customises images whose manifest names the format (`cloudinit-rpi`). Imager 1.x can't customise
-this image.
+customises images whose manifest names the format (`cloudinit-rpi`). Imager 1.8 customises it too
+(its *OS Customisation* dialog; tested on a Pi 3 with v0.1.0-alpha.6): it writes `user-data` and
+`network-config` but no `meta-data`, so the image ships a default one.
 
 ## Images
 
@@ -39,7 +40,7 @@ Pick the device, the BrewberryPi OS entry and the SD card, then **Customise**.
 |---|---|
 | Hostname | The device is then `<hostname>.local` (mDNS). Default: `brewberrypi`. |
 | User | A new name (with the SSH key, and a password for the console). Not `brewberry`: the image's built-in account exists already, and cloud-init doesn't set an existing account's password from Imager. The account gets the image's default groups (`sudo`, `gpio`, …). |
-| SSH | **Public-key authentication only.** The image refuses password logins over SSH, even if Imager is set to allow them. |
+| SSH | **Allow public-key authentication only** with your key (**ADD SSH KEY**, or paste `~/.ssh/id_ed25519.pub`), or **Use password authentication** to log in with the user's password. The image follows the choice; without one, password logins are off. Root can't log in over SSH. |
 | Wi-Fi | SSID, password and country. Without Wi-Fi, connect Ethernet. |
 | Time zone, keyboard | Applied as usual. |
 
@@ -72,6 +73,8 @@ To change the customisation later (Wi-Fi, hostname), reflash the card. Reflashin
   `userconf-pi` and sets the keyboard with `raspi-config`, and the image has neither. Debian's
   class uses `useradd`, `chpasswd` and `console-setup`. The layer's build hook checks the merged
   configuration.
+- SSH: cloud-init writes Imager's choice (`ssh_pwauth`) to `/etc/ssh/sshd_config.d/50-cloud-init.conf`,
+  which sshd reads before the image's `90-brewberry.conf` (passwords off, root off).
 - `brewberry-seal` creates `/etc/cloud/cloud-init.disabled` before sealing, so cloud-init never
   runs again: not on sealed boots, and not in maintenance mode.
 - `scripts/imager-manifest.py` writes the manifest: `init_format: cloudinit-rpi`, device tags

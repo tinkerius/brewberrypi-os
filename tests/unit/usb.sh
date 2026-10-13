@@ -21,7 +21,7 @@ export PATH=$T/bin:$PATH LOG=$T/log
 
 fixture() {
    rm -rf "$T/stick" "$BREWBERRY_UPDATE_ROOT"
-   mkdir -p "$T/stick/brewberrypi/images"/{1.2.0,1.10.0,not-a-version} "$T/stick/brewberrypi/config" \
+   mkdir -p "$T/stick/brewberrypi/images"/{1.2.0,1.10.0,1.10.0-alpha.2,1.10.0-alpha.10,1.10.0-rc.1,1.10.0-beta,not-a-version} "$T/stick/brewberrypi/config" \
       "$BREWBERRY_UPDATE_ROOT/data/config"
    echo '{"hardware": {"heating": {"pin": 23}}}' > "$T/stick/brewberrypi/config/config.json"
    echo '[]' > "$T/stick/brewberrypi/config/recipes.json"
@@ -37,8 +37,8 @@ run() { RC=0; "$@" > "$T/out" 2>&1 || RC=$?; }
 cfg() { jq -c . "$BREWBERRY_UPDATE_ROOT/data/config/$1" 2>/dev/null || echo missing; }
 
 fixture; run "$USB" list
-expect "list: release versions newest first, config files" "$(grep '^  ' "$T/out" | tr -d ' ' | paste -sd ' ')" \
-   "1.10.0 1.2.0 config.json recipes.json"
+expect "list: versions newest first in SemVer order, config files" "$(grep '^  ' "$T/out" | tr -d ' ' | paste -sd ' ')" \
+   "1.10.0 1.10.0-rc.1 1.10.0-alpha.10 1.10.0-alpha.2 1.2.0 config.json recipes.json"
 
 fixture; run "$USB" install 1.2.0
 expect "install: hands the export to brewberry-update" "$RC $(cat "$LOG")" \

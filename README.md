@@ -69,7 +69,7 @@ images, the Imager manifest and `SHA256SUMS`; publish it once the hardware check
 as a GitHub pre-release, marked as untested on hardware.
 
 The image preloads the contract stub. To preload a released app version instead, set the
-repository variable `BREWBERRY_APP_VERSION` (`x.y.z`) and give CI read access to the app's package:
+repository variable `BREWBERRY_APP_VERSION` (`1.2.3` or `1.2.3-alpha.N`) and give CI read access to the app's package:
 the secret `BREWBERRY_GHCR_TOKEN` (classic PAT, `read:packages`), or add this repository under the
 package's *Manage Actions access*. The build refuses an image that isn't signed with the pinned key.
 

@@ -37,7 +37,7 @@ git push origin v0.1.0-alpha.1
 1. `main` is green in CI, and everything for the release is merged.
 2. Decide what the image preloads:
    - **Contract stub** (default): leave the repository variable `BREWBERRY_APP_VERSION` empty.
-   - **App release:** set `BREWBERRY_APP_VERSION=x.y.z` (Settings → Secrets and variables →
+   - **App release:** set `BREWBERRY_APP_VERSION` to the app version (`1.2.3` or `1.2.3-alpha.N`) (Settings → Secrets and variables →
      Actions → Variables), and make sure CI can read the app's package: the secret
      `BREWBERRY_GHCR_TOKEN` (classic PAT, `read:packages`), or this repository under the
      package's *Manage Actions access*. The build refuses an app image that isn't signed with the

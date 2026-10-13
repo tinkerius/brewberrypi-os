@@ -181,12 +181,12 @@ Needs an app release (≥ 1.0 for the milestone) from `tinkerius/brewberrypi`, a
 
    ```sh
    sudo brewberry-update login             # classic PAT with read:packages
-   sudo brewberry-update install <x.y.z>   # must end with the new version active
+   sudo brewberry-update install <version> # must end with the new version active
    sudo brewberry-update status
    ```
 
 2. **As the preload** (for the release image): set the repository variable
-   `BREWBERRY_APP_VERSION=<x.y.z>` and give CI read access to the app's package (the secret
+   `BREWBERRY_APP_VERSION=<version>` and give CI read access to the app's package (the secret
    `BREWBERRY_GHCR_TOKEN`, or this repository under the package's *Manage Actions access*). The
    image build fetches the arm64 image with `scripts/fetch-app.sh` and refuses it unless it is
    signed with the pinned key and its labels say contract 1 and that version.

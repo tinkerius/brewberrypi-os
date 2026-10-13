@@ -2,12 +2,12 @@
 # Offline updates and config import from a USB stick (ADR-0001, OS5). Run as root.
 #
 #   brewberry-usb list               versions and config files on the stick
-#   brewberry-usb install <x.y.z>    install brewberrypi/images/<x.y.z> from the stick
+#   brewberry-usb install <version>  install brewberrypi/images/<version> from the stick
 #                                    (signature checked like a registry pull)
 #   brewberry-usb import-config      copy brewberrypi/config/*.json to /data/config
 #
 # Stick layout (scripts/usb-export.sh writes it):
-#   brewberrypi/images/<x.y.z>/   'dir:' export of ghcr.io/tinkerius/brewberrypi:<x.y.z>,
+#   brewberrypi/images/<version>/ 'dir:' export of ghcr.io/tinkerius/brewberrypi:<version>,
 #                                 with its cosign signature (skopeo copy --all)
 #   brewberrypi/config/*.json     config.json and recipe files
 #
@@ -57,10 +57,16 @@ mount_stick() {
    die "no USB stick with a brewberrypi/ folder found"
 }
 
-versions() { # release versions on the stick, newest first
+# App versions (runtime contract §1): 1.2.3, or a pre-release 1.2.3-alpha.N, -beta.N, -rc.N.
+VERSION_RE='^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'
+
+versions() { # app versions on the stick, newest first in SemVer order (1.2.0-rc.1 < 1.2.0)
    [ -d "$STICK/brewberrypi/images" ] || return 0
    find "$STICK/brewberrypi/images" -mindepth 1 -maxdepth 1 -type d -printf '%f\n' |
-      grep -E '^[0-9]+\.[0-9]+\.[0-9]+$' | sort -t. -k1,1nr -k2,2nr -k3,3nr || true
+      grep -E "$VERSION_RE" |
+      awk '{ n = split($0, p, /[.-]/); rel = (n == 3)
+             print p[1], p[2], p[3], rel, (rel ? "-" : p[4]), (rel ? 0 : p[5]), $0 }' |
+      sort -k1,1nr -k2,2nr -k3,3nr -k4,4nr -k5,5r -k6,6nr | cut -d' ' -f7 || true
 }
 
 config_files() {
@@ -136,7 +142,7 @@ warn_boot_pins() {
 [ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run as root"
 case ${1:-} in
    list) cmd_list ;;
-   install) [ $# -eq 2 ] || die "usage: brewberry-usb install <MAJOR.MINOR.PATCH>"; cmd_install "$2" ;;
+   install) [ $# -eq 2 ] || die "usage: brewberry-usb install <version>"; cmd_install "$2" ;;
    import-config) cmd_import_config ;;
    *) sed -n '2,7s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

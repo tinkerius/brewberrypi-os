@@ -259,11 +259,15 @@ sees it. When the token expires, create a new one and run `login` again.
 ### List, install, roll back
 
 ```sh
-sudo brewberry-update list             # released versions, newest first
+sudo brewberry-update list             # available versions, newest first
 sudo brewberry-update install 1.2.3    # install and switch to 1.2.3
 sudo brewberry-update status           # active and previous version, result of the last action
 sudo brewberry-update rollback         # switch back to the previous version
 ```
+
+Versions are releases like `1.2.3` or pre-releases like `1.2.3-alpha.1` (also `-beta.N`, `-rc.N`).
+A pre-release has not been tested on hardware yet. It is listed before its release: `1.2.3-alpha.2`,
+`1.2.3-beta.1` and `1.2.3-rc.1` are all older than `1.2.3`.
 
 Installing or rolling back restarts the app, which **ends a running brew**. What `install` does:
 
@@ -459,13 +463,13 @@ All commands run as root (`sudo`).
 | Command | What it does |
 |---|---|
 | `brewberry-update login` | Store the registry token |
-| `brewberry-update list` | Released app versions, newest first |
-| `brewberry-update install <x.y.z>` | Install and switch to a version; rolls back if it fails |
+| `brewberry-update list` | Available app versions (releases and pre-releases), newest first |
+| `brewberry-update install <version>` | Install and switch to a version; rolls back if it fails |
 | `brewberry-update rollback` | Switch back to the previous version |
 | `brewberry-update status` | Active and previous version, last result, safe mode, demo mode |
 | `brewberry-update demo on\|off` | Run the app with a simulated kettle (no GPIO), or normally |
 | `brewberry-usb list` | Versions and config files on a USB stick |
-| `brewberry-usb install <x.y.z>` | Install a version from a USB stick |
+| `brewberry-usb install <version>` | Install a version from a USB stick |
 | `brewberry-usb import-config` | Copy `brewberrypi/config/*.json` from a stick to `/data/config` |
 | `brewberry-maint status` | Sealed (normal) or in maintenance mode |
 | `brewberry-maint on` | Make the system writable for OS updates (reboots) |

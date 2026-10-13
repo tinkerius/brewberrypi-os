@@ -1,11 +1,11 @@
 #!/bin/bash
 # Put an app version on a USB stick for an offline install (brewberry-usb, OS5).
 #
-# Usage: scripts/usb-export.sh <x.y.z> <stick mount point> [--repo <registry/repo>] [--key <cosign.pub>]
+# Usage: scripts/usb-export.sh <version> <stick mount point> [--repo <registry/repo>] [--key <cosign.pub>]
 #   default repo: ghcr.io/tinkerius/brewberrypi; default key: the app key the
 #   device pins (layer/brewberry-update.rootfs-overlay/usr/share/brewberrypi/keys).
 #
-# Writes <stick>/brewberrypi/images/<x.y.z> in 'dir:' format with the cosign
+# Writes <stick>/brewberrypi/images/<version> in 'dir:' format with the cosign
 # signature (skopeo copy --all: the signature covers the multi-arch index), then
 # verifies the export against the device's policy for USB images, so a stick
 # that the device would reject is noticed here. Needs skopeo and jq; for the
@@ -15,7 +15,7 @@ set -euo pipefail
 # shellcheck source=scripts/common.sh
 . "$(dirname "$0")/common.sh"
 
-usage() { echo "usage: usb-export.sh <x.y.z> <stick mount point> [--repo <registry/repo>] [--key <cosign.pub>]" >&2; exit 2; }
+usage() { echo "usage: usb-export.sh <version> <stick mount point> [--repo <registry/repo>] [--key <cosign.pub>]" >&2; exit 2; }
 [ $# -ge 2 ] || usage
 VERSION=$1 STICK=$2
 shift 2
@@ -29,7 +29,8 @@ while [ $# -gt 0 ]; do
       *) usage ;;
    esac
 done
-[[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a release version: $VERSION" >&2; exit 1; }
+# App versions (runtime contract §1): 1.2.3, or a pre-release 1.2.3-alpha.N, -beta.N, -rc.N.
+[[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]] || { echo "not an app version: $VERSION" >&2; exit 1; }
 [ -d "$STICK" ] || { echo "no such directory: $STICK" >&2; exit 1; }
 
 T=$(mktemp -d)

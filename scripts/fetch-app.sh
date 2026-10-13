@@ -4,7 +4,7 @@
 # against the key the device pins and checked for the runtime contract and
 # version labels. scripts/build.sh calls this when BREWBERRY_APP_VERSION is set.
 #
-# Usage: scripts/fetch-app.sh <x.y.z> <dest dir> [--repo <registry/repo>] [--key <cosign.pub>] [--insecure]
+# Usage: scripts/fetch-app.sh <version> <dest dir> [--repo <registry/repo>] [--key <cosign.pub>] [--insecure]
 #   default repo: ghcr.io/tinkerius/brewberrypi; default key: the app key the
 #   device pins; --insecure: plain-HTTP registry (tests only).
 #
@@ -20,7 +20,7 @@ set -euo pipefail
 
 CONTRACT=1
 
-usage() { echo "usage: fetch-app.sh <x.y.z> <dest dir> [--repo <registry/repo>] [--key <cosign.pub>] [--insecure]" >&2; exit 2; }
+usage() { echo "usage: fetch-app.sh <version> <dest dir> [--repo <registry/repo>] [--key <cosign.pub>] [--insecure]" >&2; exit 2; }
 [ $# -ge 2 ] || usage
 VERSION=$1 DEST=$2
 shift 2
@@ -36,7 +36,8 @@ while [ $# -gt 0 ]; do
       *) usage ;;
    esac
 done
-[[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || { echo "not a release version: $VERSION" >&2; exit 1; }
+# App versions (runtime contract §1): 1.2.3, or a pre-release 1.2.3-alpha.N, -beta.N, -rc.N.
+[[ $VERSION =~ ^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$ ]] || { echo "not an app version: $VERSION" >&2; exit 1; }
 
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT

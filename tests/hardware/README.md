@@ -197,7 +197,9 @@ On both a Pi 3/4 and a Pi 5, following [docs/flashing.md](../../docs/flashing.md
 2. Check that Imager offers customisation but no interface options (SPI, I2C, 1-Wire, serial).
 3. Customise a **non-default hostname**, a user of your own (not `brewberry`) with a password,
    your SSH public key, Wi-Fi (SSID, password, country), the time zone and the keyboard. Flash,
-   then boot **without Ethernet**. Also log in at the console with the password.
+   then boot **without Ethernet**. Also log in at the console with the password. Flash once with
+   SSH set to **public-key authentication only** and once to **password authentication**; the check
+   reads which one Imager wrote.
 4. After the self-reboot, log in over Wi-Fi and run the checks; every line must say `PASS`:
 
    ```sh

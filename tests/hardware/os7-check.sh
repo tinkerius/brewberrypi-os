@@ -36,6 +36,8 @@ user_has_key()          { test -s "$(getent passwd "$USER_NAME" | cut -d: -f6)/.
 user_has_password()     { test "$(passwd -S "$USER_NAME" | cut -d' ' -f2)" = P; }
 user_groups()           { id -nG "$USER_NAME" | tr ' ' '\n' | grep -qx sudo && id -nG "$USER_NAME" | tr ' ' '\n' | grep -qx gpio; }
 password_ssh_off()      { sshd -T 2>/dev/null | grep -qx 'passwordauthentication no'; }
+password_ssh_on()       { sshd -T 2>/dev/null | grep -qx 'passwordauthentication yes'; }
+root_ssh_off()          { sshd -T 2>/dev/null | grep -qx 'permitrootlogin no'; }
 nm_active()             { systemctl is-active --quiet NetworkManager.service; }
 networkd_off()          { ! systemctl is-active --quiet systemd-networkd.service; }
 wifi_connected()        { nmcli -t -f DEVICE,TYPE,STATE,CONNECTION device | grep -q "^wlan0:wifi:connected:"; }
@@ -49,10 +51,16 @@ check "cloud-init finished its first boot"                  cloud_init_finished
 check "cloud-init reported no errors"                       cloud_init_no_errors
 check "cloud-init is disabled and not running"              cloud_init_disabled
 check "hostname is $HOST"                                   hostname_set
-check "user $USER_NAME has an SSH key"                      user_has_key
 check "user $USER_NAME has a password (console login)"      user_has_password
 check "user $USER_NAME is in the sudo and gpio groups"      user_groups
-check "SSH password login is off"                           password_ssh_off
+# Imager's SSH choice: "Use password authentication" writes ssh_pwauth: true.
+if grep -qx 'ssh_pwauth: true' /boot/firmware/user-data; then
+   check "SSH password login is on (Imager: password authentication)" password_ssh_on
+else
+   check "user $USER_NAME has an SSH key"                   user_has_key
+   check "SSH password login is off"                        password_ssh_off
+fi
+check "SSH root login is off"                               root_ssh_off
 check "NetworkManager is active"                            nm_active
 check "systemd-networkd is not running"                     networkd_off
 if [ -n "$SSID" ]; then

@@ -76,7 +76,7 @@ package's *Manage Actions access*. The build refuses an image that isn't signed 
 The image's built-in admin user is `brewberry`. It has no password and logs in over SSH with a key
 only, from the **repository variable** `BREWBERRY_SSH_PUBKEY` (Settings → Secrets and variables →
 Actions → Variables). Usually you flash through Imager instead and create your own user there, with
-your SSH key and a password for the console.
+a password, and either your SSH key or password logins over SSH (Imager's SSH setting).
 
 ### Build locally
 

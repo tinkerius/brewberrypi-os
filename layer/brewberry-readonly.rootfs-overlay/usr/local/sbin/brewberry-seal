@@ -29,6 +29,13 @@ report() {
    echo; echo "== cloud-init warnings and errors (whole log)"
    grep -n -A12 -E 'WARNING|ERROR|Traceback' /var/log/cloud-init.log | head -n 300
    echo; echo "== network"; nmcli -t device; ip -br address
+   # Whether anyone can log in over SSH: password logins follow Imager's
+   # choice, and key logins need an authorized_keys file.
+   echo; echo "== ssh"; sshd -T | grep -E '^(passwordauthentication|pubkeyauthentication|permitrootlogin) '
+   for h in /home/*; do
+      n=$(grep -s -c '^[^#]' "$h/.ssh/authorized_keys")
+      echo "$h: ${n:-0} authorized key(s)"
+   done
    for u in cloud-init-main cloud-init-local cloud-init-network cloud-config cloud-final \
             brewberry-growdata brewberry-datalayout brewberry-firstload NetworkManager; do
       echo; echo "== journal: $u"; journalctl -b -u "$u" --no-pager -n 150

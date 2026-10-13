@@ -28,7 +28,7 @@ with version selection, rollback and safe mode.
   - `brewberry-safety`: `config.txt` safety block (strict_gpiod, `gpio=` boot pins, w1-gpio, SPI off, watchdog), `brewberrypi-outputs-off`, `RuntimeWatchdogSec`.
   - `brewberry-podman`: Podman config (storage on `/data`), the Quadlet unit `brewberrypi.container` (rendered at build time with the gpio GID; `WatchdogSec`, outputs-off `ExecStopPost`, start limits, safe mode), gpiochip udev rule, `brewberry-firstload` (imports the `dir:` preload).
   - `brewberry-imager`: cloud-init + `rpi-cloud-init-mods` for Imager's `cloudinit-rpi` customisation; `brewberry-seal` disables cloud-init after first boot.
-  - `brewberry-update`: `policy.json` (default reject; app's pinned cosign key in `keys/app-cosign.pub` for the registry and for USB `dir:` exports under `/media/brewberry-usb`; unsigned only from the preload dir), registries.d, the `brewberry-update` and `brewberry-usb` CLIs, `brewberrypi-safemode`.
+  - `brewberry-update`: `policy.json` (default reject; app's pinned cosign key in `keys/app-cosign.pub` for the registry and for USB `dir:` exports under `/media/brewberry-usb`; unsigned only from the preload dir), registries.d, the `brewberry-update` (incl. demo mode: `--dummymode` via `/data/update/app-args.env`) and `brewberry-usb` CLIs, `brewberrypi-safemode`.
 - `stub/`: contract stub image (READY, WATCHDOG, `/healthz`, crash/hang/refuse on request, heater test behind `allowHeat`), preloaded until the app is released.
 - `tests/hardware/`: on-device checks for the milestones' "done when" (`os1-check.sh` … `os7-check.sh`).
 - `tests/unit/`: host-side unit tests with fakes (`outputs-off.sh`, `update.sh`, `usb.sh`, `maint.sh`, `datalayout.sh`, `imager-manifest.sh`), run by `scripts/lint.sh`.
@@ -41,7 +41,7 @@ with version selection, rollback and safe mode.
 - Lint: `scripts/lint.sh` (shellcheck, yamllint, rpi-image-gen layer metadata lint, unit tests in `stub/` and `tests/unit/`).
 - CI: `.github/workflows/build.yml`: lint, the signature policy test, and the image builds for `pi34` and `pi5` on `ubuntu-24.04-arm` (uploaded as artifacts). A `v*` tag also creates a draft release (images, Imager manifest, `SHA256SUMS`); a pre-release tag (`v0.1.0-alpha.1`) is published at once as a GitHub pre-release with an untested-on-hardware warning. `.github/workflows/tag-release.yml` (manual) creates such a tag on `main` and starts that build, for when tags can't be pushed.
 - Imager manifest for local images: `scripts/imager-manifest.py --local deploy/*.img.xz > brewberrypi-os.rpi-imager-manifest`.
-- On the device (root): `brewberry-update login|list|status|install <x.y.z>|rollback`, `brewberry-usb list|install <x.y.z>|import-config`, `brewberry-maint status|on|off`.
+- On the device (root): `brewberry-update login|list|status|install <x.y.z>|rollback|demo on|off`, `brewberry-usb list|install <x.y.z>|import-config`, `brewberry-maint status|on|off`.
 
 ## Rules
 

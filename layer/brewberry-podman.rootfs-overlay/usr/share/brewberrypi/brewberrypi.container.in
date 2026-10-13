@@ -32,6 +32,10 @@ NoNewPrivileges=true
 DropCapability=ALL
 Network=host
 Volume=/data/config:/config:ro
+# The contract's command. $BREWBERRYPI_ARGS is empty, or --dummymode in demo
+# mode (brewberry-update demo on: the app simulates the kettle and never touches
+# GPIO); systemd expands it from the EnvironmentFile below.
+Exec=--config /config/config.json $BREWBERRYPI_ARGS
 # The container does not get WATCHDOG_USEC; the app pings at this interval.
 Environment=BREWBERRYPI_WATCHDOG_MS=5000
 @GPIO_DEVICES@
@@ -41,6 +45,7 @@ Restart=on-failure
 # Without this, OnFailure= would fire on every crash (systemd 257).
 RestartMode=direct
 RestartSec=3
+EnvironmentFile=-/data/update/app-args.env
 RestartPreventExitStatus=2 3
 TimeoutStartSec=60
 WatchdogSec=20

@@ -49,7 +49,7 @@ Until OS3 adds the outputs-off reset, don't connect a relay board to a mains hea
    ```
 
 3. From another machine: `curl http://brewberrypi.local:8080/healthz` answers
-   `{"status": "ok", "version": "0.2.0", "engine": "NoProcess"}`, and
+   `{"status": "ok", "version": "0.3.0", "engine": "NoProcess"}`, and
    `http://brewberrypi.local:8080/` in a browser shows the stub's page ("The brewing app isn't
    installed yet").
 
@@ -117,6 +117,14 @@ another key.
    that crashes on start rolled back, `previous` kept through garbage collection, and repeated
    crashes switching to `previous` exactly once, then staying down with the outputs off.
 5. Reboot to remove the test key.
+6. Demo mode, with any app or the stub active:
+
+   ```sh
+   ssh brewberry@brewberrypi.local 'sudo brewberry-update demo on && sudo podman inspect brewberrypi --format "{{.Args}}"'
+   ```
+
+   The arguments end in `--dummymode`, and the stub's page shows "Demo mode: on". After a
+   reboot it is still on; `sudo brewberry-update demo off` removes `--dummymode` again.
 
 ## OS5: USB offline update and config import
 

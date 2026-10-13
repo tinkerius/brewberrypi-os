@@ -182,6 +182,28 @@ fixture; exec 8> "$BREWBERRY_UPDATE_ROOT/run/brewberry-update.lock"; flock 8
 run "$UPDATE" install 1.1.0; exec 8>&-
 expect "second update while one runs: refused" "$RC $(tag_of active)" "1 id100"
 
+# --- demo mode -----------------------------------------------------------------
+ARGS_FILE=$BREWBERRY_UPDATE_ROOT/data/update/app-args.env
+fixture; run "$UPDATE" demo on
+expect "demo on: --dummymode for the app, app restarted" \
+   "$RC $(cat "$ARGS_FILE") $(grep -c '^restart' "$FAKE/log")" "0 BREWBERRYPI_ARGS=--dummymode 1"
+expect "demo on: status says so" "$("$UPDATE" status 2>/dev/null | tail -n 1)" "demo mode: on"
+run "$UPDATE" demo off
+expect "demo off: no extra arguments, app restarted" \
+   "$RC $(test -e "$ARGS_FILE" && echo kept || echo removed) $(grep -c '^restart' "$FAKE/log")" "0 removed 2"
+expect "demo off: status says so" "$("$UPDATE" status 2>/dev/null | tail -n 1)" "demo mode: off"
+fixture; run "$UPDATE" demo maybe
+expect "demo with a wrong argument: refused, nothing changed" \
+   "$RC $(test -e "$ARGS_FILE" && echo written || echo none) $(grep -c . "$FAKE/log")" "1 none 0"
+# The unit must read the file the command writes, and pass its variable to the
+# app after the contract's command.
+UNIT=$ROOT_DIR/layer/brewberry-podman.rootfs-overlay/usr/share/brewberrypi/brewberrypi.container.in
+expect "unit reads brewberry-update's argument file" \
+   "$(grep -c '^EnvironmentFile=-/data/update/app-args.env$' "$UNIT")" 1
+# shellcheck disable=SC2016  # a literal $BREWBERRYPI_ARGS, expanded by systemd
+expect "unit passes the arguments after the contract's command" \
+   "$(grep -cxF 'Exec=--config /config/config.json $BREWBERRYPI_ARGS' "$UNIT")" 1
+
 # --- brewberrypi-safemode -----------------------------------------------------
 # Device with 1.1.0 active and 1.0.0 previous, after the start limit was hit.
 safemode_fixture() {

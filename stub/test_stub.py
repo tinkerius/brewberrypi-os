@@ -33,14 +33,14 @@ class StubTest(unittest.TestCase):
         self.config = os.path.join(self.tmp.name, "config.json")
         self.port = free_port()
 
-    def start(self, stub_json: dict | None = None) -> subprocess.Popen:
+    def start(self, stub_json: dict | None = None, *args: str) -> subprocess.Popen:
         if stub_json is not None:
             with open(os.path.join(self.tmp.name, "stub.json"), "w") as f:
                 json.dump(stub_json, f)
         env = dict(os.environ, NOTIFY_SOCKET=self.sock_path, BREWBERRYPI_WATCHDOG_MS="200",
                    BREWBERRYPI_STUB_PORT=str(self.port), BREWBERRYPI_STUB_START_DELAY_S="0.1",
                    BREWBERRYPI_STUB_VERSION="9.9.9")
-        proc = subprocess.Popen([sys.executable, STUB, "--config", self.config], env=env,
+        proc = subprocess.Popen([sys.executable, STUB, "--config", self.config, *args], env=env,
                                 stdout=subprocess.DEVNULL)
         def stop() -> None:
             if proc.poll() is None:
@@ -93,6 +93,7 @@ class StubTest(unittest.TestCase):
         self.assertIn("built-in defaults", body)
         self.assertIn("pinged every 0.2 s", body)
         self.assertIn("<dt>Heater test</dt><dd>off</dd>", body)
+        self.assertIn("<dt>Demo mode</dt><dd>off</dd>", body)
         for tag in ("<script", "<link", "src="):  # nothing to load: the Pi may be offline
             self.assertNotIn(tag, body)
         self.assertIn("The brewing app isn't installed yet", self.page("/index.html")[2])
@@ -104,6 +105,11 @@ class StubTest(unittest.TestCase):
         body = self.page()[2]
         self.assertIn("enabled (allowHeat in stub.json)", body)
         self.assertIn("Only the hardware heater test can switch the heater on", body)
+
+    def test_landing_page_shows_demo_mode(self) -> None:
+        self.start(None, "--dummymode")  # brewberry-update demo on
+        self.assertEqual(self.recv(), "READY=1")
+        self.assertIn("<dt>Demo mode</dt><dd>on: the app will simulate the kettle", self.page()[2])
 
     def test_hang_stops_watchdog_pings(self) -> None:
         self.start()

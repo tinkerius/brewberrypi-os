@@ -81,6 +81,7 @@ class State:
     watchdog_alive = threading.Event()
     config_path = "/config/config.json"
     allow_heat = False
+    dummymode = False
     started = time.time()
 
 
@@ -224,6 +225,7 @@ off.{heat_note}</p>
 <dt>Watchdog</dt><dd>{watchdog}</dd>
 <dt>Configuration</dt><dd>{config}</dd>
 <dt>Heater test</dt><dd>{heat}</dd>
+<dt>Demo mode</dt><dd>{demo}</dd>
 </dl>
 </section>
 
@@ -293,6 +295,8 @@ def landing_page() -> str:
         config=html.escape(config_summary()),
         heat=heat,
         heat_note=heat_note,
+        demo=("on: the app will simulate the kettle (brewberry-update demo off to end it)"
+              if State.dummymode else "off"),
         manual=MANUAL,
     )
 
@@ -376,6 +380,7 @@ def main() -> int:
     parser.add_argument("--dummymode", action="store_true")
     args = parser.parse_args()
     State.config_path = args.config
+    State.dummymode = args.dummymode
 
     stub_config = read_stub_config(args.config)
     start = stub_config.get("start", os.environ.get("BREWBERRYPI_STUB_START", "ok"))

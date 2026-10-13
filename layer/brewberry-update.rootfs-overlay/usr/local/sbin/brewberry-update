@@ -10,6 +10,9 @@
 #                                    policy.json; switch, watch for 60 s, roll back
 #                                    on failure
 #   brewberry-update rollback        switch back to the previous image
+#   brewberry-update demo on|off     run the app with a simulated kettle
+#                                    (--dummymode, never touches GPIO) or normally;
+#                                    kept across reboots, restarts the app
 #
 # Images: localhost/brewberrypi:active runs; :previous is the one before and is
 # never garbage-collected. Nothing else is kept. Never 'podman image prune -a'.
@@ -28,6 +31,8 @@ SOAK_S=${BREWBERRY_SOAK_S:-60}
 UPDATE_DIR=$ROOT/data/update
 STATE=$UPDATE_DIR/state.json
 SAFEMODE_MARK=$UPDATE_DIR/safemode.json
+# Extra app arguments, read by brewberrypi.service (EnvironmentFile=).
+APP_ARGS=$UPDATE_DIR/app-args.env
 LOCK=$ROOT/run/brewberry-update.lock
 export REGISTRY_AUTH_FILE=$ROOT/data/secrets/auth.json
 
@@ -135,7 +140,24 @@ cmd_status() {
    systemctl is-active "$SERVICE" || true
    [ -f "$STATE" ] && jq . "$STATE"
    [ -f "$SAFEMODE_MARK" ] && { echo "safe mode:"; jq . "$SAFEMODE_MARK"; }
+   echo "demo mode: $(demo_state)"
    return 0
+}
+
+demo_state() {
+   if grep -qx 'BREWBERRYPI_ARGS=--dummymode' "$APP_ARGS" 2>/dev/null; then echo on; else echo off; fi
+}
+
+cmd_demo() { # on|off
+   lock
+   case $1 in
+      on) echo 'BREWBERRYPI_ARGS=--dummymode' | write_atomic "$APP_ARGS" ;;
+      off) rm -f "$APP_ARGS"; sync "$UPDATE_DIR" ;;
+   esac
+   log "demo mode $1; restarting the app (this ends a running brew)"
+   systemctl reset-failed "$SERVICE" 2>/dev/null || true
+   systemctl restart "$SERVICE" || die "the app did not start; see: journalctl -u $SERVICE -b"
+   log "demo mode: $(demo_state)"
 }
 
 cmd_install() { # <version> [dir: export]
@@ -241,5 +263,10 @@ case ${1:-} in
       elif [ $# -eq 4 ] && [ "$3" = --from-dir ]; then cmd_install "$2" "$4"
       else die "usage: brewberry-update install <MAJOR.MINOR.PATCH> [--from-dir <dir>]"; fi ;;
    rollback) cmd_rollback ;;
-   *) sed -n '2,15s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+   demo)
+      case ${2:-} in
+         on | off) cmd_demo "$2" ;;
+         *) die "usage: brewberry-update demo on|off" ;;
+      esac ;;
+   *) sed -n '2,18s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

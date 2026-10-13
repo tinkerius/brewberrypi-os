@@ -280,6 +280,23 @@ Installing or rolling back restarts the app, which **ends a running brew**. What
 
 Keep the power connected while an install runs. If it was cut, run `status` and install again.
 
+### Demo mode
+
+Demo mode runs the app with a **simulated kettle**: the app's `--dummymode`. The web UI works as
+usual, and a recipe heats a simulated kettle, which `simulation.timeScale` in `config.json` speeds
+up. The app doesn't touch GPIO in demo mode, so the heater, pump and buzzer stay off. Use it to
+try the app before the hardware is wired.
+
+```sh
+sudo brewberry-update demo on          # restart the app in demo mode
+sudo brewberry-update demo off         # back to the real hardware
+sudo brewberry-update status           # last line: demo mode: on|off
+```
+
+Both restart the app, which ends a running brew. The setting is kept in `/data` across reboots and
+app updates, until you switch it off. While the placeholder runs (no app installed yet), its page
+shows the setting.
+
 ### Safe mode
 
 If the app fails to start 4 times within 10 minutes, the Pi switches back to the previous version
@@ -445,7 +462,8 @@ All commands run as root (`sudo`).
 | `brewberry-update list` | Released app versions, newest first |
 | `brewberry-update install <x.y.z>` | Install and switch to a version; rolls back if it fails |
 | `brewberry-update rollback` | Switch back to the previous version |
-| `brewberry-update status` | Active and previous version, last result, safe mode |
+| `brewberry-update status` | Active and previous version, last result, safe mode, demo mode |
+| `brewberry-update demo on\|off` | Run the app with a simulated kettle (no GPIO), or normally |
 | `brewberry-usb list` | Versions and config files on a USB stick |
 | `brewberry-usb install <x.y.z>` | Install a version from a USB stick |
 | `brewberry-usb import-config` | Copy `brewberrypi/config/*.json` from a stick to `/data/config` |

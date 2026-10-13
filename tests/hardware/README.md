@@ -195,8 +195,9 @@ On both a Pi 3/4 and a Pi 5, following [docs/flashing.md](../../docs/flashing.md
 1. Write a local manifest for the CI images (`scripts/imager-manifest.py --local ...`) and open it
    in Raspberry Pi Imager 2.x.
 2. Check that Imager offers customisation but no interface options (SPI, I2C, 1-Wire, serial).
-3. Customise a **non-default hostname**, a user, your SSH public key, Wi-Fi (SSID, password,
-   country) and the time zone. Flash, then boot **without Ethernet**.
+3. Customise a **non-default hostname**, a user of your own (not `brewberry`) with a password,
+   your SSH public key, Wi-Fi (SSID, password, country), the time zone and the keyboard. Flash,
+   then boot **without Ethernet**. Also log in at the console with the password.
 4. After the self-reboot, log in over Wi-Fi and run the checks; every line must say `PASS`:
 
    ```sh

@@ -32,6 +32,15 @@ mmdebstrap:
       done
       # netplan refuses to trust configuration others can read.
       chmod 600 "$1"/usr/lib/netplan/*.yaml
+      # cloud-init's merged configuration must select Debian's distro class
+      # and the image's account (90-brewberry.cfg), as cloud-init reads it.
+      distro=$(chroot "$1" python3 -c 'from cloudinit import util
+      si = util.read_conf_with_confd("/etc/cloud/cloud.cfg")["system_info"]
+      print(si["distro"], si["default_user"]["name"])')
+      [ "$distro" = "debian brewberry" ] || {
+         echo "brewberry-imager: cloud-init uses distro/default user '$distro', not 'debian brewberry'" >&2
+         exit 1
+      }
       grep -rqs 'seedfrom: *file:///boot/firmware' "$1/etc/cloud/cloud.cfg.d" || {
          echo "brewberry-imager: no NoCloud seed in /boot/firmware (rpi-cloud-init-mods)" >&2
          exit 1

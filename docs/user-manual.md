@@ -93,7 +93,7 @@ SSH keys.
    | Setting | What to enter |
    |---|---|
    | Hostname | For example `brewberrypi` (the default). The Pi is then `brewberrypi.local` on your network. |
-   | User | `brewberry`, or a name of your own. |
+   | User | A name of your own, with a password for logging in at the Pi's screen and keyboard. Not `brewberry`: that is the image's built-in account, and Imager can't set its password. |
    | SSH | Turn it on with **public-key authentication** and paste your public key (`~/.ssh/id_ed25519.pub`). Passwords are never accepted over SSH. |
    | Wi-Fi | Network name, password and Wi-Fi country. Leave it empty if you use Ethernet. |
    | Time zone, keyboard | Your own. |
@@ -117,7 +117,7 @@ To change the hostname or Wi-Fi later, reflash the card. Save your configuration
 ## 4. Logging in
 
 ```sh
-ssh brewberry@brewberrypi.local        # use your own user and hostname
+ssh <user>@brewberrypi.local           # your Imager user and hostname
 ```
 
 If `.local` names don't work on your network, use the Pi's IP address from your router.

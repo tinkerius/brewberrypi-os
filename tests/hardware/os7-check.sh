@@ -25,12 +25,16 @@ check() { # <description> <command...>
 }
 
 sealed()                { grep -q 'overlayroot=tmpfs:recurse=0' /proc/cmdline; }
-customised()            { grep -q 'ds=nocloud' /proc/cmdline; }
+# Imager's seed on the boot partition, not a fallback: older Imager versions
+# add no ds=nocloud to the kernel command line.
+customised()            { jq -r .v1.datasource /var/lib/cloud/data/status.json | grep -q '^DataSourceNoCloud .*file:///boot/firmware'; }
 cloud_init_finished()   { test -e /var/lib/cloud/instance/boot-finished; }
 cloud_init_no_errors()  { test "$(jq '[.v1[]?.errors? // [] | length] | add // 0' /var/lib/cloud/data/status.json)" = 0; }
 cloud_init_disabled()   { test -e /etc/cloud/cloud-init.disabled && ! systemctl is-active --quiet cloud-init-main.service cloud-final.service; }
 hostname_set()          { test "$(hostname)" = "$HOST"; }
 user_has_key()          { test -s "$(getent passwd "$USER_NAME" | cut -d: -f6)/.ssh/authorized_keys"; }
+user_has_password()     { test "$(passwd -S "$USER_NAME" | cut -d' ' -f2)" = P; }
+user_groups()           { id -nG "$USER_NAME" | tr ' ' '\n' | grep -qx sudo && id -nG "$USER_NAME" | tr ' ' '\n' | grep -qx gpio; }
 password_ssh_off()      { sshd -T 2>/dev/null | grep -qx 'passwordauthentication no'; }
 nm_active()             { systemctl is-active --quiet NetworkManager.service; }
 networkd_off()          { ! systemctl is-active --quiet systemd-networkd.service; }
@@ -40,12 +44,14 @@ no_raspi_config()       { ! test -e /usr/bin/raspi-config; }
 spi_still_off()         { grep -qx 'dtparam=spi=off' /boot/firmware/config.txt && ! ls /dev/spidev*; }
 
 check "system is sealed (overlay root)"                     sealed
-check "Imager customisation reached the kernel command line" customised
+check "cloud-init read Imager's seed from /boot/firmware"   customised
 check "cloud-init finished its first boot"                  cloud_init_finished
 check "cloud-init reported no errors"                       cloud_init_no_errors
 check "cloud-init is disabled and not running"              cloud_init_disabled
 check "hostname is $HOST"                                   hostname_set
 check "user $USER_NAME has an SSH key"                      user_has_key
+check "user $USER_NAME has a password (console login)"      user_has_password
+check "user $USER_NAME is in the sudo and gpio groups"      user_groups
 check "SSH password login is off"                           password_ssh_off
 check "NetworkManager is active"                            nm_active
 check "systemd-networkd is not running"                     networkd_off

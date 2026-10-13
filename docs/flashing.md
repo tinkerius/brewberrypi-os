@@ -38,7 +38,7 @@ Pick the device, the BrewberryPi OS entry and the SD card, then **Customise**.
 | Setting | Notes |
 |---|---|
 | Hostname | The device is then `<hostname>.local` (mDNS). Default: `brewberrypi`. |
-| User | Use `brewberry` (the image's admin account) or a new name. Either way the account gets the SSH key. |
+| User | A new name (with the SSH key, and a password for the console). Not `brewberry`: the image's built-in account exists already, and cloud-init doesn't set an existing account's password from Imager. The account gets the image's default groups (`sudo`, `gpio`, …). |
 | SSH | **Public-key authentication only.** The image refuses password logins over SSH, even if Imager is set to allow them. |
 | Wi-Fi | SSID, password and country. Without Wi-Fi, connect Ethernet. |
 | Time zone, keyboard | Applied as usual. |
@@ -67,7 +67,11 @@ To change the customisation later (Wi-Fi, hostname), reflash the card. Reflashin
   Raspberry Pi OS; no `raspi-config`.
 - `layer/brewberry-imager.yaml`: `cloud-init` and Raspberry Pi OS's `rpi-cloud-init-mods`. The
   NoCloud seed is in `/boot/firmware`, and netplan renders the network config through
-  NetworkManager. `90-brewberry.cfg` makes `brewberry` the default user.
+  NetworkManager. `90-brewberry.cfg` makes `brewberry` the default user and selects cloud-init's
+  Debian distro class instead of Raspberry Pi OS's: that one creates Imager's user with
+  `userconf-pi` and sets the keyboard with `raspi-config`, and the image has neither. Debian's
+  class uses `useradd`, `chpasswd` and `console-setup`. The layer's build hook checks the merged
+  configuration.
 - `brewberry-seal` creates `/etc/cloud/cloud-init.disabled` before sealing, so cloud-init never
   runs again: not on sealed boots, and not in maintenance mode.
 - `scripts/imager-manifest.py` writes the manifest: `init_format: cloudinit-rpi`, device tags

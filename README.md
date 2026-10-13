@@ -73,9 +73,10 @@ repository variable `BREWBERRY_APP_VERSION` (`x.y.z`) and give CI read access to
 the secret `BREWBERRY_GHCR_TOKEN` (classic PAT, `read:packages`), or add this repository under the
 package's *Manage Actions access*. The build refuses an image that isn't signed with the pinned key.
 
-The admin user is `brewberry`. It has no password and logs in over SSH with a key only. The key
-usually comes from Imager's customisation; to build it into the image too, set the **repository
-variable** `BREWBERRY_SSH_PUBKEY` (Settings → Secrets and variables → Actions → Variables).
+The image's built-in admin user is `brewberry`. It has no password and logs in over SSH with a key
+only, from the **repository variable** `BREWBERRY_SSH_PUBKEY` (Settings → Secrets and variables →
+Actions → Variables). Usually you flash through Imager instead and create your own user there, with
+your SSH key and a password for the console.
 
 ### Build locally
 

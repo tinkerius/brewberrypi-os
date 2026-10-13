@@ -18,6 +18,16 @@ mmdebstrap:
   customize-hooks:
     - |-
       set -eu
+      # TEMPORARY diagnostic (removed before merge): show the RPi cloud-init build.
+      {
+         echo "=== DIAG cloud-init version"; chroot "$1" dpkg-query -W cloud-init rpi-cloud-init-mods || true
+         echo "=== DIAG raspberry_pi_os.py"; cat "$1"/usr/lib/python3/dist-packages/cloudinit/distros/raspberry_pi_os.py || true
+         echo "=== DIAG callers"; grep -rn -E 'userconf|raspi-config|rename-user|imager_custom|labwc' "$1"/usr/lib/python3/dist-packages/cloudinit || true
+         echo "=== DIAG cloud.cfg"; cat "$1"/etc/cloud/cloud.cfg || true
+         echo "=== DIAG cloud.cfg.d"; ls -la "$1"/etc/cloud/cloud.cfg.d || true
+         echo "=== DIAG keyboard units"; ls "$1"/usr/lib/systemd/system | grep -E 'keyboard|console' || true
+         echo "=== DIAG tools"; ls -la "$1"/usr/sbin/useradd "$1"/usr/sbin/chpasswd "$1"/usr/bin/setupcon "$1"/usr/sbin/locale-gen 2>&1 || true
+      } >&2
       # cloud-init's cc_raspberry_pi switches SPI, I2C, 1-Wire and serial with
       # raspi-config. SPI uses BCM 10 (the buzzer), and the safety block in
       # config.txt keeps it off. Fail the build if a dependency brought

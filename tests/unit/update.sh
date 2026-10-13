@@ -79,7 +79,14 @@ case "$*" in
    *) echo "fake systemctl: unsupported: $*" >&2; exit 99 ;;
 esac
 FAKE
-chmod +x "$T/bin/podman" "$T/bin/systemctl"
+# --- fake skopeo: the registry's tags plus a signature tag ---------------------
+cat > "$T/bin/skopeo" <<'FAKE'
+#!/bin/bash
+set -u
+[ "$1" = list-tags ] || { echo "fake skopeo: unsupported: $*" >&2; exit 99; }
+{ ls "$FAKE/registry"; echo sha256-0123.sig; echo latest; } | jq -R . | jq -sc '{Tags: .}'
+FAKE
+chmod +x "$T/bin/podman" "$T/bin/systemctl" "$T/bin/skopeo"
 export PATH=$T/bin:$PATH
 
 # --- fixture ------------------------------------------------------------------
@@ -104,6 +111,10 @@ fixture() {
 1.6.0 id160 ok 2
 1.7.0 id170 ok 1
 1.8.0 id180 ok 1 1.8.1
+1.9.0-alpha.2 id192 ok 1
+1.9.0-alpha.10 id193 ok 1
+1.9.0-rc.1 id194 ok 1
+1.9.0 id190 ok 1
 END
    touch "$FAKE/images/id100"
    echo id100 > "$FAKE/tags/localhost_brewberrypi_active"
@@ -181,6 +192,18 @@ expect "rollback without previous: refused" "$RC $(tag_of active)" "1 id100"
 fixture; exec 8> "$BREWBERRY_UPDATE_ROOT/run/brewberry-update.lock"; flock 8
 run "$UPDATE" install 1.1.0; exec 8>&-
 expect "second update while one runs: refused" "$RC $(tag_of active)" "1 id100"
+
+fixture; mkdir -p "$BREWBERRY_UPDATE_ROOT/data/secrets"; echo '{}' > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
+run "$UPDATE" list
+expect "list: versions newest first in SemVer order, pre-releases before their release" "$RC $(paste -sd ' ' "$T/out")" \
+   "0 1.9.0 1.9.0-rc.1 1.9.0-alpha.10 1.9.0-alpha.2 1.8.0 1.7.0 1.6.0 1.5.0 1.3.0 1.2.0 1.1.0"
+expect "list: tags.json" "$(jq -c '[.active, .tags[0], (.tags | length)]' "$BREWBERRY_UPDATE_ROOT/data/update/tags.json")" '["1.0.0","1.9.0",11]'
+
+fixture; run "$UPDATE" install 1.9.0-alpha.2
+expect "install a pre-release (runtime contract §1)" "$RC $(tag_of active) $(phase)" "0 id192 done"
+
+fixture; run "$UPDATE" install 1.9.0-beta
+expect "install: not an app version refused" "$RC $(tag_of active)" "1 id100"
 
 # --- demo mode -----------------------------------------------------------------
 ARGS_FILE=$BREWBERRY_UPDATE_ROOT/data/update/app-args.env

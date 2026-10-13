@@ -82,7 +82,7 @@ jobs:
           sudo chmod o+x "$HOME"
           sudo "$RPI_IMAGE_GEN_DIR/install_deps.sh"
 
-      # With the repository variable BREWBERRY_APP_VERSION (x.y.z), the image
+      # With the repository variable BREWBERRY_APP_VERSION (1.2.3 or 1.2.3-alpha.N), the image
       # preloads that app release instead of the contract stub (OS8). The token
       # needs read access to the app's package: the secret BREWBERRY_GHCR_TOKEN
       # (classic PAT, read:packages), or GITHUB_TOKEN once this repository is

@@ -6,7 +6,7 @@
 # Environment:
 #   BREWBERRY_SSH_PUBKEY  SSH public key for the 'brewberry' user. Without it
 #                         the image has no way to log in.
-#   BREWBERRY_APP_VERSION released app version (x.y.z) to preload, fetched and
+#   BREWBERRY_APP_VERSION app version (1.2.3 or 1.2.3-alpha.N) to preload, fetched and
 #                         verified by scripts/fetch-app.sh (log in to ghcr.io
 #                         first). Default: the contract stub (build-stub.sh).
 #   BREWBERRY_PRELOAD     app image to preload, in 'dir:' format, instead of

@@ -4,7 +4,7 @@
 #   brewberry-update login           store the registry token (/data/secrets/auth.json)
 #   brewberry-update list            available versions (also written to /data/update/tags.json)
 #   brewberry-update status          active and previous image, last result
-#   brewberry-update install <x.y.z> [--from-dir <dir>]
+#   brewberry-update install <version> [--from-dir <dir>]
 #                                    pull from the registry, or from a 'dir:' export
 #                                    (USB, via brewberry-usb), signature checked by
 #                                    policy.json; switch, watch for 60 s, roll back
@@ -25,6 +25,8 @@ ACTIVE=localhost/brewberrypi:active
 PREVIOUS=localhost/brewberrypi:previous
 SERVICE=brewberrypi.service
 CONTRACT=1
+# App versions (runtime contract §1): 1.2.3, or a pre-release 1.2.3-alpha.N, -beta.N, -rc.N.
+VERSION_RE='^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'
 # BREWBERRY_UPDATE_ROOT and BREWBERRY_SOAK_S are for tests (tests/unit/update.sh).
 ROOT=${BREWBERRY_UPDATE_ROOT:-}
 SOAK_S=${BREWBERRY_SOAK_S:-60}
@@ -119,11 +121,14 @@ cmd_login() {
 cmd_list() {
    need_auth
    local tags
-   # Release tags only (MAJOR.MINOR.PATCH), newest first; signature tags
+   # Version tags only, newest first in SemVer order (a pre-release sorts before
+   # its release: 1.2.0-alpha.2 < 1.2.0-beta.1 < 1.2.0); signature tags
    # (sha256-...) and anything else are left out.
-   tags=$(skopeo list-tags "docker://$REPO" | jq -c '
-      .Tags | map(select(test("^[0-9]+\\.[0-9]+\\.[0-9]+$")))
-      | sort_by(split(".") | map(tonumber)) | reverse')
+   tags=$(skopeo list-tags "docker://$REPO" | jq -c --arg re "$VERSION_RE" '
+      .Tags | map(select(test($re)))
+      | sort_by(capture("^(?<v>[0-9.]+)(-(?<k>[a-z]+)\\.(?<n>[0-9]+))?$")
+         | (.v | split(".") | map(tonumber)) + [if .k then 0 else 1 end, .k // "", (.n // "0" | tonumber)])
+      | reverse')
    jq -n --argjson tags "$tags" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       --arg active "$(label "$ACTIVE" org.opencontainers.image.version)" \
       '{time: $time, active: $active, tags: $tags}' | write_atomic "$UPDATE_DIR/tags.json"
@@ -162,7 +167,7 @@ cmd_demo() { # on|off
 
 cmd_install() { # <version> [dir: export]
    local version=$1 from_dir=${2:-} source new old prev_before rc
-   [[ $version =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || die "not a release version (MAJOR.MINOR.PATCH): $version"
+   [[ $version =~ $VERSION_RE ]] || die "not an app version (1.2.3 or 1.2.3-alpha.N/-beta.N/-rc.N): $version"
    if [ -n "$from_dir" ]; then
       [ -f "$from_dir/manifest.json" ] || die "no image in $from_dir"
       source=dir:$from_dir
@@ -261,7 +266,7 @@ case ${1:-} in
    install)
       if [ $# -eq 2 ]; then cmd_install "$2"
       elif [ $# -eq 4 ] && [ "$3" = --from-dir ]; then cmd_install "$2" "$4"
-      else die "usage: brewberry-update install <MAJOR.MINOR.PATCH> [--from-dir <dir>]"; fi ;;
+      else die "usage: brewberry-update install <version> [--from-dir <dir>]"; fi ;;
    rollback) cmd_rollback ;;
    demo)
       case ${2:-} in

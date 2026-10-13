@@ -6,7 +6,7 @@
 # Usage: scripts/build-stub.sh [output dir]  (default: work/preload/brewberrypi-stub)
 #
 # Environment:
-#   STUB_VERSION  image version and tag (default: 0.1.0)
+#   STUB_VERSION  image version and tag (default: 0.2.0)
 #   STUB_START    default start mode: ok, crash, hwfail, config, hang (default: ok)
 
 set -euo pipefail
@@ -15,7 +15,7 @@ set -euo pipefail
 . "$(dirname "$0")/common.sh"
 
 OUT=${1:-$REPO_ROOT/work/preload/brewberrypi-stub}
-VERSION=${STUB_VERSION:-0.1.0}
+VERSION=${STUB_VERSION:-0.2.0}
 START=${STUB_START:-ok}
 TAG=localhost/brewberrypi-stub:$VERSION
 

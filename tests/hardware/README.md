@@ -49,7 +49,9 @@ Until OS3 adds the outputs-off reset, don't connect a relay board to a mains hea
    ```
 
 3. From another machine: `curl http://brewberrypi.local:8080/healthz` answers
-   `{"status": "ok", "version": "0.1.0", "engine": "NoProcess"}`.
+   `{"status": "ok", "version": "0.2.0", "engine": "NoProcess"}`, and
+   `http://brewberrypi.local:8080/` in a browser shows the stub's page ("The brewing app isn't
+   installed yet").
 
 ## OS3: safety
 

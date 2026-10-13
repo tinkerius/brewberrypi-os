@@ -3,7 +3,8 @@
 
 Stands in for the real app image (tinkerius/brewberrypi) until it is released, so the OS side of
 the contract can be tested: READY=1, WATCHDOG=1 every BREWBERRYPI_WATCHDOG_MS, STOPPING=1, and
-GET /healthz on port 8080.
+GET /healthz on port 8080. GET / is a page for people who open the Pi in a browser: it explains
+that the app isn't installed yet and how to install it.
 
 GPIO: only on request (POST /stub/heat?on=1), the stub drives the heater output like the app would
 (libgpiod v2, header chip found by label, pin and polarity from config.json, defaults BCM 23
@@ -31,6 +32,7 @@ Only the Python standard library is used, plus the gpiod module for /stub/heat.
 """
 
 import argparse
+import html
 import json
 import os
 import signal
@@ -79,6 +81,7 @@ class State:
     watchdog_alive = threading.Event()
     config_path = "/config/config.json"
     allow_heat = False
+    started = time.time()
 
 
 HEADER_CHIP_LABELS = ("pinctrl-bcm2835", "pinctrl-bcm2711", "pinctrl-rp1")
@@ -147,6 +150,153 @@ class Heater:
         raise RuntimeError("no GPIO chip labelled " + "/".join(HEADER_CHIP_LABELS))
 
 
+MANUAL = "https://github.com/tinkerius/brewberrypi-os/blob/main/docs/user-manual.md"
+
+PAGE = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrewberryPi: app not installed</title>
+<style>
+:root {{
+  --bg: #f6f4ef; --card: #ffffff; --text: #24211c; --muted: #6b655b; --line: #e3ded3;
+  --accent: #8a4b14; --note-bg: #fff4e0; --note-line: #f0c27a; --ok: #2f7a3e; --code-bg: #f1eee7;
+}}
+@media (prefers-color-scheme: dark) {{
+  :root {{
+    --bg: #1b1916; --card: #24221e; --text: #ece8e0; --muted: #a59e92; --line: #3a362f;
+    --accent: #e3a35f; --note-bg: #3a2c17; --note-line: #8a6326; --ok: #6cc47c; --code-bg: #2e2b26;
+  }}
+}}
+* {{ box-sizing: border-box; }}
+body {{
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+}}
+main {{ max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 3rem; }}
+header p {{ margin: 0; color: var(--muted); }}
+h1 {{ font-size: 1.7rem; line-height: 1.25; margin: 0.25rem 0 0.75rem; }}
+h2 {{ font-size: 1.1rem; margin: 0 0 0.5rem; }}
+section {{
+  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+  padding: 1.1rem 1.25rem; margin-top: 1rem;
+}}
+.note {{ background: var(--note-bg); border-color: var(--note-line); }}
+.brand {{ color: var(--accent); font-weight: 600; letter-spacing: 0.02em; }}
+dl {{ display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; margin: 0; }}
+dt {{ color: var(--muted); }}
+dd {{ margin: 0; }}
+.ok {{ color: var(--ok); font-weight: 600; }}
+pre, code {{ font: 0.9rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
+code {{
+  background: var(--code-bg); padding: 0.1rem 0.3rem; border-radius: 4px; overflow-wrap: anywhere;
+}}
+pre {{ background: var(--code-bg); padding: 0.75rem 1rem; border-radius: 8px; overflow-x: auto; }}
+pre code {{ background: none; padding: 0; }}
+a {{ color: var(--accent); }}
+footer {{ margin-top: 1.5rem; color: var(--muted); font-size: 0.9rem; }}
+</style>
+</head>
+<body>
+<main>
+<header>
+<p class="brand">BrewberryPi OS</p>
+<h1>The brewing app isn't installed yet</h1>
+<p>This Raspberry Pi is set up and running, but the BrewberryPi app is not on it yet. What answers
+here is a small placeholder that comes with the operating system.</p>
+</header>
+
+<section class="note">
+<h2>What's running instead</h2>
+<p>The <strong>contract stub</strong> stands in for the app until the app is installed. It tests
+that the operating system can start, watch over and update an app. It has no brewing functions,
+and it <strong>never switches the heater or the pump</strong> by itself: the outputs stay
+off.{heat_note}</p>
+</section>
+
+<section>
+<h2>Status</h2>
+<dl>
+<dt>Placeholder</dt><dd><span class="ok">running</span>, version {version}</dd>
+<dt>Up for</dt><dd>{uptime}</dd>
+<dt>Device</dt><dd>{hostname}</dd>
+<dt>Watchdog</dt><dd>{watchdog}</dd>
+<dt>Configuration</dt><dd>{config}</dd>
+<dt>Heater test</dt><dd>{heat}</dd>
+</dl>
+</section>
+
+<section>
+<h2>Install the app</h2>
+<p>Log in to the Pi over SSH (<code>ssh &lt;user&gt;@{hostname}.local</code>), then:</p>
+<pre><code># once: your GitHub user, and a classic token with read:packages
+sudo brewberry-update login
+# the released app versions
+sudo brewberry-update list
+# install one of them
+sudo brewberry-update install 1.2.3</code></pre>
+<p>Without internet, install from a USB stick instead: <code>sudo brewberry-usb list</code> and
+<code>sudo brewberry-usb install 1.2.3</code>. Every version must be signed by the app's
+developers, or the Pi refuses it. When the app runs, this page is replaced by its web UI.</p>
+<p>More in the <a href="{manual}#6-app-versions">user manual</a>.</p>
+</section>
+
+<footer>Health check for tools: <a href="/healthz"><code>/healthz</code></a></footer>
+</main>
+</body>
+</html>
+"""
+
+
+def duration(seconds: float) -> str:
+    minutes, _ = divmod(int(seconds), 60)
+    hours, minutes = divmod(minutes, 60)
+    days, hours = divmod(hours, 24)
+    if days:
+        return f"{days} d {hours} h"
+    if hours:
+        return f"{hours} h {minutes} min"
+    return f"{minutes} min"
+
+
+def config_summary() -> str:
+    try:
+        with open(State.config_path, encoding="utf-8") as f:
+            config = json.load(f)
+    except FileNotFoundError:
+        return "no config.json"
+    except (OSError, ValueError):
+        return "config.json can't be read"
+    return "built-in defaults" if config == {} else "config.json from /data/config"
+
+
+def landing_page() -> str:
+    watchdog_ms = os.environ.get("BREWBERRYPI_WATCHDOG_MS", "")
+    if not State.watchdog_alive.is_set():
+        watchdog = "not pinged"
+    elif watchdog_ms.isdigit():
+        watchdog = f"pinged every {int(watchdog_ms) / 1000:g} s"
+    else:
+        watchdog = "pinged"
+    if State.allow_heat:
+        heat = "enabled (allowHeat in stub.json)"
+        heat_note = (" Only the hardware heater test can switch the heater on, and it is enabled"
+                     " on this Pi (<code>allowHeat</code> in <code>stub.json</code>).")
+    else:
+        heat, heat_note = "off", ""
+    return PAGE.format(
+        version=html.escape(VERSION),
+        uptime=duration(time.time() - State.started),
+        hostname=html.escape(socket.gethostname()),
+        watchdog=watchdog,
+        config=html.escape(config_summary()),
+        heat=heat,
+        heat_note=heat_note,
+        manual=MANUAL,
+    )
+
+
 def exit_now(code: int) -> None:
     log(f"exiting with code {code}")
     os._exit(code)
@@ -161,9 +311,24 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _reply_html(self, body: str) -> None:
+        data = body.encode()
+        self.send_response(200)
+        self.send_header("Content-Type", "text/html; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self) -> None:  # noqa: N802 (http.server API)
-        if urlparse(self.path).path == "/healthz":
+        path = urlparse(self.path).path
+        if path == "/healthz":
             self._reply(200, {"status": "ok", "version": VERSION, "engine": "NoProcess"})
+        elif path in ("/", "/index.html"):
+            self._reply_html(landing_page())
+        elif path == "/favicon.ico":
+            self.send_response(204)
+            self.end_headers()
         else:
             self._reply(404, {"error": "not found"})
 
@@ -216,6 +381,7 @@ def main() -> int:
     start = stub_config.get("start", os.environ.get("BREWBERRYPI_STUB_START", "ok"))
     State.allow_heat = stub_config.get("allowHeat") is True
     log(f"version {VERSION}, start mode {start}, uid {os.getuid()}")
+    State.started = time.time()
 
     def on_term(signum: int, _frame: object) -> None:
         notify("STOPPING=1")

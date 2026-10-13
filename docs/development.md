@@ -197,7 +197,10 @@ the start limits.
 ### Change the contract stub
 
 Edit `stub/brewberrypi-stub.py` and `stub/test_stub.py`; `python3 -m unittest discover -s stub`
-runs as part of `lint.sh`. The stub never drives the heater unless `allowHeat` is set.
+runs as part of `lint.sh`. The stub never drives the heater unless `allowHeat` is set. Its page at
+`/` (the `PAGE` template) is what people see in a browser before an app is installed: keep it
+self-contained (no external files; the Pi may be offline). Bump the default `STUB_VERSION` in
+`build-stub.sh` when the stub changes.
 
 ### Write a decision down
 

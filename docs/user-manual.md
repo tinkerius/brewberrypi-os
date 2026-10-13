@@ -236,6 +236,10 @@ must be signed with the app's key. Unsigned or wrongly signed images are refused
 Picking the version from the app's web UI is planned but not available yet. For now, use these
 commands over SSH.
 
+Until an app version is installed, the Pi runs a placeholder (the *contract stub*) that comes with
+the image. `http://<hostname>.local:8080/` then shows a page saying that the app isn't installed
+yet, with these steps. The placeholder never switches the outputs.
+
 ### Give the Pi access to the registry (once)
 
 1. On GitHub, open **Settings → Developer settings → Personal access tokens → Tokens (classic) →

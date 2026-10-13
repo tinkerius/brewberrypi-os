@@ -75,6 +75,36 @@ class StubTest(unittest.TestCase):
             pass
         self.assertIn("STOPPING=1", rest)
 
+    def page(self, path: str = "/") -> tuple[int, str, str]:
+        with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=5) as resp:
+            return resp.status, resp.headers["Content-Type"], resp.read().decode()
+
+    def test_landing_page_explains_the_placeholder(self) -> None:
+        with open(self.config, "w") as f:
+            f.write("{}")
+        self.start()
+        self.assertEqual(self.recv(), "READY=1")
+        status, content_type, body = self.page()
+        self.assertEqual(status, 200)
+        self.assertEqual(content_type, "text/html; charset=utf-8")
+        self.assertIn("The brewing app isn't installed yet", body)
+        self.assertIn("version 9.9.9", body)
+        self.assertIn("sudo brewberry-update install", body)
+        self.assertIn("built-in defaults", body)
+        self.assertIn("pinged every 0.2 s", body)
+        self.assertIn("<dt>Heater test</dt><dd>off</dd>", body)
+        for tag in ("<script", "<link", "src="):  # nothing to load: the Pi may be offline
+            self.assertNotIn(tag, body)
+        self.assertIn("The brewing app isn't installed yet", self.page("/index.html")[2])
+        self.assertEqual(self.http("GET", "/healthz")["status"], "ok")  # contract unchanged
+
+    def test_landing_page_shows_an_enabled_heater_test(self) -> None:
+        self.start({"allowHeat": True})
+        self.assertEqual(self.recv(), "READY=1")
+        body = self.page()[2]
+        self.assertIn("enabled (allowHeat in stub.json)", body)
+        self.assertIn("Only the hardware heater test can switch the heater on", body)
+
     def test_hang_stops_watchdog_pings(self) -> None:
         self.start()
         self.assertEqual(self.recv(), "READY=1")

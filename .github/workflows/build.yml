@@ -3,7 +3,7 @@ name: build
 on:
   push:
     branches: [main]
-    # A version tag (v1.2.3) also publishes a draft release (job 'release').
+    # A version tag (v1.2.3) also creates a release (jobs 'draft', 'image', 'release').
     tags: ['v*']
   pull_request:
   workflow_dispatch:
@@ -52,14 +52,58 @@ jobs:
       - name: Signature policy test
         run: tests/integration/signing.sh
 
+  # Tags only: the draft release the image jobs upload to. It stays invisible
+  # to others until the 'release' job publishes it (pre-release tags) or a
+  # maintainer does after the hardware checks (docs/releasing.md).
+  draft:
+    name: draft release
+    needs: [lint, signing]
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Create the draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+          NOTES: >-
+            Flash with Raspberry Pi Imager 2.x through brewberrypi-os.rpi-imager-manifest
+            to get its customisation (hostname, user, SSH key, Wi-Fi): see docs/flashing.md.
+            While the repository is private, download the images and write a local manifest
+            (scripts/imager-manifest.py --local).
+          PRERELEASE_NOTES: |
+            > [!WARNING]
+            > **Pre-release: not yet tested on hardware.** It builds and passes CI, but
+            > the hardware checks (tests/hardware/README.md) have not been run on these images.
+            > Never connect a mains heater: use LEDs or the relay board on its own. The image
+            > preloads the app named in `/etc/brewberry-release` (`BREWBERRY_OS_APP_PRELOAD`;
+            > `stub` is the contract stub, not the brewing app). Reflashing erases `/data`.
+        run: |
+          # A re-run finds the draft from the first attempt.
+          if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+             echo "release $TAG exists already"; exit 0
+          fi
+          case $TAG in
+             v*-*) notes="$PRERELEASE_NOTES"$'\n'"$NOTES" ;;
+             *)    notes=$NOTES ;;
+          esac
+          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag --draft \
+            --title "BrewberryPi OS $TAG" --generate-notes --notes "$notes"
+
   image:
     name: image (${{ matrix.board }})
-    needs: lint
+    needs: [lint, draft]
+    # On a tag only once the draft release exists; otherwise after lint.
+    if: >-
+      !cancelled() && needs.lint.result == 'success' &&
+      (needs.draft.result == 'success' || !startsWith(github.ref, 'refs/tags/v'))
     # rpi-image-gen builds natively on arm64 only (ADR-0001).
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 120
     permissions:
-      contents: read
+      # Upload the image to the draft release (tags only).
+      contents: write
       # Pull the app release to preload (BREWBERRY_APP_VERSION).
       packages: read
     strategy:
@@ -99,39 +143,45 @@ jobs:
         env:
           BREWBERRY_SSH_PUBKEY: ${{ vars.BREWBERRY_SSH_PUBKEY }}
           BREWBERRY_APP_VERSION: ${{ vars.BREWBERRY_APP_VERSION }}
+          # Release builds are named after their tag (scripts/build.sh).
+          BREWBERRY_OS_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: |
           if [ -z "$BREWBERRY_SSH_PUBKEY" ]; then
             echo "::warning::Repository variable BREWBERRY_SSH_PUBKEY is not set; this image has no SSH login."
           fi
           scripts/build.sh brewberrypi-${{ matrix.board }}.yaml
 
-      - uses: actions/upload-artifact@v4
-        with:
-          name: brewberrypi-os-${{ matrix.board }}
-          path: deploy/
-          # The image is already xz-compressed.
-          compression-level: 0
-          retention-days: 30
-          if-no-files-found: error
+      # No Actions artifacts: images go straight to the release, whose assets don't
+      # count against the Actions storage quota (0.5 GB on the Free plan; one run's
+      # images are about 485 MB). Builds of branches and pull requests only check
+      # that the image builds.
+      - name: Upload to the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          command -v gh > /dev/null || sudo apt-get install -y --no-install-recommends gh
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber deploy/brewberrypi-os-*.img.xz
 
   release:
-    needs: [lint, signing, image]
+    needs: [draft, image]
     if: startsWith(github.ref, 'refs/tags/v')
     runs-on: ubuntu-24.04
     permissions:
       contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ github.ref_name }}
     steps:
       - uses: actions/checkout@v4
 
-      - uses: actions/download-artifact@v4
-        with:
-          pattern: brewberrypi-os-*
-          path: release
-          merge-multiple: true
+      - name: Download the images from the draft
+        run: |
+          gh release download "$TAG" --repo "$GITHUB_REPOSITORY" \
+            --pattern 'brewberrypi-os-*.img.xz' --dir release
 
       - name: Imager manifest and checksums
-        env:
-          TAG: ${{ github.ref_name }}
         run: |
           cd release
           ../scripts/imager-manifest.py \
@@ -140,32 +190,16 @@ jobs:
           sha256sum brewberrypi-os-*.img.xz brewberrypi-os.rpi-imager-manifest > SHA256SUMS
           cat SHA256SUMS
 
-      # A version tag (v1.2.3) makes a draft: it is published by hand once the
+      # A version tag (v1.2.3) stays a draft: it is published by hand once the
       # hardware checks pass (docs/releasing.md). A pre-release tag
       # (v1.2.3-alpha.1, -beta.N, -rc.N) is published at once as a GitHub
       # pre-release, never "Latest", with a warning that it is untested.
-      - name: Release
-        env:
-          GH_TOKEN: ${{ github.token }}
-          TAG: ${{ github.ref_name }}
-          NOTES: >-
-            Flash with Raspberry Pi Imager 2.x through brewberrypi-os.rpi-imager-manifest
-            to get its customisation (hostname, user, SSH key, Wi-Fi): see docs/flashing.md.
-            While the repository is private, download the images and write a local manifest
-            (scripts/imager-manifest.py --local).
-          PRERELEASE_NOTES: |
-            > [!WARNING]
-            > **Pre-release: not yet tested on hardware.** It builds and passes CI, but
-            > the hardware checks (tests/hardware/README.md) have not been run on these images.
-            > Never connect a mains heater: use LEDs or the relay board on its own. The image
-            > preloads the app named in `/etc/brewberry-release` (`BREWBERRY_OS_APP_PRELOAD`;
-            > `stub` is the contract stub, not the brewing app). Reflashing erases `/data`.
+      - name: Complete the release
         run: |
+          gh release upload "$TAG" --repo "$GITHUB_REPOSITORY" --clobber \
+            release/brewberrypi-os.rpi-imager-manifest release/SHA256SUMS
           case $TAG in
-             v*-*) mode=(--prerelease --latest=false); notes="$PRERELEASE_NOTES"$'\n'"$NOTES" ;;
-             *)    mode=(--draft); notes=$NOTES ;;
+             v*-*) gh release edit "$TAG" --repo "$GITHUB_REPOSITORY" \
+                      --draft=false --prerelease --latest=false ;;
+             *)    echo "draft $TAG is complete; publish it once the hardware checks pass" ;;
           esac
-          gh release create "$TAG" --repo "$GITHUB_REPOSITORY" --verify-tag "${mode[@]}" \
-            --title "BrewberryPi OS $TAG" --generate-notes \
-            --notes "$notes" \
-            release/brewberrypi-os-*.img.xz release/brewberrypi-os.rpi-imager-manifest release/SHA256SUMS

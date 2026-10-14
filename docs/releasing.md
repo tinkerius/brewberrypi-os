@@ -9,7 +9,8 @@ untested (see [Pre-releases](#pre-releases)).
 
 - Tags are `vMAJOR.MINOR.PATCH` (`v0.1.0`). The image files take the tag as their version
   (`brewberrypi-os-pi34-v0.1.0.img.xz`), and so does `BREWBERRY_OS_VERSION` in
-  `/etc/brewberry-release`. Both come from `git describe`.
+  `/etc/brewberry-release`. A tag build takes its tag (`BREWBERRY_OS_VERSION`, set by CI), other
+  builds `git describe`.
 - The OS version is independent of the app version. Which app the image preloads is recorded in
   `BREWBERRY_OS_APP_PRELOAD`.
 - Releases stay at `0.x` until OS8 (end-to-end with the real app) is done; the first release that
@@ -24,7 +25,7 @@ For images to try out before the hardware checks have passed, tag a pre-release:
 `vMAJOR.MINOR.PATCH-alpha.N` (or `-beta.N`, `-rc.N`), for example `v0.1.0-alpha.1`. The `release`
 job publishes it immediately as a GitHub **pre-release** (never marked "Latest"), and its notes
 start with a warning: not tested on hardware, never connect a mains heater, which app it preloads,
-and that reflashing erases `/data`. Everything else (artifacts, manifest, `SHA256SUMS`) is the same
+and that reflashing erases `/data`. Everything else (images, manifest, `SHA256SUMS`) is the same
 as for a release. Follow up with a normal version tag once the checks pass.
 
 ```sh
@@ -58,18 +59,21 @@ Without git at hand (or where tags can't be pushed), run the **tag release** wor
 Actions → *tag release* → *Run workflow*, with the version (`v0.1.0` or `v0.1.0-alpha.1`). It
 tags `main` and starts the build on the tag; the result is the same.
 
-The tag runs `.github/workflows/build.yml`: `lint`, `signature policy` and both image builds. If
-they all pass, the `release` job:
+The tag runs `.github/workflows/build.yml`:
 
-1. downloads the `brewberrypi-os-pi34` and `brewberrypi-os-pi5` artifacts;
-2. writes `brewberrypi-os.rpi-imager-manifest` with download URLs for this release
-   (`scripts/imager-manifest.py --url-base …`);
-3. writes `SHA256SUMS` for the images and the manifest;
-4. creates the draft release "BrewberryPi OS v0.1.0" with generated notes and those files (for a
-   pre-release tag: the published pre-release, see above).
+1. `lint` and `signature policy`; if both pass, the `draft release` job creates the draft release
+   "BrewberryPi OS v0.1.0" with generated notes (for a pre-release tag, starting with the warning);
+2. both image builds, each uploading its `.img.xz` straight to the draft (no Actions artifacts:
+   they would exceed the Actions storage quota, release assets don't count against it);
+3. the `release` job downloads both images from the draft, writes
+   `brewberrypi-os.rpi-imager-manifest` with download URLs for this release
+   (`scripts/imager-manifest.py --url-base …`) and `SHA256SUMS` for the images and the manifest,
+   and uploads them. A pre-release tag is then published as a pre-release (see above); a version
+   tag stays a draft.
 
-If a job fails, no release is created. Fix the problem on `main` and tag the next patch version.
-Don't move a pushed tag.
+If a job fails, the release stays an incomplete draft, visible only to maintainers: delete it
+(Releases → the draft → Delete), fix the problem on `main` and tag the next version. Re-running
+the failed jobs of the same run also works and reuses the draft. Don't move a pushed tag.
 
 ## Check the draft
 

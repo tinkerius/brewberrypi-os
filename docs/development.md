@@ -242,8 +242,9 @@ on demand:
 |---|---|---|
 | `lint` | ubuntu-24.04 | `scripts/lint.sh` |
 | `signature policy` | ubuntu-24.04 | `tests/integration/signing.sh` with cosign v2.5.3 (checksum-pinned) |
-| `image (pi34)`, `image (pi5)` | ubuntu-24.04-arm | `scripts/build.sh`; uploads `brewberrypi-os-<board>` artifacts, kept 1 day (storage quota) |
-| `release` | ubuntu-24.04 | Tags only: draft release, or a published pre-release for `v*-alpha.N` tags (see [releasing.md](releasing.md)) |
+| `draft release` | ubuntu-24.04 | Tags only: creates the draft release |
+| `image (pi34)`, `image (pi5)` | ubuntu-24.04-arm | `scripts/build.sh`; on a tag, uploads the `.img.xz` to the draft release. No Actions artifacts: one run's images (about 485 MB) nearly fill the Free plan's 0.5 GB Actions storage, and release assets don't count against it |
+| `release` | ubuntu-24.04 | Tags only: adds the Imager manifest and `SHA256SUMS`; publishes `v*-alpha.N` (and `-beta.N`, `-rc.N`) tags as a pre-release, leaves `v1.2.3` a draft (see [releasing.md](releasing.md)) |
 
 Repository settings the build reads (Settings → Secrets and variables → Actions):
 
@@ -253,12 +254,12 @@ Repository settings the build reads (Settings → Secrets and variables → Acti
 | `BREWBERRY_APP_VERSION` | Variable | Preload this app release instead of the stub |
 | `BREWBERRY_GHCR_TOKEN` | Secret | Classic PAT with `read:packages` for the app's private package. Alternatively, grant this repository access in the package's *Manage Actions access*. |
 
-To try a branch's image without building locally, open its workflow run and download the
-artifact.
+CI keeps no image artifacts. To try a branch on a Pi, build it locally, or merge it and tag a
+pre-release (`v1.2.3-alpha.N`, see [releasing.md](releasing.md)).
 
 ## 9. Trying a change on a Pi
 
-1. Build locally or download the CI artifact.
+1. Build locally, or download the images of a (pre-)release.
 2. Flash through a local manifest (`scripts/imager-manifest.py --local …`) and set an SSH key in
    Imager, or build with `BREWBERRY_SSH_PUBKEY` and flash with *Use custom*.
 3. Wait for the first-boot reboot, then `ssh brewberry@brewberrypi.local`.

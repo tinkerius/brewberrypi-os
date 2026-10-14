@@ -116,6 +116,7 @@ The output is `deploy/<image>-<version>.img.xz` plus a `.sha256`. The version is
 |---|---|
 | `BREWBERRY_SSH_PUBKEY` | Key for the `brewberry` user built into the image. Optional when you flash through the manifest and set a key in Imager; without either, you can't log in. |
 | `BREWBERRY_APP_VERSION` | Preload this app version (`1.2.3` or a pre-release `1.2.3-alpha.N`) instead of the stub. `scripts/fetch-app.sh` fetches it from `ghcr.io/tinkerius/brewberrypi` and refuses it unless it is signed with the pinned key and labelled contract 1 and that version. Log in first: `skopeo login ghcr.io`. |
+| `BREWBERRY_OS_VERSION` | OS version for the image name and `/etc/brewberry-release` (default: `git describe --tags`). CI sets it to the tag of a release build. |
 | `BREWBERRY_PRELOAD` | Preload this local `dir:` image instead (`podman save --format docker-dir`). Not verified; development only. |
 | `STUB_VERSION`, `STUB_START` | For `build-stub.sh`: the stub's version and start mode (`ok`, `crash`, `hwfail`, `config`, `hang`) |
 | `RPI_IMAGE_GEN_DIR` | Use another rpi-image-gen checkout (it must still be at the pinned commit) |
@@ -241,7 +242,7 @@ on demand:
 |---|---|---|
 | `lint` | ubuntu-24.04 | `scripts/lint.sh` |
 | `signature policy` | ubuntu-24.04 | `tests/integration/signing.sh` with cosign v2.5.3 (checksum-pinned) |
-| `image (pi34)`, `image (pi5)` | ubuntu-24.04-arm | `scripts/build.sh`; uploads `brewberrypi-os-<board>` artifacts, kept 30 days |
+| `image (pi34)`, `image (pi5)` | ubuntu-24.04-arm | `scripts/build.sh`; uploads `brewberrypi-os-<board>` artifacts, kept 1 day (storage quota) |
 | `release` | ubuntu-24.04 | Tags only: draft release, or a published pre-release for `v*-alpha.N` tags (see [releasing.md](releasing.md)) |
 
 Repository settings the build reads (Settings → Secrets and variables → Actions):

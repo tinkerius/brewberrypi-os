@@ -11,6 +11,7 @@
 #                         first). Default: the contract stub (build-stub.sh).
 #   BREWBERRY_PRELOAD     app image to preload, in 'dir:' format, instead of
 #                         either (not verified; for development).
+#   BREWBERRY_OS_VERSION  OS version (default: git describe); CI sets the tag.
 #   RPI_IMAGE_GEN_DIR     rpi-image-gen checkout (default: .cache/rpi-image-gen)
 #
 # Needs an arm64 Debian/Ubuntu host (or qemu-user-static with binfmt) with
@@ -27,7 +28,9 @@ CONFIG=${1:-brewberrypi-pi34.yaml}
 WORK_DIR=$REPO_ROOT/work
 DEPLOY_DIR=$REPO_ROOT/deploy
 
-VERSION=$(git -C "$REPO_ROOT" describe --tags --always --dirty)
+# BREWBERRY_OS_VERSION: CI sets it to the tag of a release build, because git describe
+# picks any one tag when a commit carries several (v0.1.0-alpha.10 and -alpha.11).
+VERSION=${BREWBERRY_OS_VERSION:-$(git -C "$REPO_ROOT" describe --tags --always --dirty)}
 IMAGE_NAME=$(python3 -c 'import sys, yaml; print(yaml.safe_load(open(sys.argv[1]))["image"]["name"])' \
    "$REPO_ROOT/config/$CONFIG")
 

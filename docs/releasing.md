@@ -9,7 +9,8 @@ untested (see [Pre-releases](#pre-releases)).
 
 - Tags are `vMAJOR.MINOR.PATCH` (`v0.1.0`). The image files take the tag as their version
   (`brewberrypi-os-pi34-v0.1.0.img.xz`), and so does `BREWBERRY_OS_VERSION` in
-  `/etc/brewberry-release`. Both come from `git describe`.
+  `/etc/brewberry-release`. A tag build takes its tag (`BREWBERRY_OS_VERSION`, set by CI), other
+  builds `git describe`.
 - The OS version is independent of the app version. Which app the image preloads is recorded in
   `BREWBERRY_OS_APP_PRELOAD`.
 - Releases stay at `0.x` until OS8 (end-to-end with the real app) is done; the first release that

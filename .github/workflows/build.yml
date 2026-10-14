@@ -99,6 +99,8 @@ jobs:
         env:
           BREWBERRY_SSH_PUBKEY: ${{ vars.BREWBERRY_SSH_PUBKEY }}
           BREWBERRY_APP_VERSION: ${{ vars.BREWBERRY_APP_VERSION }}
+          # Release builds are named after their tag (scripts/build.sh).
+          BREWBERRY_OS_VERSION: ${{ startsWith(github.ref, 'refs/tags/v') && github.ref_name || '' }}
         run: |
           if [ -z "$BREWBERRY_SSH_PUBKEY" ]; then
             echo "::warning::Repository variable BREWBERRY_SSH_PUBKEY is not set; this image has no SSH login."
@@ -111,7 +113,9 @@ jobs:
           path: deploy/
           # The image is already xz-compressed.
           compression-level: 0
-          retention-days: 30
+          # Only the release job of this run needs them (release assets are kept
+          # separately); about 1.2 GB per run would soon fill the storage quota.
+          retention-days: 1
           if-no-files-found: error
 
   release:

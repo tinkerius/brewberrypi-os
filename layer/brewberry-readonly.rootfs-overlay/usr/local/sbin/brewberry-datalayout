@@ -17,7 +17,7 @@ ensure_dir() { # <mode> <path>
    fi
 }
 
-ensure_dir 0755 "$D/config"              # config.json and recipes, ro in the app
+ensure_dir 0755 "$D/config"              # config.json and recipes/, ro in the app
 ensure_dir 0755 "$D/containers/storage"  # Podman graphroot (OS2)
 ensure_dir 0755 "$D/tmp"                 # Podman pull staging (OS2)
 ensure_dir 0755 "$D/update"              # update requests, state, tags.json (OS4)
@@ -28,6 +28,8 @@ ensure_dir 0700 "$D/secrets"             # registry auth.json (OS4)
 # means the app's built-in defaults: the specification's config.example.json
 # with the built-in recipe catalogue, and the default pins (heater BCM 23,
 # pump BCM 22, buzzer BCM 10) that config.txt and the outputs-off reset use.
+# Do not create $D/config/recipes: an empty folder would mean no recipes at all,
+# while a missing one means the app's built-in catalogue (app RCP-001).
 CONFIG=$D/config/config.json
 if [ ! -e "$CONFIG" ]; then
    printf '{}\n' > "$CONFIG.tmp"

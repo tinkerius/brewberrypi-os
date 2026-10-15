@@ -135,8 +135,9 @@ password for it.
 
 ## 5. Configuration
 
-The app reads its configuration from `/data/config`: `config.json` plus recipe files. The app's
-documentation describes the format. The OS itself reads only the output pins from it, to switch
+The app reads its configuration from `/data/config`: `config.json` plus the folder `recipes/`, with
+one file `<id>.json` per recipe (for example `recipes/ZORA.json`). Without a `recipes/` folder the
+app uses its built-in recipes. The app's documentation describes both formats. The OS itself reads only the output pins from it, to switch
 them off after the app stops ([Output pins](#output-pins)):
 
 ```json
@@ -158,8 +159,10 @@ Change it from a USB stick (recommended) or over SSH.
 
 This is the safest way: every file is checked first, and the old configuration is backed up.
 
-1. On your computer, copy the files to the folder `brewberrypi/config/` on a USB stick, for
-   example `brewberrypi/config/config.json`.
+1. On your computer, copy the files to the folder `brewberrypi/config/` on a USB stick:
+   `brewberrypi/config/config.json`, and the recipes as `brewberrypi/config/recipes/<id>.json`.
+   Both are optional. A `recipes/` folder on the stick replaces **all** recipes on the Pi, so it
+   must hold every recipe you want to keep; without one, the recipes on the Pi stay as they are.
 2. Plug the stick into the Pi and run:
 
    ```sh
@@ -167,7 +170,8 @@ This is the safest way: every file is checked first, and the old configuration i
    sudo brewberry-usb import-config
    ```
 
-   If any file isn't valid JSON, nothing is imported. The previous files are saved in
+   If any file isn't valid JSON, or a recipe file name isn't a recipe id (letters, digits, `_`
+   and `-`), nothing is imported. The previous files and recipes are saved in
    `/data/config/backup/<date>/`.
 3. The app reads its configuration only at start. Restart it (this ends a running brew):
 
@@ -198,8 +202,8 @@ Copy `/data/config` somewhere safe, for example to your computer:
 scp -r brewberry@brewberrypi.local:/data/config ./brewberrypi-config
 ```
 
-To restore it on a reflashed Pi, put the `.json` files into `brewberrypi/config/` on a stick and
-run `brewberry-usb import-config`.
+To restore it on a reflashed Pi, put `config.json` and the `recipes/` folder into
+`brewberrypi/config/` on a stick and run `brewberry-usb import-config`.
 
 ### Output pins
 
@@ -323,6 +327,7 @@ You need a checkout of this repository, `skopeo` and `jq`, and a registry login
 scripts/usb-export.sh 1.2.3 /media/stick                 # writes brewberrypi/images/1.2.3, signature included
 mkdir -p /media/stick/brewberrypi/config                 # optional: configuration
 cp config.json /media/stick/brewberrypi/config/
+cp -r recipes /media/stick/brewberrypi/config/           # optional: recipes, one <id>.json each
 ```
 
 The script checks the export against the Pi's signature rules, so a stick the Pi would refuse is
@@ -333,7 +338,9 @@ brewberrypi/
 ├── images/
 │   └── 1.2.3/            one folder per version
 └── config/
-    └── config.json       optional
+    ├── config.json       optional
+    └── recipes/          optional, replaces all recipes on the Pi
+        └── ZORA.json     one file per recipe
 ```
 
 ### Use it on the Pi
@@ -470,7 +477,7 @@ All commands run as root (`sudo`).
 | `brewberry-update demo on\|off` | Run the app with a simulated kettle (no GPIO), or normally |
 | `brewberry-usb list` | Versions and config files on a USB stick |
 | `brewberry-usb install <version>` | Install a version from a USB stick |
-| `brewberry-usb import-config` | Copy `brewberrypi/config/*.json` from a stick to `/data/config` |
+| `brewberry-usb import-config` | Copy `brewberrypi/config/*.json` and `recipes/` from a stick to `/data/config` |
 | `brewberry-maint status` | Sealed (normal) or in maintenance mode |
 | `brewberry-maint on` | Make the system writable for OS updates (reboots) |
 | `brewberry-maint off` | Seal the system again (reboots) |

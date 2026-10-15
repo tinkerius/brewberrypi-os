@@ -37,11 +37,11 @@ run() {
    check "the stick lists 0.2.0 and 9.9.9" lists_both
    check "the stick is unmounted again" not_mounted
 
-   check "9.9.9 (tampered) is rejected" sh -c '! brewberry-usb install 9.9.9'
+   check "9.9.9 (tampered) is rejected" sh -c '! brewberry-usb install 9.9.9 --yes'
    check "active unchanged after the rejection" is_version active "$before"
    check "the stick is unmounted after a failed install" not_mounted
 
-   brewberry-usb install 0.2.0 >/dev/null 2>&1
+   brewberry-usb install 0.2.0 --yes >/dev/null 2>&1
    check "0.2.0 installs offline from the stick and is active" is_version active 0.2.0
    check "brewberrypi.service is running" systemctl is-active --quiet brewberrypi.service
 

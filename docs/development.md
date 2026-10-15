@@ -53,23 +53,26 @@ The Pi switches a **mains-powered heater**. These hold for every change, tests i
 | `layer/<name>.rootfs-overlay/` | Files the layer installs, at their path in the root filesystem |
 | `stub/` | Contract stub app (`brewberrypi-stub.py`, `Containerfile`, `test_stub.py`) |
 | `scripts/` | Build, lint, release and helper scripts; `common.sh` pins rpi-image-gen |
-| `tests/unit/` | Host-side tests with fakes, run by `scripts/lint.sh` |
+| `tests/unit/` | Host-side tests with fakes, run by `scripts/lint.sh`; `parity.sh` checks CLI ⇄ web parity |
+| `tests/web/` | Python tests of the device web interface's server and root helper |
 | `tests/integration/signing.sh` | Signature policy against a local registry with cosign v2 |
 | `tests/hardware/` | On-device checks, the milestones' "done when" (see its README) |
 | `docs/adr/` | Decisions; copy `0000-template.md` for a new one |
-| `docs/implementation-plan.md` | Milestones OS0–OS8 |
+| `docs/implementation-plan.md` | Milestones OS0–OS9 |
+| `docs/device-web-ui.md` | Design of the device web interface (ADR-0002) |
 
 The layers, in the order the base config lists them:
 
 | Layer | What it adds |
 |---|---|
 | `brewberry-suite` | Base suite: trixie-minbase with NetworkManager instead of networkd/iwd, no raspi-config |
-| `brewberry-base` | mDNS (avahi), `/etc/brewberry-release` |
+| `brewberry-base` | mDNS (avahi), `/etc/brewberry-release`, the CLIs' shared `/usr/lib/brewberry/common.sh` |
 | `brewberry-readonly` | `data.mount`, first-boot grow/layout/seal, volatile journal, `brewberry-maint`, apt guard while sealed |
 | `brewberry-safety` | `config.txt` safety block, `brewberrypi-outputs-off`, `RuntimeWatchdogSec` |
 | `brewberry-podman` | Podman on `/data`, the Quadlet unit `brewberrypi.container`, gpiochip udev rule, `brewberry-firstload` |
-| `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-usb`, `brewberrypi-safemode` |
+| `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-usb`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode` |
 | `brewberry-imager` | cloud-init for Imager's `cloudinit-rpi` customisation; disabled after first boot |
+| `brewberry-web` | Device web interface on port 8081 (server, root helper, command catalogue), the account password `pi`, `brewberry-passwd` (passwords kept on `/data`) |
 
 ## 3. Build host setup
 
@@ -181,6 +184,26 @@ what you need explicitly.
 2. Add it to the `layer:` map in `config/brewberrypi-base.yaml`.
 3. Run `scripts/lint.sh`; it runs `rpi-image-gen metadata --lint` on every layer.
 
+### Add or change an operator command (CLI ⇄ web parity)
+
+Every operator command exists four times, and `tests/unit/parity.sh` fails CI when they differ
+(ADR-0002, [device-web-ui.md](device-web-ui.md)):
+
+1. **The CLI** (`brewberry-update`, `-usb`, `-config`, `-system`, `-maint`): the implementation.
+   List the subcommand in the usage header at the top of the script. Source
+   `/usr/lib/brewberry/common.sh`; give queries `--json` output, and call `confirm "<what it
+   does>"` before anything that restarts the app or reboots (it adds the brew warning, handles
+   `--yes` and exits 10 without a terminal).
+2. **The catalogue** `layer/brewberry-web.rootfs-overlay/usr/share/brewberry/commands.json`:
+   `id`, `argv` with `{placeholders}`, an anchored pattern per placeholder, `kind` (`query` or
+   `action`), and `confirm`, `job` (long actions), `reboots`, `stdin`, `upload`, `download` as
+   needed. The root helper runs nothing else.
+3. **The web page** `…/usr/lib/brewberry-web/index.html`: a control with `data-cmd="<id>"`.
+4. **The user manual's command reference** (§10), plus the section that explains it.
+
+The web interface holds no device logic. Something only the browser can do is a catalogue entry
+with `"webOnly": "<CLI counterpart>"` (today only the password change, counterpart `passwd`).
+
 ### Change the partition layout
 
 Edit `image/brewberry-mbr/` (`image.yaml`, `genimage.cfg.in`, `setup.sh`, `pre-image.sh`) and the
@@ -217,12 +240,19 @@ A decision that changes the architecture or a rule above gets an ADR: copy
 | Hardware checks | A real Pi | `tests/hardware/README.md` |
 
 `lint.sh` runs shellcheck, yamllint (`config/`, `.github/`), the layer metadata lint, the stub's
-unit tests and every `tests/unit/*.sh`. The unit tests run the device scripts on the host against
+unit tests, the web interface's tests (`tests/web/`) and every `tests/unit/*.sh`, including the
+parity check. The unit tests run the device scripts on the host against
 fakes: fake `podman`, `systemctl` and `pinctrl` in `PATH`, plus environment variables such as
 `BREWBERRY_UPDATE_ROOT` and `BREWBERRY_SOAK_S=0` that point the script at a temporary root. To
 test a new device script, follow `tests/unit/update.sh`: make the script's paths overridable
 through environment variables, put fakes in a temporary `bin/`, and check what they were called
-with.
+with. The CLIs source the shared library through `BREWBERRY_LIB`; point it at
+`layer/brewberry-base.rootfs-overlay/usr/lib/brewberry`.
+
+`tests/web/test_web.py` starts the web server on a free port and the root helper per connection,
+as `brewberry-webcmd.socket` does, with fake CLIs, `systemd-run`, `systemctl` and `chpasswd` and a
+fake shadow file (`BREWBERRY_CATALOGUE`, `BREWBERRY_SHADOW`, `BREWBERRY_JOBS_DIR`,
+`BREWBERRY_UPLOAD_DIR`, `BREWBERRY_WEB_PORT`, `BREWBERRY_WEBCMD_SOCKET`).
 
 The signing test starts a local registry, signs test images with throwaway keys and checks that
 the device's real `policy.json` accepts only the right ones: from the registry, from a USB `dir:`

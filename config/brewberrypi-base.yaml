@@ -14,7 +14,10 @@
 device:
   hostname: brewberrypi
   user1: brewberry
-  # No password: the account is locked and reachable over SSH keys only.
+  # The device account, an administrator like an Imager user. Its default
+  # password 'pi' is set by brewberry-web (rpi-image-gen's user1pass refuses
+  # weak passwords) and logs in to the device web interface on port 8081.
+  # SSH stays key-only unless Imager enables password logins.
   user1sudo: nopasswd
 
 image:
@@ -39,3 +42,4 @@ layer:
   podman: brewberry-podman
   update: brewberry-update
   imager: brewberry-imager
+  web: brewberry-web

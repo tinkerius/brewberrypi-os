@@ -1,0 +1,95 @@
+{
+  "version": 1,
+  "about": "Every operator command of BrewberryPi OS (ADR-0002). The root helper runs only these, the device web interface builds its controls from them, and tests/unit/parity.sh checks them against the CLIs, the web page and the user manual's command reference.",
+  "commands": [
+    {
+      "id": "update.status", "title": "App status", "screen": "overview",
+      "argv": ["brewberry-update", "status"], "kind": "query"
+    },
+    {
+      "id": "update.list", "title": "Available versions", "screen": "versions",
+      "argv": ["brewberry-update", "list"], "kind": "query", "timeout": 120
+    },
+    {
+      "id": "update.install", "title": "Install", "screen": "versions",
+      "argv": ["brewberry-update", "install", "{version}"],
+      "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },
+      "kind": "action", "confirm": true, "job": true
+    },
+    {
+      "id": "update.rollback", "title": "Roll back", "screen": "versions",
+      "argv": ["brewberry-update", "rollback"], "kind": "action", "confirm": true, "job": true
+    },
+    {
+      "id": "update.demo", "title": "Demo mode", "screen": "versions",
+      "argv": ["brewberry-update", "demo", "{mode}"], "args": { "mode": "^(on|off)$" },
+      "kind": "action", "confirm": true, "job": true
+    },
+    {
+      "id": "update.restart", "title": "Restart the app", "screen": "versions",
+      "argv": ["brewberry-update", "restart"], "kind": "action", "confirm": true, "job": true
+    },
+    {
+      "id": "update.login", "title": "Registry login", "screen": "versions",
+      "argv": ["brewberry-update", "login", "--username", "{username}", "--password-stdin"],
+      "args": { "username": "^[A-Za-z0-9-]{1,39}$" }, "stdin": "token",
+      "kind": "action", "timeout": 60
+    },
+    {
+      "id": "usb.list", "title": "USB stick contents", "screen": "usb",
+      "argv": ["brewberry-usb", "list"], "kind": "query", "timeout": 60
+    },
+    {
+      "id": "usb.install", "title": "Install from the stick", "screen": "usb",
+      "argv": ["brewberry-usb", "install", "{version}"],
+      "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },
+      "kind": "action", "confirm": true, "job": true
+    },
+    {
+      "id": "usb.import-config", "title": "Import the stick's configuration", "screen": "usb",
+      "argv": ["brewberry-usb", "import-config"], "kind": "action", "timeout": 60
+    },
+    {
+      "id": "config.show", "title": "Configuration", "screen": "config",
+      "argv": ["brewberry-config", "show"], "kind": "query"
+    },
+    {
+      "id": "config.import", "title": "Import configuration files", "screen": "config",
+      "argv": ["brewberry-config", "import", "{upload}"], "upload": true, "kind": "action"
+    },
+    {
+      "id": "config.export", "title": "Download the configuration", "screen": "config",
+      "argv": ["brewberry-config", "export"], "download": "brewberrypi-config.tar.gz", "kind": "query"
+    },
+    {
+      "id": "maint.status", "title": "Maintenance mode", "screen": "overview",
+      "argv": ["brewberry-maint", "status"], "kind": "query"
+    },
+    {
+      "id": "maint.on", "title": "Maintenance mode on", "screen": "os",
+      "argv": ["brewberry-maint", "on"], "kind": "action", "confirm": true, "job": true, "reboots": true
+    },
+    {
+      "id": "maint.upgrade", "title": "Update the OS packages", "screen": "os",
+      "argv": ["brewberry-maint", "upgrade"], "kind": "action", "confirm": true, "job": true
+    },
+    {
+      "id": "maint.off", "title": "Maintenance mode off", "screen": "os",
+      "argv": ["brewberry-maint", "off"], "kind": "action", "confirm": true, "job": true, "reboots": true
+    },
+    {
+      "id": "system.info", "title": "Device", "screen": "overview",
+      "argv": ["brewberry-system", "info"], "kind": "query"
+    },
+    {
+      "id": "system.logs", "title": "Logs", "screen": "logs",
+      "argv": ["brewberry-system", "logs", "{name}"],
+      "args": { "name": "^(app|safemode|firstload|outputs-off|web)$" }, "kind": "query"
+    },
+    {
+      "id": "account.password", "title": "Change the password", "screen": "account",
+      "kind": "action", "webOnly": "passwd",
+      "reason": "Linux's own passwd is the CLI counterpart; brewberry-passwd keeps the change across reboots for both."
+    }
+  ]
+}

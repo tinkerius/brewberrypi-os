@@ -11,6 +11,7 @@ T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 export FAKE=$T/fake
 export BREWBERRY_UPDATE_ROOT=$T/root BREWBERRY_SOAK_S=0
+export BREWBERRY_LIB=$ROOT_DIR/layer/brewberry-base.rootfs-overlay/usr/lib/brewberry
 mkdir -p "$T/bin"
 
 # --- fake podman: images, tags and labels as files under $FAKE ---------------
@@ -86,7 +87,14 @@ set -u
 [ "$1" = list-tags ] || { echo "fake skopeo: unsupported: $*" >&2; exit 99; }
 { ls "$FAKE/registry"; echo sha256-0123.sig; echo latest; } | jq -R . | jq -sc '{Tags: .}'
 FAKE
-chmod +x "$T/bin/podman" "$T/bin/systemctl" "$T/bin/skopeo"
+# --- fake curl: the app's /healthz reports $FAKE/engine (none: not answering) --
+cat > "$T/bin/curl" <<'FAKE'
+#!/bin/bash
+set -u
+[ -f "$FAKE/engine" ] || exit 7
+printf '{"status": "ok", "version": "1.0.0", "engine": "%s"}\n' "$(cat "$FAKE/engine")"
+FAKE
+chmod +x "$T/bin/podman" "$T/bin/systemctl" "$T/bin/skopeo" "$T/bin/curl"
 export PATH=$T/bin:$PATH
 
 # --- fixture ------------------------------------------------------------------
@@ -135,62 +143,62 @@ UPDATE=$SBIN/brewberry-update
 SAFEMODE=$SBIN/brewberrypi-safemode
 
 # --- brewberry-update ---------------------------------------------------------
-fixture; run "$UPDATE" install 1.1.0
+fixture; run "$UPDATE" --yes install 1.1.0
 expect "install: exit code" "$RC" 0
 expect "install: new image active, old one previous" "$(tag_of active) $(tag_of previous)" "id110 id100"
 expect "install: state done" "$(phase)" "done"
 expect "install: pulled ref untagged, nothing else kept" "$(images)" "id100 id110"
 
-run "$UPDATE" install 1.7.0
+run "$UPDATE" --yes install 1.7.0
 expect "second install: previous moves up, oldest removed" "$(tag_of active) $(tag_of previous) | $(images)" "id170 id110 | id110 id170"
 
-fixture; "$UPDATE" install 1.1.0 > /dev/null 2>&1; run "$UPDATE" install 1.2.0
+fixture; "$UPDATE" --yes install 1.1.0 > /dev/null 2>&1; run "$UPDATE" --yes install 1.2.0
 expect "crash on start: exit code" "$RC" 1
 expect "crash on start: rolled back, previous restored" "$(tag_of active) $(tag_of previous)" "id110 id100"
 expect "crash on start: rejected image removed" "$(images)" "id100 id110"
 expect "crash on start: state rolled-back" "$(phase)" rolled-back
 
-fixture; run "$UPDATE" install 1.3.0
+fixture; run "$UPDATE" --yes install 1.3.0
 expect "crash during the soak: rolled back" "$RC $(tag_of active) $(tag_of previous) $(phase)" "1 id100 none rolled-back"
 
-fixture; run "$UPDATE" install 1.4.0
+fixture; run "$UPDATE" --yes install 1.4.0
 expect "unsigned or missing version: nothing changed" "$RC $(tag_of active) $(tag_of previous) $(phase)" "1 id100 none failed"
 
-fixture; run "$UPDATE" install 1.6.0
+fixture; run "$UPDATE" --yes install 1.6.0
 expect "wrong runtime contract: nothing changed, image removed" "$RC $(tag_of active) $(images) $(phase)" "1 id100 id100 failed"
 
-fixture; run "$UPDATE" install 1.5.0
+fixture; run "$UPDATE" --yes install 1.5.0
 expect "configuration error: image kept, not rolled back" "$RC $(tag_of active) $(tag_of previous) $(phase)" "1 id150 id100 config-error"
 
-fixture; run "$UPDATE" install 1.8.0
+fixture; run "$UPDATE" --yes install 1.8.0
 expect "version label differs from the tag: nothing changed" "$RC $(tag_of active) $(images) $(phase)" "1 id100 id100 failed"
 
 fixture; mkdir -p "$T/stick/1.1.0"; echo '{}' > "$T/stick/1.1.0/manifest.json"; echo id110 > "$T/stick/1.1.0/fake-id"
 rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
-run "$UPDATE" install 1.1.0 --from-dir "$T/stick/1.1.0"
+run "$UPDATE" --yes install 1.1.0 --from-dir "$T/stick/1.1.0"
 expect "install from a dir: export (no registry token needed)" "$RC $(tag_of active) $(tag_of previous) $(phase)" "0 id110 id100 done"
 
 fixture; mkdir -p "$T/stick/1.2.0"; echo '{}' > "$T/stick/1.2.0/manifest.json"
-run "$UPDATE" install 1.2.0 --from-dir "$T/stick/1.2.0"
+run "$UPDATE" --yes install 1.2.0 --from-dir "$T/stick/1.2.0"
 expect "dir: export rejected by policy: nothing changed" "$RC $(tag_of active) $(phase)" "1 id100 failed"
 
-fixture; run "$UPDATE" install latest
+fixture; run "$UPDATE" --yes install latest
 expect "non-release tag refused before pulling" "$RC $(tag_of active) $(grep -c . "$FAKE/log")" "1 id100 0"
 
-fixture; rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"; run "$UPDATE" install 1.1.0
+fixture; rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"; run "$UPDATE" --yes install 1.1.0
 expect "no registry token: refused" "$RC $(tag_of active)" "1 id100"
 
-fixture; "$UPDATE" install 1.1.0 > /dev/null 2>&1; run "$UPDATE" install 1.1.0
+fixture; "$UPDATE" --yes install 1.1.0 > /dev/null 2>&1; run "$UPDATE" --yes install 1.1.0
 expect "already active: nothing changed" "$RC $(tag_of active) $(tag_of previous) $(phase)" "0 id110 id100 done"
 
-fixture; "$UPDATE" install 1.1.0 > /dev/null 2>&1; run "$UPDATE" rollback
+fixture; "$UPDATE" --yes install 1.1.0 > /dev/null 2>&1; run "$UPDATE" --yes rollback
 expect "rollback: swapped" "$RC $(tag_of active) $(tag_of previous) $(phase)" "0 id100 id110 done"
 
-fixture; run "$UPDATE" rollback
+fixture; run "$UPDATE" --yes rollback
 expect "rollback without previous: refused" "$RC $(tag_of active)" "1 id100"
 
 fixture; exec 8> "$BREWBERRY_UPDATE_ROOT/run/brewberry-update.lock"; flock 8
-run "$UPDATE" install 1.1.0; exec 8>&-
+run "$UPDATE" --yes install 1.1.0; exec 8>&-
 expect "second update while one runs: refused" "$RC $(tag_of active)" "1 id100"
 
 fixture; mkdir -p "$BREWBERRY_UPDATE_ROOT/data/secrets"; echo '{}' > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
@@ -199,23 +207,23 @@ expect "list: versions newest first in SemVer order, pre-releases before their r
    "0 1.9.0 1.9.0-rc.1 1.9.0-alpha.10 1.9.0-alpha.2 1.8.0 1.7.0 1.6.0 1.5.0 1.3.0 1.2.0 1.1.0"
 expect "list: tags.json" "$(jq -c '[.active, .tags[0], (.tags | length)]' "$BREWBERRY_UPDATE_ROOT/data/update/tags.json")" '["1.0.0","1.9.0",11]'
 
-fixture; run "$UPDATE" install 1.9.0-alpha.2
+fixture; run "$UPDATE" --yes install 1.9.0-alpha.2
 expect "install a pre-release (runtime contract §1)" "$RC $(tag_of active) $(phase)" "0 id192 done"
 
-fixture; run "$UPDATE" install 1.9.0-beta
+fixture; run "$UPDATE" --yes install 1.9.0-beta
 expect "install: not an app version refused" "$RC $(tag_of active)" "1 id100"
 
 # --- demo mode -----------------------------------------------------------------
 ARGS_FILE=$BREWBERRY_UPDATE_ROOT/data/update/app-args.env
-fixture; run "$UPDATE" demo on
+fixture; run "$UPDATE" --yes demo on
 expect "demo on: --dummymode for the app, app restarted" \
    "$RC $(cat "$ARGS_FILE") $(grep -c '^restart' "$FAKE/log")" "0 BREWBERRYPI_ARGS=--dummymode 1"
 expect "demo on: status says so" "$("$UPDATE" status 2>/dev/null | tail -n 1)" "demo mode: on"
-run "$UPDATE" demo off
+run "$UPDATE" --yes demo off
 expect "demo off: no extra arguments, app restarted" \
    "$RC $(test -e "$ARGS_FILE" && echo kept || echo removed) $(grep -c '^restart' "$FAKE/log")" "0 removed 2"
 expect "demo off: status says so" "$("$UPDATE" status 2>/dev/null | tail -n 1)" "demo mode: off"
-fixture; run "$UPDATE" demo maybe
+fixture; run "$UPDATE" --yes demo maybe
 expect "demo with a wrong argument: refused, nothing changed" \
    "$RC $(test -e "$ARGS_FILE" && echo written || echo none) $(grep -c . "$FAKE/log")" "1 none 0"
 # The unit must read the file the command writes, and pass its variable to the
@@ -227,10 +235,45 @@ expect "unit reads brewberry-update's argument file" \
 expect "unit passes the arguments after the contract's command" \
    "$(grep -cxF 'Exec=--config /config/config.json $BREWBERRYPI_ARGS' "$UNIT")" 1
 
+# --- confirmation protocol, brew warning, JSON, restart (ADR-0002) -------------
+fixture; run "$UPDATE" install 1.1.0 < /dev/null
+expect "install without --yes and without a terminal: exit 10, nothing changed" \
+   "$RC $(tag_of active) $(grep -c . "$FAKE/log")" "10 id100 0"
+expect "install without --yes: says what it would do" "$(grep -c 'This installs 1.1.0 and restarts the app' "$T/out")" 1
+fixture; RC=0; "$UPDATE" --json install 1.1.0 < /dev/null > "$T/out" 2> /dev/null || RC=$?
+expect "--json: the prompt as {confirm}" "$RC $(jq -r '.confirm | startswith("This installs 1.1.0")' "$T/out")" "10 true"
+fixture; echo Running > "$FAKE/engine"; RC=0; "$UPDATE" --json rollback < /dev/null > "$T/out" 2> /dev/null || RC=$?
+expect "rollback without previous: refused before asking" "$RC $(grep -c . "$T/out" || true)" "1 0"
+fixture; echo Running > "$FAKE/engine"; RC=0; "$UPDATE" demo on --json < /dev/null > "$T/out" 2> /dev/null || RC=$?
+expect "brew loaded or running: the prompt warns first" \
+   "$RC $(jq -r '.confirm | startswith("A brew is loaded or running (engine: Running). This ends it. This switches")' "$T/out")" "10 true"
+fixture; echo Running > "$FAKE/engine"; run "$UPDATE" install 1.1.0 --yes
+expect "brew running + --yes: a warning only, the install goes ahead" \
+   "$RC $(tag_of active) $(grep -c 'A brew is loaded or running' "$T/out")" "0 id110 1"
+fixture; echo NoProcess > "$FAKE/engine"; RC=0; "$UPDATE" --json demo on < /dev/null > "$T/out" 2> /dev/null || RC=$?
+expect "no brew loaded: no warning" "$RC $(jq -r .confirm "$T/out")" "10 This switches demo mode on and restarts the app."
+fixture; run "$UPDATE" install 9.9 --json
+expect "invalid version: refused before asking" "$RC $(grep -c confirm "$T/out" || true)" "1 0"
+
+fixture; "$UPDATE" --yes install 1.1.0 > /dev/null 2>&1; echo NoProcess > "$FAKE/engine"
+expect "status --json" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .previous.version, .service, .engine, .last.phase, .demo, .safemode]')" \
+   '["1.1.0","1.0.0","active","NoProcess","done",false,null]'
+fixture
+expect "status --json: no previous, app not answering" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.previous, .engine, .last]')" '[null,null,null]'
+fixture; echo '{}' > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
+expect "list --json: tags.json" "$("$UPDATE" list --json 2>/dev/null | jq -c '[.active, .tags[0]]')" '["1.0.0","1.9.0"]'
+
+fixture; run "$UPDATE" restart --yes
+expect "restart: the app is restarted, images untouched" "$RC $(cat "$FAKE/log") $(tag_of active)" "0 restart id100 id100"
+fixture; echo config > "$FAKE/behave/id100"; run "$UPDATE" restart --yes
+expect "restart: a configuration error is reported" "$RC $(grep -c 'refuses its configuration' "$T/out") $(tag_of active)" "1 1 id100"
+fixture; run "$UPDATE" restart < /dev/null
+expect "restart without --yes: exit 10, not restarted" "$RC $(grep -c . "$FAKE/log")" "10 0"
+
 # --- brewberrypi-safemode -----------------------------------------------------
 # Device with 1.1.0 active and 1.0.0 previous, after the start limit was hit.
 safemode_fixture() {
-   fixture; "$UPDATE" install 1.1.0 > /dev/null 2>&1; : > "$FAKE/log"; echo "${1:-1}" > "$FAKE/sys/status"
+   fixture; "$UPDATE" --yes install 1.1.0 > /dev/null 2>&1; : > "$FAKE/log"; echo "${1:-1}" > "$FAKE/sys/status"
 }
 safemode_fixture; run "$SAFEMODE"
 expect "safe mode: switches to previous and starts" "$RC $(tag_of active) $(tag_of previous) $(cat "$FAKE/log")" "0 id100 id110 start id100"
@@ -247,7 +290,7 @@ safemode_fixture; exec 8> "$BREWBERRY_UPDATE_ROOT/run/brewberry-update.lock"; fl
 run "$SAFEMODE"; exec 8>&-
 expect "safe mode: leaves it to a running update" "$(tag_of active) $(grep -c . "$FAKE/log")" "id110 0"
 
-safemode_fixture; "$SAFEMODE" > /dev/null; "$UPDATE" install 1.7.0 > /dev/null 2>&1
+safemode_fixture; "$SAFEMODE" > /dev/null; "$UPDATE" --yes install 1.7.0 > /dev/null 2>&1
 expect "a successful install clears the safe-mode marker" "$(test -f "$BREWBERRY_UPDATE_ROOT/data/update/safemode.json" && echo kept || echo cleared)" cleared
 
 exit "$failures"

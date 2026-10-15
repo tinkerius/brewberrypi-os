@@ -2,8 +2,10 @@
 # X-Env-Layer-Name: brewberry-base
 # X-Env-Layer-Category: app
 # X-Env-Layer-Desc: BrewberryPi OS base layer. Announces the device as
-#  <hostname>.local over mDNS and writes /etc/brewberry-release so a running
-#  device shows which build it was flashed with.
+#  <hostname>.local over mDNS, writes /etc/brewberry-release so a running
+#  device shows which build it was flashed with, and ships the CLIs' shared
+#  library (/usr/lib/brewberry/common.sh: --yes/--json, the confirmation
+#  protocol with the brew warning, ADR-0002).
 # X-Env-Layer-Version: 0.1.0
 # X-Env-Layer-Requires: device-user-admin,openssh-server
 #
@@ -28,6 +30,9 @@
 mmdebstrap:
   packages:
     - avahi-daemon
+    # common.sh: the brew warning reads the app's /healthz.
+    - curl
+    - jq
   customize-hooks:
     - |-
       set -eu

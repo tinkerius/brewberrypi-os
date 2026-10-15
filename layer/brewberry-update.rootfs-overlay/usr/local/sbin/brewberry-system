@@ -1,0 +1,76 @@
+#!/bin/bash
+# The device itself (ADR-0002, OS9). Run as root.
+#
+#   brewberry-system info            OS version, board, hostname, addresses, uptime, /data usage
+#   brewberry-system logs <name> [--lines N]
+#                                    this boot's log of: app, safemode, firstload,
+#                                    outputs-off, web (default: the last 200 lines)
+#
+# Options: --json (info, logs). Logs are kept in memory and lost at reboot.
+set -euo pipefail
+
+PROG=brewberry-system
+# BREWBERRY_LIB and BREWBERRY_SYSTEM_ROOT are for tests (tests/unit/system.sh).
+# shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
+. "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
+R=${BREWBERRY_SYSTEM_ROOT:-}
+APP_CONFIG=$R/data/config/config.json
+
+release() { # <key> from /etc/brewberry-release
+   sed -n "s/^$1=//p" "$R/etc/brewberry-release" 2> /dev/null | head -n 1
+}
+
+cmd_info() {
+   local model data addrs up info
+   model=$(tr -d '\0' < "$R/proc/device-tree/model" 2> /dev/null || true)
+   data=$(df -B1 --output=size,used,avail "$R/data" 2> /dev/null | awk 'NR == 2 {print $1, $2, $3}' || true)
+   addrs=$(hostname -I 2> /dev/null || true)
+   up=$(cut -d' ' -f1 "$R/proc/uptime" 2> /dev/null || echo 0)
+   info=$(jq -n --arg version "$(release BREWBERRY_OS_VERSION)" --arg image "$(release BREWBERRY_OS_IMAGE)" \
+      --arg preload "$(release BREWBERRY_OS_APP_PRELOAD)" --arg built "$(release BREWBERRY_OS_BUILD_DATE)" \
+      --arg model "$model" --arg host "$(hostname)" --arg addrs "$addrs" --arg up "$up" --arg data "$data" \
+      '{os: {version: $version, image: $image, appPreload: $preload, built: $built},
+        board: $model, hostname: $host, addresses: ($addrs | split(" ") | map(select(. != ""))),
+        uptimeSeconds: ($up | tonumber | floor),
+        data: ($data | split(" ") | if length == 3 then {size: (.[0] | tonumber), used: (.[1] | tonumber), free: (.[2] | tonumber)} else null end)}')
+   if [ "$JSON" = 1 ]; then
+      echo "$info"
+   else
+      jq -r '"OS:        BrewberryPi OS \(.os.version) (\(.os.image), built \(.os.built), preload \(.os.appPreload))",
+             "board:     \(.board)", "hostname:  \(.hostname)", "addresses: \(.addresses | join(" "))",
+             "uptime:    \(.uptimeSeconds / 3600 | floor) h \(.uptimeSeconds % 3600 / 60 | floor) min",
+             (if .data then "/data:     \(.data.used / 1048576 | floor) MiB used, \(.data.free / 1048576 | floor) MiB free" else empty end)' \
+         <<< "$info"
+   fi
+}
+
+cmd_logs() { # <name> [--lines N]
+   local name=$1 lines=200 out
+   if [ $# -eq 3 ] && [ "$2" = --lines ] && [[ $3 =~ ^[0-9]+$ ]] && [ "$3" -ge 1 ] && [ "$3" -le 5000 ]; then
+      lines=$3
+   elif [ $# -ne 1 ]; then
+      die "usage: brewberry-system logs <app|safemode|firstload|outputs-off|web> [--lines 1..5000]"
+   fi
+   case $name in
+      app) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberrypi.service) ;;
+      safemode) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberrypi-safemode.service) ;;
+      firstload) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberry-firstload.service) ;;
+      outputs-off) out=$(journalctl -b --no-pager -o short-iso | grep -F brewberrypi-outputs-off | tail -n "$lines" || true) ;;
+      web) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberry-web.service -u 'brewberry-webcmd@*' -u 'brewberry-job-*') ;;
+      *) die "unknown log '$name': app, safemode, firstload, outputs-off or web" ;;
+   esac
+   if [ "$JSON" = 1 ]; then
+      jq -n --arg name "$name" --arg out "$out" '{name: $name, lines: ($out | split("\n") | map(select(. != "")))}'
+   else
+      printf '%s\n' "$out"
+   fi
+}
+
+[ -n "$R" ] || [ "$(id -u)" = 0 ] || die "run as root"
+parse_opts "$@"
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+case ${1:-} in
+   info) cmd_info ;;
+   logs) [ $# -ge 2 ] || die "usage: brewberry-system logs <name> [--lines N]"; shift; cmd_logs "$@" ;;
+   *) sed -n '2,9s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

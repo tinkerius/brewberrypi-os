@@ -15,7 +15,7 @@ controller for a home-brewing mash kettle. It is built to behave like a games co
 | Design | [ADR-0001](docs/adr/0001-os-image-and-app-runtime.md), research in [docs/research](docs/research/) | ✅ done (2026-10-09) |
 | Implementation | Milestones OS0–OS7 in [docs/implementation-plan.md](docs/implementation-plan.md) | ✅ merged; on-device checks pending |
 | End-to-end with the real app | OS8 | ⏳ waits for the app's first release |
-| Device web interface | OS9: [ADR-0002](docs/adr/0002-device-web-interface.md) (proposed), [design](docs/device-web-ui.md) | ☐ designed |
+| Device web interface | OS9: [ADR-0002](docs/adr/0002-device-web-interface.md), [design](docs/device-web-ui.md) | ✅ merged; on-device check pending |
 
 ## Documentation
 
@@ -31,7 +31,7 @@ flashing, configuration, app versions, USB, OS updates and troubleshooting.
 | [docs/implementation-plan.md](docs/implementation-plan.md) | Milestones OS0–OS9 |
 | [docs/flashing.md](docs/flashing.md) | Flashing with Raspberry Pi Imager and its customisation |
 | [docs/os-update.md](docs/os-update.md) | OS update procedure (maintenance mode) |
-| [docs/device-web-ui.md](docs/device-web-ui.md) | Device web interface (port 8081): architecture and design, CLI parity (OS9, planned) |
+| [docs/device-web-ui.md](docs/device-web-ui.md) | Device web interface (port 8081): architecture and design, CLI parity (OS9) |
 | [docs/research/](docs/research/) | Research behind the decisions (primary sources, fact-checked) |
 | Runtime contract (application repository: `docs/deployment/runtime-contract.md`) | What the app image expects from this OS |
 

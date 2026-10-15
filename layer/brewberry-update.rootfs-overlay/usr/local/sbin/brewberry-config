@@ -1,0 +1,204 @@
+#!/bin/bash
+# The app's configuration in /data/config (ADR-0002, OS9). Run as root.
+#
+#   brewberry-config show            config.json and the recipe files
+#   brewberry-config import <source> check, back up and replace config files:
+#                                    <source> is a folder (*.json, recipes/), one
+#                                    .json file, or a .tar.gz from 'export'
+#   brewberry-config export          /data/config as .tar.gz on stdout (no backups)
+#
+# Options: --json (show). The app reads its configuration at start: after an
+# import, run 'brewberry-update restart'.
+#
+# A source folder looks like the USB stick's brewberrypi/config/:
+#   *.json      config.json (and other top-level configuration files)
+#   recipes/    one file <id>.json per recipe (app RCP-001); replaces all
+#               recipes on the Pi. Without it the recipes stay as they are.
+# Every file is checked before anything is written; nothing changes if one is
+# invalid. Replaced files go to /data/config/backup/<time>/.
+set -euo pipefail
+
+PROG=brewberry-config
+# BREWBERRY_LIB and BREWBERRY_UPDATE_ROOT are for tests (tests/unit/config.sh).
+# shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
+. "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
+
+ROOT=${BREWBERRY_UPDATE_ROOT:-}
+CONFIG_DIR=$ROOT/data/config
+APP_CONFIG=$CONFIG_DIR/config.json
+TMP_DIR=$ROOT/data/tmp
+MAX_CONFIG_BYTES=1048576
+MAX_ARCHIVE_BYTES=8388608
+DEFAULT_PINS="heating:23 pump:22 buzzer:10"
+CONFIG_RE='^[A-Za-z0-9._-]+\.json$'
+RECIPE_RE='^[A-Za-z0-9_-]+\.json$' # the file name is the recipe id
+
+WORK=""
+cleanup() { [ -z "$WORK" ] || rm -rf "$WORK"; }
+trap cleanup EXIT
+
+config_files() { # <dir>: top-level .json files
+   [ -d "$1" ] || return 0
+   find "$1" -mindepth 1 -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sort
+}
+
+recipe_files() { # <dir>: the app reads only <id>.json files directly in recipes/
+   [ -d "$1/recipes" ] || return 0
+   find "$1/recipes" -mindepth 1 -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sort
+}
+
+# check_file <path> <name shown> <name pattern> <pattern description>
+check_file() {
+   [ ! -L "$1" ] || die "$2: symbolic links are not imported"
+   [[ ${1##*/} =~ $3 ]] || die "$2: file names may only contain $4"
+   [ "$(stat -c %s "$1")" -le "$MAX_CONFIG_BYTES" ] || die "$2: larger than $MAX_CONFIG_BYTES bytes"
+   jq empty "$1" 2> /dev/null || die "$2: not valid JSON; nothing imported"
+}
+
+# install_file <source> <target>: copy via a temp file and rename, so a power cut leaves the old or the new file.
+install_file() {
+   cp "$1" "$2.tmp"
+   chmod 0644 "$2.tmp"
+   sync "$2.tmp"
+   mv "$2.tmp" "$2"
+}
+
+# Sets DIR, the folder to import from: the source itself, or a work folder on
+# /data with the single file or the unpacked archive.
+source_dir() { # <source>
+   local src=$1 bad
+   if [ -d "$src" ]; then
+      DIR=$src
+      return
+   fi
+   [ -f "$src" ] || die "no such file or folder: $src"
+   mkdir -p "$TMP_DIR"
+   WORK=$(mktemp -d "$TMP_DIR/config-import.XXXXXX")
+   case $src in
+      *.tar.gz | *.tgz)
+         [ "$(stat -c %s "$src")" -le "$MAX_ARCHIVE_BYTES" ] || die "${src##*/}: larger than $MAX_ARCHIVE_BYTES bytes"
+         # Only plain files and folders, with relative paths inside the archive.
+         tar -tvzf "$src" > "$WORK/.list" 2> /dev/null || die "${src##*/}: not a .tar.gz archive"
+         bad=$(awk '$1 !~ /^[-d]/' "$WORK/.list" | head -n 1)
+         [ -z "$bad" ] || die "${src##*/}: only files and folders are imported: $bad"
+         if tar -tzf "$src" | grep -qE '(^/|(^|/)\.\.(/|$))'; then
+            die "${src##*/}: paths must stay inside the archive"
+         fi
+         rm "$WORK/.list"
+         tar -xzf "$src" -C "$WORK" --no-same-owner --no-same-permissions
+         ;;
+      *.json) cp "$src" "$WORK/${src##*/}" ;;
+      *) die "${src##*/}: import a folder, a .json file or a .tar.gz archive" ;;
+   esac
+   DIR=$WORK
+}
+
+# Validate every file first, then back up what is replaced and write the new
+# files atomically. A recipes/ folder in the source replaces the whole recipe
+# folder, so recipes deleted there are deleted on the Pi too.
+cmd_import() { # <source>
+   local dir files recipes f backup new_recipes
+   source_dir "$1"
+   dir=$DIR
+   files=$(config_files "$dir")
+   recipes=$(recipe_files "$dir")
+   if [ -d "$dir/recipes" ] && [ -z "$recipes" ]; then
+      die "recipes/ has no .json files; nothing imported"
+   fi
+   [ -n "$files$recipes" ] || die "no *.json or recipes/ to import"
+   for f in $files; do
+      check_file "$dir/$f" "$f" "$CONFIG_RE" "letters, digits, '.', '_' and '-'"
+   done
+   for f in $recipes; do
+      check_file "$dir/recipes/$f" "recipes/$f" "$RECIPE_RE" "letters, digits, '_' and '-'"
+   done
+
+   mkdir -p "$CONFIG_DIR"
+   backup=$CONFIG_DIR/backup/$(date -u +%Y%m%dT%H%M%SZ)
+   if [ -n "$files" ] && compgen -G "$CONFIG_DIR/*.json" > /dev/null; then
+      mkdir -p "$backup"
+      cp -p "$CONFIG_DIR"/*.json "$backup/"
+   fi
+   for f in $files; do
+      install_file "$dir/$f" "$CONFIG_DIR/$f"
+      log "imported $f"
+   done
+
+   if [ -n "$recipes" ]; then
+      # Stage the new folder next to the old one, then swap them with two
+      # renames; the old folder moves into the backup.
+      new_recipes=$CONFIG_DIR/.recipes.new
+      rm -rf "$new_recipes"
+      mkdir -m 0755 "$new_recipes"
+      for f in $recipes; do
+         install_file "$dir/recipes/$f" "$new_recipes/$f"
+      done
+      sync "$new_recipes"
+      if [ -d "$CONFIG_DIR/recipes" ]; then
+         mkdir -p "$backup"
+         mv "$CONFIG_DIR/recipes" "$backup/recipes"
+      fi
+      mv "$new_recipes" "$CONFIG_DIR/recipes"
+      log "imported recipes: $(echo "$recipes" | sed 's/\.json$//' | paste -sd ' ')"
+   fi
+   sync "$CONFIG_DIR"
+   [ ! -d "$backup" ] || log "previous config saved in ${backup#"$ROOT"}"
+
+   warn_boot_pins
+   log "the app reads its config at start: brewberry-update restart (this ends a running brew)"
+}
+
+# config.txt sets the default pins to their off level at boot; other pins are
+# only switched off by the reset after a stop.
+warn_boot_pins() {
+   [ -f "$APP_CONFIG" ] || return 0
+   local entry name pin got
+   for entry in $DEFAULT_PINS; do
+      name=${entry%%:*}
+      pin=${entry#*:}
+      got=$(jq -r --arg n "$name" '.hardware[$n].pin // empty' "$APP_CONFIG" 2> /dev/null || true)
+      if [ -n "$got" ] && [ "$got" != "$pin" ]; then
+         log "WARNING: $name is on BCM $got, but config.txt switches BCM $pin off at boot."
+         log "         Update the gpio= lines in config.txt in maintenance mode."
+      fi
+   done
+}
+
+cmd_export() {
+   [ ! -t 1 ] || die "the archive goes to stdout: brewberry-config export > config.tar.gz"
+   local members=()
+   mapfile -t members < <(cd "$CONFIG_DIR" && { config_files .; recipe_files . | sed 's|^|recipes/|'; })
+   [ ${#members[@]} -gt 0 ] || die "no configuration files in ${CONFIG_DIR#"$ROOT"}"
+   tar -czf - -C "$CONFIG_DIR" --owner=0 --group=0 "${members[@]}"
+}
+
+cmd_show() {
+   local config=null
+   [ -f "$APP_CONFIG" ] && config=$(jq -c . "$APP_CONFIG" 2> /dev/null || echo '"(not valid JSON)"')
+   if [ "$JSON" = 1 ]; then
+      jq -n --argjson config "$config" \
+         --arg files "$(config_files "$CONFIG_DIR")" --arg recipes "$(recipe_files "$CONFIG_DIR" | sed 's/\.json$//')" \
+         --arg builtin "$([ -d "$CONFIG_DIR/recipes" ] && echo no || echo yes)" \
+         '{config: $config, files: ($files | split("\n") | map(select(. != ""))),
+           recipes: ($recipes | split("\n") | map(select(. != ""))), builtinRecipes: ($builtin == "yes")}'
+      return
+   fi
+   echo "config.json:"
+   jq . <<< "$config" | sed 's/^/  /'
+   echo "files: $(config_files "$CONFIG_DIR" | paste -sd ' ')"
+   if [ -d "$CONFIG_DIR/recipes" ]; then
+      echo "recipes: $(recipe_files "$CONFIG_DIR" | sed 's/\.json$//' | paste -sd ' ')"
+   else
+      echo "recipes: the app's built-in catalogue"
+   fi
+}
+
+[ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run as root"
+parse_opts "$@"
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+case ${1:-} in
+   show) cmd_show ;;
+   import) [ $# -eq 2 ] || die "usage: brewberry-config import <folder|file.json|archive.tar.gz>"; cmd_import "$2" ;;
+   export) cmd_export ;;
+   *) sed -n '2,11s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

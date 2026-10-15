@@ -1,0 +1,14 @@
+# One request from the device web interface (ADR-0002, OS9): helper.py reads
+# it from the socket, runs only catalogue commands (no shell) and answers.
+# Long actions run as their own transient units (brewberry-job-*).
+[Unit]
+Description=BrewberryPi device web interface: root helper
+After=data.mount brewberry-datalayout.service
+Requires=data.mount
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/lib/brewberry-web/helper.py
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+RuntimeMaxSec=300

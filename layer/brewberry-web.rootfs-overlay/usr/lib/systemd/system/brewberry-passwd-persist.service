@@ -1,0 +1,8 @@
+[Unit]
+Description=Save changed passwords to /data
+After=data.mount brewberry-datalayout.service brewberry-passwd-restore.service
+Requires=data.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/brewberry-passwd persist

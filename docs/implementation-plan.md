@@ -17,6 +17,7 @@ refuse to start on request.
 | OS6 | **Maintenance mode:** `brewberry-maint on\|off`, documented OS update procedure | `apt full-upgrade` works in maintenance mode; overlay and read-only boot are restored afterwards | ☐ |
 | OS7 | **Pi 5 and releases:** Pi 5 image (or a combined image), Imager manifest with `init_format`, release workflow (`.img.xz`, manifest, checksums) | Pi 5 boots and passes the OS1–OS4 checks; Imager customisation (hostname, Wi-Fi, SSH) works with the manifest | ☐ |
 | OS8 | **End-to-end with the real app:** app release ≥ 1.0 through the update flow, water-only brew | App M12 hardware test passes on BrewberryPi OS | ☐ |
+| OS9 | **Device web interface** ([ADR-0002](adr/0002-device-web-interface.md), [design](device-web-ui.md)), with CLI parity: OS9a CLI machine interface (`common.sh`, `--json`, confirmation protocol with the brew warning, new subcommands, command catalogue, parity test); OS9b account `brewberry`/`pi`, passwords persisted on `/data`; OS9c root helper and jobs; OS9d web server and UI on port 8081; OS9e docs and hardware check | Every command in the user manual's command reference works from the browser with the same result as on the CLI; the parity test is green; requests without a session get `401`; a password changed in the browser or with `passwd` survives a reboot; the same brew warning appears on both sides while a brew is loaded; restarting the web server during an install doesn't interrupt it (`tests/hardware/os9-check.sh`) | ☐ |
 
 ## Working rules
 

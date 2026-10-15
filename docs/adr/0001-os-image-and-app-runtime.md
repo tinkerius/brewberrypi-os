@@ -128,6 +128,10 @@ Unit `/etc/containers/systemd/brewberrypi.container`:
 
 ### Updating and selecting versions
 
+> Steps 1 and 2 (request from the app's web UI, `.path` trigger) and the `/update` mount are
+> superseded by [ADR-0002](0002-device-web-interface.md): the OS's own device web interface runs
+> `brewberry-update` instead.
+
 1. **Request:** the app's web UI writes a request file. *Pending* app spec question `Q-16`.
 2. **Trigger:** `brewberrypi-update.path` starts `brewberrypi-update.service`, a root oneshot under a lock.
 3. **The update itself:**
@@ -171,6 +175,6 @@ Unit `/etc/containers/systemd/brewberrypi.container`:
   - ~~One image for Pi 3/4/5, or two?~~ Two (OS7): the Pi 5 needs the 2712 kernel layer.
   - ~~Imager format: `cloudinit-rpi` or `systemd`?~~ `cloudinit-rpi` (OS7), as on current Raspberry Pi OS: cloud-init with `rpi-cloud-init-mods`, NetworkManager through netplan, disabled by `brewberry-seal` after the first boot. See `docs/flashing.md`.
   - Cost of arm64 runners for a private repo.
-  - Allow downgrades from the unauthenticated UI?
+  - ~~Allow downgrades from the unauthenticated UI?~~ No unauthenticated UI changes versions; the device web interface needs a login and allows any signed version, like the CLI (ADR-0002).
   - Cost of `podman system check` on a Pi 3, at every boot or only after failures?
   - A recovery path for a power loss during first boot.

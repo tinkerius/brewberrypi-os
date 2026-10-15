@@ -12,8 +12,9 @@ with version selection, rollback and safe mode.
 
 ## Layout
 
-- `docs/adr/`: decisions (copy `0000-template.md`). Start with `0001-os-image-and-app-runtime.md`.
-- `docs/implementation-plan.md`: milestones OS0–OS8.
+- `docs/adr/`: decisions (copy `0000-template.md`). Start with `0001-os-image-and-app-runtime.md`; `0002-device-web-interface.md` (proposed) adds the device web interface.
+- `docs/implementation-plan.md`: milestones OS0–OS9.
+- `docs/device-web-ui.md`: design of the device web interface (OS9, planned): `brewberry-web` on port 8081, root helper, command catalogue `/usr/share/brewberry/commands.json`, parity test.
 - `docs/research/`: research summary and raw JSON (claims with sources).
 - `docs/user-manual.md`: user manual for the OS (flashing, configuration, app versions, USB, OS updates, troubleshooting). Hardware, wiring and the app's config format belong in the app repo. Keep it in sync when commands or behaviour change.
 - `docs/development.md`: developer guide (build host, building, how layers work, tests, CI settings, workflow, maintenance tasks). `docs/releasing.md`: release procedure (versions, tag → draft release, hardware checks, publish). Keep both in sync when scripts, CI or layers change.
@@ -54,5 +55,6 @@ with version selection, rollback and safe mode.
   - keep `policy.json` at default reject with pinned keys.
 - **Signing:** images are signed with cosign v2.x; v3's default format is not readable by Podman 5.4. `keys/app-cosign.pub` must equal the app repo's `deploy/signing/cosign.pub`.
 - **GPIO:** pin numbers are BCM numbers. Never hard-code a gpiochip number.
+- **CLI ⇄ web parity** (ADR-0002, once OS9 is in): every operator command exists in the CLI, the command catalogue, the device web interface and the user manual's command reference. Add or change all four in one change; `tests/unit/parity.sh` enforces it. The web interface holds no device logic: it runs the CLI, and confirmation and warning texts come from the CLI. The only web-only function is the password change (CLI: `passwd`).
 - Commit messages reference the milestone (`OS3`) and, where relevant, application requirement IDs (`NFR-003`).
-- Keep the GitHub Project board [BrewberryPi OS](https://github.com/users/tinkerius/projects/1) in sync with the work. There is one issue per milestone (OS0–OS8); set it to *In Progress* when work starts and *Done* + closed when its "done when" checks pass (`gh project item-edit` on project 1). Pull requests reference the milestone issue (`Refs #n` / `Closes #n`).
+- Keep the GitHub Project board [BrewberryPi OS](https://github.com/users/tinkerius/projects/1) in sync with the work. There is one issue per milestone (OS0–OS9); set it to *In Progress* when work starts and *Done* + closed when its "done when" checks pass (`gh project item-edit` on project 1). Pull requests reference the milestone issue (`Refs #n` / `Closes #n`).

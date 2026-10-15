@@ -47,15 +47,21 @@ esac
 """
 
 FAKE_SYSTEMD_RUN = r"""#!/bin/bash
+# Like systemd-run: the unit is active from the moment this returns until the
+# command ends.
 echo "systemd-run $*" >> "$FAKE/log"
-while [ "${1#--}" != "$1" ]; do shift; done
-nohup "$@" > /dev/null 2>&1 &
+unit=""
+while [ "${1#--}" != "$1" ]; do
+   case $1 in --unit=*) unit=${1#--unit=} ;; esac
+   shift
+done
+touch "$FAKE/active-$unit.service"
+nohup sh -c '"$@"; rm -f "$0"' "$FAKE/active-$unit.service" "$@" > /dev/null 2>&1 &
 """
 
 FAKE_SYSTEMCTL = r"""#!/bin/bash
-# is-active --quiet brewberry-job-<id>.service: the job runner is still alive.
-id=${3#brewberry-job-}; id=${id%.service}
-pgrep -f -- "--job $id" > /dev/null
+# is-active --quiet brewberry-job-<id>.service
+[ -e "$FAKE/active-$3" ]
 """
 
 FAKE_CHPASSWD = r"""#!/bin/bash

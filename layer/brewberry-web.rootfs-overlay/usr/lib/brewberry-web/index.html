@@ -368,7 +368,7 @@ const views = {
 };
 
 function showAppStatus(dl, s) {
-  const v = x => x ? `${x.version || "?"} (${x.id})` : null;
+  const v = x => !x ? null : x.placeholder ? `none: placeholder, no app installed (${x.id})` : `${x.version || "?"} (${x.id})`;
   fill(dl, [["Active", v(s.active)], ["Previous", v(s.previous)], ["Service", s.service],
     ["Engine", s.engine || "not answering"], ["Demo mode", s.demo ? "on" : "off"],
     ["Last action", s.last ? `${s.last.phase}: ${s.last.message} (${s.last.time})` : null],

@@ -121,7 +121,7 @@ The output is `deploy/<image>-<version>.img.xz` plus a `.sha256`. The version is
 | `BREWBERRY_APP_VERSION` | Preload this app version (`1.2.3` or a pre-release `1.2.3-alpha.N`) instead of the stub. `scripts/fetch-app.sh` fetches it from `ghcr.io/tinkerius/brewberrypi` and refuses it unless it is signed with the pinned key and labelled contract 1 and that version. Log in first: `skopeo login ghcr.io`. |
 | `BREWBERRY_OS_VERSION` | OS version for the image name and `/etc/brewberry-release` (default: `git describe --tags`). CI sets it to the tag of a release build. |
 | `BREWBERRY_PRELOAD` | Preload this local `dir:` image instead (`podman save --format docker-dir`). Not verified; development only. |
-| `STUB_VERSION`, `STUB_START` | For `build-stub.sh`: the stub's version and start mode (`ok`, `crash`, `hwfail`, `config`, `hang`) |
+| `STUB_VERSION`, `STUB_START` | For `build-stub.sh`: the stub's version (default `placeholder`) and start mode (`ok`, `crash`, `hwfail`, `config`, `hang`) |
 | `RPI_IMAGE_GEN_DIR` | Use another rpi-image-gen checkout (it must still be at the pinned commit) |
 
 `/etc/brewberry-release` on the device records what went in: `BREWBERRY_OS_VERSION`,
@@ -223,8 +223,15 @@ the start limits.
 Edit `stub/brewberrypi-stub.py` and `stub/test_stub.py`; `python3 -m unittest discover -s stub`
 runs as part of `lint.sh`. The stub never drives the heater unless `allowHeat` is set. Its page at
 `/` (the `PAGE` template) is what people see in a browser before an app is installed: keep it
-self-contained (no external files; the Pi may be offline). Bump the default `STUB_VERSION` in
-`build-stub.sh` when the stub changes.
+self-contained (no external files; the Pi may be offline).
+
+The preloaded stub's version is the literal `placeholder` (image label and `/healthz`), not a
+release version: it is not an app release and is never in a registry. This is the one exception
+to the runtime contract's version format (§1, §5), and it lives only on the OS side:
+`brewberry-update status` shows it as *placeholder (no app installed)*, `install` never accepts
+it, and the OS release identifies which stub an image carries (`BREWBERRY_OS_APP_PRELOAD=stub`).
+The OS4 test images from `publish-test-stubs.sh` keep release versions (`0.2.0`…), because they
+stand in for app releases in the update flow.
 
 ### Write a decision down
 

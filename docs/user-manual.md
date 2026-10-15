@@ -288,8 +288,8 @@ SSH. Both do exactly the same.
 
 Until an app version is installed, the Pi runs a placeholder (the *contract stub*) that comes with
 the image. `http://<hostname>.local:8080/` then shows a page saying that the app isn't installed
-yet, with these steps. The placeholder never switches the outputs. Its `/healthz` reports the
-placeholder's own version (for example `0.6.0`); real app versions replace it.
+yet, with these steps. The placeholder never switches the outputs. Its `/healthz` reports the version `placeholder`, and
+`brewberry-update status` (and the web interface) show *placeholder (no app installed)*.
 
 ### Give the Pi access to the registry (once)
 

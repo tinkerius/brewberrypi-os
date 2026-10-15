@@ -258,6 +258,11 @@ expect "invalid version: refused before asking" "$RC $(grep -c confirm "$T/out" 
 fixture; "$UPDATE" --yes install 1.1.0 > /dev/null 2>&1; echo NoProcess > "$FAKE/engine"
 expect "status --json" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .previous.version, .service, .engine, .last.phase, .demo, .safemode]')" \
    '["1.1.0","1.0.0","active","NoProcess","done",false,null]'
+fixture; printf 'org.opencontainers.image.version=placeholder\norg.brewberrypi.runtime-contract=1\n' > "$FAKE/labels/id100"
+expect "status: the preloaded placeholder is no app" "$("$UPDATE" status 2>/dev/null | head -n 1 | grep -c 'placeholder (no app installed)')" 1
+expect "status --json: the placeholder is marked" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .active.placeholder]')" '["placeholder",true]'
+"$UPDATE" --yes install 1.1.0 > /dev/null 2>&1
+expect "install over the placeholder: it becomes previous" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .active.placeholder, .previous.placeholder]')" '["1.1.0",false,true]'
 fixture
 expect "status --json: no previous, app not answering" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.previous, .engine, .last]')" '[null,null,null]'
 fixture; echo '{}' > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"

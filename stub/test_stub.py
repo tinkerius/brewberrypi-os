@@ -33,13 +33,13 @@ class StubTest(unittest.TestCase):
         self.config = os.path.join(self.tmp.name, "config.json")
         self.port = free_port()
 
-    def start(self, stub_json: dict | None = None, *args: str) -> subprocess.Popen:
+    def start(self, stub_json: dict | None = None, *args: str, version: str = "9.9.9") -> subprocess.Popen:
         if stub_json is not None:
             with open(os.path.join(self.tmp.name, "stub.json"), "w") as f:
                 json.dump(stub_json, f)
         env = dict(os.environ, NOTIFY_SOCKET=self.sock_path, BREWBERRYPI_WATCHDOG_MS="200",
                    BREWBERRYPI_STUB_PORT=str(self.port), BREWBERRYPI_STUB_START_DELAY_S="0.1",
-                   BREWBERRYPI_STUB_VERSION="9.9.9")
+                   BREWBERRYPI_STUB_VERSION=version)
         proc = subprocess.Popen([sys.executable, STUB, "--config", self.config, *args], env=env,
                                 stdout=subprocess.DEVNULL)
         def stop() -> None:
@@ -79,6 +79,16 @@ class StubTest(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=5) as resp:
             return resp.status, resp.headers["Content-Type"], resp.read().decode()
 
+    def test_preloaded_placeholder_reports_no_version_number(self) -> None:
+        # The preloaded stub is not an app release (scripts/build-stub.sh).
+        self.start(version="placeholder")
+        self.assertEqual(self.recv(), "READY=1")
+        self.assertEqual(self.http("GET", "/healthz"),
+                         {"status": "ok", "version": "placeholder", "engine": "NoProcess"})
+        body = self.page()[2]
+        self.assertIn('<dt>Placeholder</dt><dd><span class="ok">running</span></dd>', body)
+        self.assertNotIn("version placeholder", body)
+
     def test_landing_page_explains_the_placeholder(self) -> None:
         with open(self.config, "w") as f:
             f.write("{}")
@@ -88,7 +98,7 @@ class StubTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertEqual(content_type, "text/html; charset=utf-8")
         self.assertIn("The brewing app isn't installed yet", body)
-        self.assertIn("version 9.9.9", body)
+        self.assertIn("test version 9.9.9", body)
         self.assertIn("sudo brewberry-update install", body)
         self.assertIn("built-in defaults", body)
         self.assertIn("pinged every 0.2 s", body)

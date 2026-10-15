@@ -3,7 +3,7 @@
 # host is tested against the same conditions. Build: scripts/build-stub.sh
 FROM docker.io/library/debian:trixie-slim
 
-ARG VERSION=0.0.0
+ARG VERSION=placeholder
 # Default start mode: ok, crash, hwfail, config or hang (see brewberrypi-stub.py).
 ARG START=ok
 

@@ -6,6 +6,10 @@ the contract can be tested: READY=1, WATCHDOG=1 every BREWBERRYPI_WATCHDOG_MS, S
 GET /healthz on port 8080. GET / is a page for people who open the Pi in a browser: it explains
 that the app isn't installed yet and how to install it.
 
+Version: the preloaded stub reports "placeholder" (image label and /healthz), because it is not an
+app release; brewberry-update shows it as "no app installed". Test images for the OS4 check get
+release versions (scripts/publish-test-stubs.sh), because they stand in for app releases.
+
 GPIO: only on request (POST /stub/heat?on=1), the stub drives the heater output like the app would
 (libgpiod v2, header chip found by label, pin and polarity from config.json, defaults BCM 23
 active-low) and keeps holding the line, so the host's outputs-off reset can be tested "while
@@ -43,7 +47,8 @@ import time
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
 
-VERSION = os.environ.get("BREWBERRYPI_STUB_VERSION", "0.0.0")
+PLACEHOLDER = "placeholder"
+VERSION = os.environ.get("BREWBERRYPI_STUB_VERSION", PLACEHOLDER)
 PORT = int(os.environ.get("BREWBERRYPI_STUB_PORT", "8080"))  # override only for tests
 START_DELAY_S = float(os.environ.get("BREWBERRYPI_STUB_START_DELAY_S", "2"))  # visible READY wait
 
@@ -219,7 +224,7 @@ off.{heat_note}</p>
 <section>
 <h2>Status</h2>
 <dl>
-<dt>Placeholder</dt><dd><span class="ok">running</span>, version {version}</dd>
+<dt>Placeholder</dt><dd><span class="ok">running</span>{version}</dd>
 <dt>Up for</dt><dd>{uptime}</dd>
 <dt>Device</dt><dd>{hostname}</dd>
 <dt>Watchdog</dt><dd>{watchdog}</dd>
@@ -292,7 +297,7 @@ def landing_page() -> str:
     else:
         heat, heat_note = "off", ""
     return PAGE.format(
-        version=html.escape(VERSION),
+        version="" if VERSION == PLACEHOLDER else ", test version " + html.escape(VERSION),
         uptime=duration(time.time() - State.started),
         hostname=html.escape(socket.gethostname()),
         watchdog=watchdog,

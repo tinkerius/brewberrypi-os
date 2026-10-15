@@ -37,6 +37,8 @@ ACTIVE=localhost/brewberrypi:active
 PREVIOUS=localhost/brewberrypi:previous
 SERVICE=brewberrypi.service
 CONTRACT=1
+# The version label of the contract stub the OS image preloads: no app installed yet.
+PLACEHOLDER=placeholder
 # App versions (runtime contract §1): 1.2.3, or a pre-release 1.2.3-alpha.N, -beta.N, -rc.N.
 VERSION_RE='^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'
 # BREWBERRY_SOAK_S is for tests too.
@@ -146,9 +148,11 @@ cmd_list() {
 cmd_status() {
    [ "$JSON" = 0 ] || { status_json; return 0; }
    local ref
+   local v
    for ref in "$ACTIVE" "$PREVIOUS"; do
-      printf '%-32s %-10s %s\n' "$ref" "$(label "$ref" org.opencontainers.image.version)" \
-         "$(image_id "$ref" | cut -c1-12)"
+      v=$(label "$ref" org.opencontainers.image.version)
+      [ "$v" != "$PLACEHOLDER" ] || v="placeholder (no app installed)"
+      printf '%-32s %-10s %s\n' "$ref" "$v" "$(image_id "$ref" | cut -c1-12)"
    done
    echo
    systemctl is-active "$SERVICE" || true
@@ -162,7 +166,7 @@ status_json() {
    local ref out=() state=null safemode=null
    for ref in "$ACTIVE" "$PREVIOUS"; do
       out+=("$(jq -n --arg v "$(label "$ref" org.opencontainers.image.version)" --arg id "$(image_id "$ref")" \
-         'if $id == "" then null else {version: $v, id: $id[0:12]} end')")
+         --arg p "$PLACEHOLDER" 'if $id == "" then null else {version: $v, id: $id[0:12], placeholder: ($v == $p)} end')")
    done
    [ -f "$STATE" ] && state=$(jq -c . "$STATE" 2> /dev/null || echo null)
    [ -f "$SAFEMODE_MARK" ] && safemode=$(jq -c . "$SAFEMODE_MARK" 2> /dev/null || echo null)

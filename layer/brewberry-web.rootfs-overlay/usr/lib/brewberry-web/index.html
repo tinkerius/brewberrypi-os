@@ -1,0 +1,547 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>BrewberryPi device</title>
+<!-- Device web interface (ADR-0002, OS9). Self-contained: the Pi may be offline.
+     Every control names its catalogue command in data-cmd; tests/unit/parity.sh
+     checks them against /usr/share/brewberry/commands.json. -->
+<style>
+:root {
+  --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --muted: #64748b; --line: #e2e8f0;
+  --accent: #4f46e5; --accent-text: #ffffff; --warn-bg: #fef3c7; --warn: #92400e;
+  --bad-bg: #fee2e2; --bad: #991b1b; --good: #166534; --good-bg: #dcfce7; --code: #f1f5f9;
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8; --line: #334155;
+    --accent: #818cf8; --accent-text: #0f172a; --warn-bg: #422006; --warn: #fcd34d;
+    --bad-bg: #450a0a; --bad: #fca5a5; --good: #86efac; --good-bg: #052e16; --code: #0f172a;
+  }
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
+header h1 { font-size: 18px; margin: 0; }
+header .who { margin-left: auto; color: var(--muted); }
+main { max-width: 960px; margin: 0 auto; padding: 16px; }
+nav { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; }
+nav button { background: transparent; color: var(--text); border: 1px solid var(--line); }
+nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
+.card h2 { font-size: 16px; margin: 0 0 12px; }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+.grid .card { margin-bottom: 0; }
+dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+dt { color: var(--muted); }
+dd { margin: 0; overflow-wrap: anywhere; }
+button, .button { font: inherit; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text); cursor: pointer; }
+button.secondary { background: transparent; color: var(--accent); }
+button.danger { background: var(--bad); border-color: var(--bad); color: var(--card); }
+button:disabled { opacity: .5; cursor: default; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
+input[type=text], input[type=password], select { font: inherit; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--text); min-width: 0; }
+label { display: block; margin: 8px 0 4px; color: var(--muted); }
+pre { background: var(--code); border: 1px solid var(--line); border-radius: 7px; padding: 10px; overflow: auto; max-height: 420px; margin: 8px 0 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+.banner { padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; }
+.warn { background: var(--warn-bg); color: var(--warn); }
+.bad { background: var(--bad-bg); color: var(--bad); }
+.good { background: var(--good-bg); color: var(--good); }
+.muted { color: var(--muted); }
+.hidden { display: none !important; }
+table { width: 100%; border-collapse: collapse; }
+td { padding: 6px 4px; border-top: 1px solid var(--line); }
+td:last-child { text-align: right; }
+dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); max-width: min(560px, calc(100vw - 32px)); }
+dialog::backdrop { background: rgb(0 0 0 / .45); }
+#login { max-width: 380px; margin: 48px auto; }
+</style>
+</head>
+<body>
+<header>
+  <h1>BrewberryPi device</h1>
+  <span class="muted" id="hostinfo"></span>
+  <span class="who hidden" id="who">User <strong>brewberry</strong> ·
+    <a href="#" id="applink">App</a> ·
+    <button class="secondary" id="logout">Log out</button></span>
+</header>
+<main>
+  <section id="login" class="card hidden">
+    <h2>Log in</h2>
+    <form id="loginform">
+      <label>User</label>
+      <div><strong>brewberry</strong></div>
+      <label for="password">Password</label>
+      <input type="password" id="password" autocomplete="current-password" required style="width:100%">
+      <div class="row"><button type="submit">Log in</button></div>
+      <p class="muted">The default password is <code>pi</code>. Change it under <em>Account</em> after logging in.</p>
+    </form>
+  </section>
+
+  <div id="app" class="hidden">
+    <div id="defaultpw" class="banner warn hidden">You are using the default password. Change it under <a href="#account">Account</a>.</div>
+    <div id="message" class="banner hidden"></div>
+    <section id="job" class="card hidden">
+      <h2 id="job-title"></h2>
+      <div id="job-state" class="muted"></div>
+      <pre id="job-log"></pre>
+      <div class="row"><button class="secondary" id="job-close">Close</button></div>
+    </section>
+    <nav id="tabs">
+      <button data-screen="overview">Overview</button>
+      <button data-screen="versions">App versions</button>
+      <button data-screen="config">Configuration</button>
+      <button data-screen="usb">USB stick</button>
+      <button data-screen="os">OS update</button>
+      <button data-screen="logs">Logs</button>
+      <button data-screen="account">Account</button>
+    </nav>
+
+    <section data-view="overview">
+      <div class="grid">
+        <div class="card"><h2>App</h2><dl id="ov-app"></dl>
+          <div class="row"><button class="secondary" data-cmd="update.status">Refresh</button></div></div>
+        <div class="card"><h2>Device</h2><dl id="ov-system"></dl>
+          <div class="row"><button class="secondary" data-cmd="system.info">Refresh</button></div></div>
+        <div class="card"><h2>System</h2><dl id="ov-maint"></dl>
+          <div class="row"><button class="secondary" data-cmd="maint.status">Refresh</button></div></div>
+      </div>
+    </section>
+
+    <section data-view="versions" class="hidden">
+      <div class="card">
+        <h2>Installed</h2>
+        <dl id="ver-status"></dl>
+        <div class="row">
+          <button data-cmd="update.rollback">Roll back to the previous version</button>
+          <button class="secondary" data-cmd="update.restart">Restart the app</button>
+          <button class="secondary" data-cmd="update.demo" data-arg-mode="on">Demo mode on</button>
+          <button class="secondary" data-cmd="update.demo" data-arg-mode="off">Demo mode off</button>
+        </div>
+        <p class="muted">Installing, rolling back, restarting and demo mode restart the app, which ends a running brew.
+          An install is watched for 60 s and rolled back automatically if the new version fails.</p>
+      </div>
+      <div class="card">
+        <h2>Available versions</h2>
+        <div class="row"><button data-cmd="update.list">Check the registry</button></div>
+        <table id="ver-list"></table>
+      </div>
+      <div class="card">
+        <h2>Registry access</h2>
+        <p class="muted">A GitHub classic personal access token with only the <code>read:packages</code> scope. It is stored on the Pi for root only; the app never sees it.</p>
+        <form id="loginregistry">
+          <label for="reg-user">GitHub user name</label>
+          <input type="text" id="reg-user" autocomplete="off" required>
+          <label for="reg-token">Token</label>
+          <input type="password" id="reg-token" autocomplete="off" required style="width:100%">
+          <div class="row"><button type="submit" data-cmd="update.login">Store the token</button></div>
+        </form>
+      </div>
+    </section>
+
+    <section data-view="config" class="hidden">
+      <div class="card">
+        <h2>Current configuration</h2>
+        <div id="cfg-summary" class="muted"></div>
+        <pre id="cfg-json"></pre>
+        <div class="row">
+          <button class="secondary" data-cmd="config.show">Refresh</button>
+          <button class="secondary" data-cmd="config.export">Download (.tar.gz)</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Import</h2>
+        <p class="muted">Upload <code>config.json</code> (or other .json files), recipe files, or a <code>.tar.gz</code> downloaded above.
+          Every file is checked first; nothing changes if one is invalid. Replaced files are backed up on the Pi.
+          The app reads its configuration at start: restart it afterwards.</p>
+        <input type="file" id="cfg-files" multiple accept=".json,.tar.gz,.tgz,application/json,application/gzip">
+        <label><input type="checkbox" id="cfg-recipes"> These .json files are recipes (they replace all recipes on the Pi)</label>
+        <div class="row">
+          <button data-cmd="config.import">Import</button>
+          <button class="secondary" data-cmd="update.restart">Restart the app</button>
+        </div>
+      </div>
+    </section>
+
+    <section data-view="usb" class="hidden">
+      <div class="card">
+        <h2>USB stick</h2>
+        <p class="muted">The Pi uses the first USB stick with a <code>brewberrypi/</code> folder and mounts it read-only only while a command runs.</p>
+        <div class="row"><button data-cmd="usb.list">Look at the stick</button>
+          <button class="secondary" data-cmd="usb.import-config">Import the stick's configuration</button></div>
+        <div id="usb-out"></div>
+      </div>
+    </section>
+
+    <section data-view="os" class="hidden">
+      <div class="card">
+        <h2>Operating system update</h2>
+        <dl id="os-status"></dl>
+        <div class="banner warn" style="margin-top:12px">Keep the power connected from <em>Maintenance mode on</em> until
+          <em>Maintenance mode off</em> has rebooted: in between the system is writable, and pulling the plug can damage it.</div>
+        <div class="row">
+          <button data-cmd="maint.on">1. Maintenance mode on (reboots)</button>
+          <button data-cmd="maint.upgrade">2. Update the OS packages</button>
+          <button data-cmd="maint.off">3. Maintenance mode off (reboots)</button>
+          <button class="secondary" data-cmd="maint.status">Refresh</button>
+        </div>
+      </div>
+    </section>
+
+    <section data-view="logs" class="hidden">
+      <div class="card">
+        <h2>Logs of this boot</h2>
+        <div class="row">
+          <select id="log-name">
+            <option value="app">App</option><option value="outputs-off">Outputs switched off</option>
+            <option value="safemode">Safe mode</option><option value="firstload">First app load</option>
+            <option value="web">Web interface and its actions</option>
+          </select>
+          <button data-cmd="system.logs">Show</button>
+        </div>
+        <pre id="log-out" class="hidden"></pre>
+      </div>
+    </section>
+
+    <section data-view="account" class="hidden">
+      <div class="card">
+        <h2>Password of brewberry</h2>
+        <p class="muted">Also the password of the Linux user <code>brewberry</code> (on the console, and over SSH if password logins are on). It survives reboots. On the command line: <code>passwd</code>.</p>
+        <form id="pwform">
+          <label for="pw-old">Current password</label><input type="password" id="pw-old" autocomplete="current-password" required>
+          <label for="pw-new">New password (at least 8 characters)</label><input type="password" id="pw-new" autocomplete="new-password" minlength="8" required>
+          <label for="pw-new2">New password again</label><input type="password" id="pw-new2" autocomplete="new-password" minlength="8" required>
+          <div class="row"><button type="submit" data-cmd="account.password">Change the password</button></div>
+        </form>
+      </div>
+    </section>
+
+  </div>
+</main>
+
+<dialog id="confirm">
+  <h2 id="confirm-title" style="font-size:16px;margin-top:0"></h2>
+  <p id="confirm-text"></p>
+  <div class="row"><button id="confirm-yes">Continue</button><button class="secondary" id="confirm-no">Cancel</button></div>
+</dialog>
+
+<script>
+"use strict";
+const $ = (sel, root = document) => root.querySelector(sel);
+const $$ = (sel, root = document) => [...root.querySelectorAll(sel)];
+let commands = {};
+let jobTimer = null;
+
+async function api(method, path, body) {
+  const opts = { method, headers: { "X-Brewberry": "1" }, credentials: "same-origin" };
+  if (body !== undefined) { opts.headers["Content-Type"] = "application/json"; opts.body = JSON.stringify(body); }
+  let res;
+  try { res = await fetch(path, opts); } catch (e) { return { status: 0, data: { error: "The Pi does not answer." } }; }
+  let data = {};
+  try { data = await res.json(); } catch (e) { /* empty body */ }
+  if (res.status === 401 && path !== "/api/login" && path !== "/api/password") showLogin();
+  return { status: res.status, data };
+}
+
+function message(text, kind = "good") {
+  const m = $("#message");
+  m.textContent = text;
+  m.className = "banner " + kind + (text ? "" : " hidden");
+  if (text) m.scrollIntoView({ block: "nearest" });
+}
+
+function cliText(data) {
+  return (data.stderr || data.error || "").trim();
+}
+
+function fill(dl, rows) {
+  dl.replaceChildren();
+  for (const [k, v] of rows) {
+    if (v === undefined) continue;
+    const dt = document.createElement("dt"); dt.textContent = k;
+    const dd = document.createElement("dd"); dd.textContent = v === null || v === "" ? "–" : String(v);
+    dl.append(dt, dd);
+  }
+}
+
+function askConfirm(title, text) {
+  return new Promise(resolve => {
+    const d = $("#confirm");
+    $("#confirm-title").textContent = title;
+    $("#confirm-text").textContent = text;
+    const done = ok => { d.close(); $("#confirm-yes").onclick = $("#confirm-no").onclick = null; resolve(ok); };
+    $("#confirm-yes").onclick = () => done(true);
+    $("#confirm-no").onclick = () => done(false);
+    d.showModal();
+  });
+}
+
+// --- running catalogue commands ------------------------------------------
+async function query(id, args = {}) {
+  const qs = new URLSearchParams(args).toString();
+  const { status, data } = await api("GET", `/api/run/${id}${qs ? "?" + qs : ""}`);
+  if (status !== 200) { message(`${commands[id]?.title || id}: ${cliText(data) || "failed"}`, "bad"); return null; }
+  return data.output;
+}
+
+async function action(id, args = {}, extra = {}) {
+  const cmd = commands[id];
+  let { status, data } = await api("POST", `/api/run/${id}`, { args, yes: false, ...extra });
+  if (status === 409) {
+    const ok = await askConfirm(cmd.title, data.confirm);
+    if (!ok) return;
+    ({ status, data } = await api("POST", `/api/run/${id}`, { args, yes: true, ...extra }));
+  }
+  if (status === 202) { watchJob(data.job, cmd); return; }
+  if (status === 423) { message("Another action is still running.", "warn"); watchJob(data.job, commands[id]); return; }
+  if (status === 200) { message(`${cmd.title}: done. ${cliText(data)}`.trim(), "good"); refresh(); return; }
+  message(`${cmd.title}: ${cliText(data) || "failed"}`, "bad");
+}
+
+function watchJob(jobId, cmd) {
+  const box = $("#job");
+  box.classList.remove("hidden");
+  $("#job-title").textContent = cmd ? cmd.title : "Action";
+  $("#job-log").textContent = "";
+  clearInterval(jobTimer);
+  let lost = 0;
+  const poll = async () => {
+    const { status, data } = await api("GET", `/api/jobs/${jobId}`);
+    if (status !== 200) {
+      if (cmd && cmd.reboots && ++lost > 2) $("#job-state").textContent = "The Pi is rebooting; this page reconnects when it is back.";
+      if (cmd && cmd.reboots) waitForReboot();
+      return;
+    }
+    $("#job-log").textContent = data.log || "";
+    $("#job-log").scrollTop = $("#job-log").scrollHeight;
+    const labels = { running: "Running…", done: "Finished.", failed: `Failed (exit code ${data.exit}).`, lost: "Stopped without a result (reboot?)." };
+    $("#job-state").textContent = labels[data.state] || data.state;
+    if (data.state !== "running") { clearInterval(jobTimer); refresh(); }
+  };
+  poll();
+  jobTimer = setInterval(poll, 1500);
+}
+
+let rebootTimer = null;
+function waitForReboot() {
+  if (rebootTimer) return;
+  clearInterval(jobTimer);
+  $("#job-state").textContent = "The Pi is rebooting; this page reconnects when it is back.";
+  rebootTimer = setInterval(async () => {
+    const { status } = await api("GET", "/api/session");
+    if (status === 200) { clearInterval(rebootTimer); rebootTimer = null; location.reload(); }
+  }, 5000);
+}
+
+// --- screens -----------------------------------------------------------------
+const views = {
+  async overview() {
+    const [app, sys, maint] = await Promise.all([query("update.status"), query("system.info"), query("maint.status")]);
+    if (app) showAppStatus($("#ov-app"), app);
+    if (sys && sys.os) {
+      const up = sys.uptimeSeconds || 0;
+      fill($("#ov-system"), [["OS", sys.os.version], ["Board", sys.board], ["Hostname", sys.hostname],
+        ["Addresses", (sys.addresses || []).join(" ")], ["Uptime", `${Math.floor(up / 3600)} h ${Math.floor(up % 3600 / 60)} min`],
+        ["/data", sys.data ? `${Math.round(sys.data.used / 1048576)} MiB used, ${Math.round(sys.data.free / 1048576)} MiB free` : null]]);
+      $("#hostinfo").textContent = `${sys.hostname} · ${sys.os.version}`;
+    }
+    if (maint) showMaint($("#ov-maint"), maint);
+  },
+  async versions() {
+    const app = await query("update.status");
+    if (app) showAppStatus($("#ver-status"), app);
+  },
+  async config() {
+    const c = await query("config.show");
+    if (!c) return;
+    $("#cfg-summary").textContent = `Files: ${(c.files || []).join(", ") || "none"} · Recipes: ${c.builtinRecipes ? "the app's built-in catalogue" : ((c.recipes || []).join(", ") || "none")}`;
+    $("#cfg-json").textContent = JSON.stringify(c.config, null, 2);
+  },
+  async usb() {},
+  async os() {
+    const m = await query("maint.status");
+    if (m) showMaint($("#os-status"), m);
+  },
+  async logs() {},
+  async account() {},
+};
+
+function showAppStatus(dl, s) {
+  const v = x => x ? `${x.version || "?"} (${x.id})` : null;
+  fill(dl, [["Active", v(s.active)], ["Previous", v(s.previous)], ["Service", s.service],
+    ["Engine", s.engine || "not answering"], ["Demo mode", s.demo ? "on" : "off"],
+    ["Last action", s.last ? `${s.last.phase}: ${s.last.message} (${s.last.time})` : null],
+    ["Safe mode", s.safemode ? `switched at ${s.safemode.time}` : "no"]]);
+}
+
+function showMaint(dl, m) {
+  fill(dl, [["State", m.sealed ? "sealed (normal)" : "writable (maintenance)"], ["Maintenance mode", m.maintenance || "off"]]);
+}
+
+function current() { return location.hash.slice(1) || "overview"; }
+function refresh() { views[current()]?.(); }
+
+function show(screen) {
+  if (!views[screen]) screen = "overview";
+  for (const b of $$("#tabs button")) b.setAttribute("aria-selected", String(b.dataset.screen === screen));
+  for (const v of $$("[data-view]")) v.classList.toggle("hidden", v.dataset.view !== screen);
+  message("");
+  views[screen]();
+}
+
+// --- controls ------------------------------------------------------------------
+function argsOf(el) {
+  const args = {};
+  for (const [k, v] of Object.entries(el.dataset)) if (k.startsWith("arg")) args[k.slice(3).toLowerCase()] = v;
+  return args;
+}
+
+async function readFiles(input, asRecipes) {
+  const files = [];
+  for (const f of input.files) {
+    const data = await new Promise((resolve, reject) => {
+      const r = new FileReader();
+      r.onload = () => resolve(String(r.result).split(",", 2)[1] || "");
+      r.onerror = reject;
+      r.readAsDataURL(f);
+    });
+    const recipe = asRecipes && f.name.endsWith(".json");
+    files.push({ name: (recipe ? "recipes/" : "") + f.name, data });
+  }
+  return files;
+}
+
+async function onCommand(el) {
+  const id = el.dataset.cmd;
+  const cmd = commands[id];
+  if (!cmd) return;
+  el.disabled = true;
+  try {
+    switch (id) {
+      case "update.status": case "system.info": case "maint.status": case "config.show": refresh(); break;
+      case "update.list": {
+        const out = await query(id);
+        const t = $("#ver-list");
+        t.replaceChildren();
+        if (!out) break;
+        for (const tag of out.tags || []) {
+          const tr = t.insertRow();
+          tr.insertCell().textContent = tag + (tag === out.active ? "  (active)" : "");
+          const b = document.createElement("button");
+          b.textContent = "Install"; b.className = "secondary";
+          b.dataset.cmd = "update.install"; b.dataset.argVersion = tag;
+          tr.insertCell().append(b);
+        }
+        if (!(out.tags || []).length) t.insertRow().insertCell().textContent = "No versions found.";
+        break;
+      }
+      case "usb.list": {
+        const out = await query(id);
+        const box = $("#usb-out");
+        box.replaceChildren();
+        if (!out) break;
+        const t = document.createElement("table");
+        for (const v of out.versions || []) {
+          const tr = t.insertRow();
+          tr.insertCell().textContent = "App " + v;
+          const b = document.createElement("button");
+          b.textContent = "Install"; b.className = "secondary";
+          b.dataset.cmd = "usb.install"; b.dataset.argVersion = v;
+          tr.insertCell().append(b);
+        }
+        const p = document.createElement("p");
+        p.className = "muted";
+        p.textContent = `Config files: ${(out.config || []).join(", ") || "none"} · Recipes: ${(out.recipes || []).join(", ") || "none"}`;
+        box.append(t, p);
+        break;
+      }
+      case "system.logs": {
+        const out = await query(id, { name: $("#log-name").value });
+        const pre = $("#log-out");
+        pre.classList.remove("hidden");
+        pre.textContent = out ? ((out.lines || []).join("\n") || "(no entries in this boot)") : "";
+        pre.scrollTop = pre.scrollHeight;
+        break;
+      }
+      case "config.export": location.href = "/api/run/config.export"; break;
+      case "config.import": {
+        const input = $("#cfg-files");
+        if (!input.files.length) { message("Choose files to import first.", "warn"); break; }
+        const files = await readFiles(input, $("#cfg-recipes").checked);
+        await action(id, {}, { files });
+        input.value = "";
+        break;
+      }
+      case "update.login": {
+        const user = $("#reg-user").value.trim(), token = $("#reg-token").value.trim();
+        if (!user || !token) { message("Enter the user name and the token.", "warn"); break; }
+        await action(id, { username: user }, { stdin: token });
+        $("#reg-token").value = "";
+        break;
+      }
+      case "account.password": {
+        const old = $("#pw-old").value, n1 = $("#pw-new").value, n2 = $("#pw-new2").value;
+        if (n1 !== n2) { message("The new passwords differ.", "bad"); break; }
+        const { status, data } = await api("POST", "/api/password", { old, new: n1 });
+        if (status === 200) {
+          message("Password changed.", "good");
+          $("#defaultpw").classList.add("hidden");
+          $("#pwform").reset();
+        } else message(data.error || "The password was not changed.", "bad");
+        break;
+      }
+      default:
+        if (cmd.kind === "action") await action(id, argsOf(el));
+        else await query(id, argsOf(el));
+    }
+  } finally {
+    el.disabled = false;
+  }
+}
+
+document.addEventListener("click", e => {
+  const el = e.target.closest("[data-cmd]");
+  if (!el) return;
+  e.preventDefault();
+  onCommand(el);
+});
+for (const b of $$("#tabs button")) b.addEventListener("click", () => { location.hash = b.dataset.screen; });
+window.addEventListener("hashchange", () => show(current()));
+$("#job-close").addEventListener("click", () => { clearInterval(jobTimer); $("#job").classList.add("hidden"); });
+$("#applink").addEventListener("click", e => { e.preventDefault(); location.href = `http://${location.hostname}:8080/`; });
+
+// --- login -----------------------------------------------------------------
+function showLogin() {
+  $("#app").classList.add("hidden");
+  $("#who").classList.add("hidden");
+  $("#login").classList.remove("hidden");
+  $("#password").focus();
+}
+
+async function enter(defaultPassword) {
+  const { data } = await api("GET", "/api/commands");
+  commands = Object.fromEntries((data.commands || []).map(c => [c.id, c]));
+  $("#login").classList.add("hidden");
+  $("#app").classList.remove("hidden");
+  $("#who").classList.remove("hidden");
+  $("#defaultpw").classList.toggle("hidden", !defaultPassword);
+  show(current());
+}
+
+$("#loginform").addEventListener("submit", async e => {
+  e.preventDefault();
+  const { status, data } = await api("POST", "/api/login", { password: $("#password").value });
+  $("#password").value = "";
+  if (status === 200) enter(data.defaultPassword);
+  else alert(data.error || "Login failed");
+});
+$("#logout").addEventListener("click", async () => { await api("POST", "/api/logout", {}); showLogin(); });
+
+(async () => {
+  const { status, data } = await api("GET", "/api/session");
+  if (status === 200 && data.loggedIn) enter(data.defaultPassword); else showLogin();
+})();
+</script>
+</body>
+</html>

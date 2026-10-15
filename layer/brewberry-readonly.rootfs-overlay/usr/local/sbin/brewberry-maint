@@ -2,10 +2,14 @@
 # Maintenance mode for OS updates (ADR-0001, OS6). Run as root.
 #
 #   brewberry-maint status         sealed or in maintenance mode
-#   brewberry-maint on [--yes]     unseal: after a reboot, root and boot are writable
-#   brewberry-maint off [--yes]    seal again (overlay root, read-only boot) and reboot
+#   brewberry-maint on             unseal: after a reboot, root and boot are writable
+#   brewberry-maint upgrade        in maintenance mode: apt update and apt full-upgrade
+#   brewberry-maint off            seal again (overlay root, read-only boot) and reboot
 #
-# OS update: brewberry-maint on; apt update && apt full-upgrade; brewberry-maint off.
+# Options: --json (status), --yes (on, off, upgrade: don't ask; without it they
+# ask on a terminal, and otherwise print what they would do and exit 10).
+#
+# OS update: brewberry-maint on; brewberry-maint upgrade; brewberry-maint off.
 # Pulling the plug is NOT safe from 'on' until 'off' has rebooted.
 #
 # Instead of raspi-config's overlay toggle (which also covers /data and only
@@ -13,28 +17,32 @@
 # is one implementation of it.
 set -euo pipefail
 
-# BREWBERRY_MAINT_ROOT is for tests only (tests/unit/maint.sh).
+PROG=brewberry-maint
+# BREWBERRY_LIB and BREWBERRY_MAINT_ROOT are for tests only (tests/unit/maint.sh).
+# shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
+. "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
 R=${BREWBERRY_MAINT_ROOT:-}
+APP_CONFIG=$R/data/config/config.json
 PARAM=overlayroot=tmpfs:recurse=0
 BOOT=$R/boot/firmware
 CMDLINE=$BOOT/cmdline.txt
 LOWER=$R/media/root-ro    # the real root below the overlay
 FLAG=/etc/brewberry/maintenance
 
-log() { echo "brewberry-maint: $*" >&2; }
-die() { log "$*"; exit 1; }
 sealed() { grep -q 'overlayroot=' "$R/proc/cmdline"; }
 
-confirm() { # <what>
-   [ "${YES:-0}" = 1 ] && return 0
-   echo "$1" >&2
-   echo "This reboots the Pi and ends a running brew. Type 'yes' to continue:" >&2
-   local answer
-   read -r answer
-   [ "$answer" = yes ] || die "cancelled"
-}
-
 cmd_status() {
+   if [ "$JSON" = 1 ]; then
+      local maint=""
+      if sealed; then
+         [ -e "$LOWER$FLAG" ] && maint="next boot"
+      else
+         [ -e "$R$FLAG" ] && maint="since $(cat "$R$FLAG")"
+      fi
+      jq -n --arg sealed "$(sealed && echo yes || echo no)" --arg m "$maint" \
+         '{sealed: ($sealed == "yes"), maintenance: (if $m == "" then null else $m end)}'
+      return 0
+   fi
    if sealed; then
       echo "sealed: overlay root, read-only boot"
       [ -e "$LOWER$FLAG" ] && echo "maintenance mode starts at the next boot"
@@ -47,7 +55,7 @@ cmd_status() {
 
 cmd_on() {
    sealed || die "not sealed: maintenance mode is already on (or first boot has not finished)"
-   confirm "Maintenance mode: the next boot has a writable root and boot partition."
+   confirm "Maintenance mode: the Pi reboots, and the next boot has a writable root and boot partition. Keep the power connected until maintenance mode is off again."
 
    # 1. Kernel command line without the overlay. A power cut after this step
    #    boots unsealed without the maintenance flag, and brewberry-seal seals
@@ -88,7 +96,7 @@ cmd_off() {
       ! grep -q '^gpio=[0-9].*=op,' "$BOOT/config.txt"; then
       die "config.txt has lost the BrewberryPi safety block (strict_gpiod, gpio= boot pins); restore it before sealing"
    fi
-   confirm "Seal again: overlay root and read-only boot after a reboot."
+   confirm "Seal again: the Pi reboots with an overlay root and a read-only boot partition."
    # Without the flag, a power cut before the seal finishes is repaired by
    # brewberry-seal.service at the next boot.
    rm -f "$R$FLAG"
@@ -96,12 +104,24 @@ cmd_off() {
    brewberry-seal
 }
 
+# OS packages, only while unsealed (in the RAM overlay they would vanish at the
+# next boot, and apt refuses there anyway). Keeps changed configuration files.
+cmd_upgrade() {
+   sealed && die "the system is sealed: run brewberry-maint on first"
+   confirm "This updates the OS packages (apt update, apt full-upgrade); services may restart. Run brewberry-maint off afterwards."
+   export DEBIAN_FRONTEND=noninteractive
+   apt-get update
+   apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade
+   log "packages updated; check that the BrewberryPi block is still in /boot/firmware/config.txt, then: brewberry-maint off"
+}
+
 [ -n "$R" ] || [ "$(id -u)" = 0 ] || die "run as root"
-YES=0
-[ "${2:-}" = --yes ] && YES=1
+parse_opts "$@"
+set -- "${ARGS[@]+"${ARGS[@]}"}"
 case ${1:-} in
    status) cmd_status ;;
    on) cmd_on ;;
+   upgrade) cmd_upgrade ;;
    off) cmd_off ;;
-   *) sed -n '2,9s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+   *) sed -n '2,13s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

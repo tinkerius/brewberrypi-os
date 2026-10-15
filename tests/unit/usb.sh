@@ -1,16 +1,18 @@
 #!/bin/bash
-# Tests for brewberry-usb with a stick directory (BREWBERRY_USB_DIR) and a fake
-# brewberry-update: listing, install hand-over, and the config import (all
-# files validated before anything is written, backup, boot-pin warning, the
-# recipes/ folder replaced as a whole).
+# Tests for brewberry-usb with a stick directory (BREWBERRY_USB_DIR), a fake
+# brewberry-update and the real brewberry-config: listing, install hand-over,
+# and the config import (all files validated before anything is written,
+# backup, boot-pin warning, the recipes/ folder replaced as a whole).
 # Run by scripts/lint.sh.
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
-USB=$ROOT_DIR/layer/brewberry-update.rootfs-overlay/usr/local/sbin/brewberry-usb
+SBIN=$ROOT_DIR/layer/brewberry-update.rootfs-overlay/usr/local/sbin
+USB=$SBIN/brewberry-usb
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 export BREWBERRY_UPDATE_ROOT=$T/root BREWBERRY_USB_DIR=$T/stick
+export BREWBERRY_LIB=$ROOT_DIR/layer/brewberry-base.rootfs-overlay/usr/lib/brewberry
 
 mkdir -p "$T/bin"
 cat > "$T/bin/brewberry-update" <<'FAKE'
@@ -18,6 +20,7 @@ cat > "$T/bin/brewberry-update" <<'FAKE'
 echo "brewberry-update $*" >> "$LOG"
 FAKE
 chmod +x "$T/bin/brewberry-update"
+ln -s "$SBIN/brewberry-config" "$T/bin/brewberry-config"
 export PATH=$T/bin:$PATH LOG=$T/log
 
 fixture() {
@@ -46,9 +49,16 @@ fixture; run "$USB" list
 expect "list: versions newest first in SemVer order, config files" "$(grep '^  ' "$T/out" | tr -d ' ' | paste -sd ' ')" \
    "1.10.0 1.10.0-rc.1 1.10.0-alpha.10 1.10.0-alpha.2 1.2.0 config.json recipes/WIT.json recipes/ZORA.json"
 
+fixture
+expect "list --json" "$("$USB" list --json 2>/dev/null | jq -c '[.versions[0], (.versions | length), .config, .recipes]')" \
+   '["1.10.0",5,["config.json"],["WIT","ZORA"]]'
+
 fixture; run "$USB" install 1.2.0
 expect "install: hands the export to brewberry-update" "$RC $(cat "$LOG")" \
    "0 brewberry-update install 1.2.0 --from-dir $T/stick/brewberrypi/images/1.2.0"
+fixture; run "$USB" install 1.2.0 --yes --json
+expect "install: passes --yes and --json on (brewberry-update asks)" "$RC $(cat "$LOG")" \
+   "0 brewberry-update install 1.2.0 --from-dir $T/stick/brewberrypi/images/1.2.0 --yes --json"
 
 fixture; run "$USB" install 9.9.9
 expect "install: missing version refused" "$RC $(grep -c . "$LOG")" "1 0"

@@ -1,8 +1,9 @@
 # Device web interface: architecture and design
 
-**Status:** design, decided in [ADR-0002](adr/0002-device-web-interface.md); implemented in milestone
-OS9 ([implementation plan](implementation-plan.md)). This page describes the target state. The user
-manual and the developer guide change when OS9 is implemented.
+**Status:** decided in [ADR-0002](adr/0002-device-web-interface.md) and implemented in milestone OS9
+([implementation plan](implementation-plan.md)); the on-device check is `tests/hardware/os9-check.sh`.
+How to use it: [user manual](user-manual.md#4-logging-in). How to add a command:
+[developer guide](development.md#add-or-change-an-operator-command-cli--web-parity).
 
 ## Contents
 
@@ -82,7 +83,7 @@ flowchart LR
 |---|---|---|
 | `brewberry-web.service` | system user `brewberry-web`, `NoNewPrivileges=`, `ProtectSystem=strict`, `PrivateTmp=`, no capabilities | Serves the page and the JSON API on port 8081, checks sessions and request origins, forwards each request over the Unix socket. Keeps sessions in memory only. |
 | `brewberry-webcmd.socket` | root-owned socket `/run/brewberry-webcmd.sock`, mode `0660`, group `brewberry-web`, `Accept=yes` | Starts one helper instance per request. |
-| `brewberry-webcmd@.service` | root, `StandardInput=socket` | Reads one JSON request, checks it against the command catalogue and runs the CLI **without a shell**: queries directly, actions as a job (§6). Also checks and changes the password (§7). |
+| `brewberry-webcmd@.service` | root, `StandardInput=socket` | `helper.py`: reads one JSON request, checks it against the command catalogue and runs the CLI **without a shell**: queries directly, actions as a job (§6). Also checks and changes the password (§7). |
 | `brewberry-job-<id>.service` | root, transient unit from `systemd-run --collect` | Runs one action with `--yes`. Survives a closed browser and a restart of the web server. |
 
 **Why two processes:** the HTTP server faces the LAN and parses untrusted input, so it has no
@@ -123,29 +124,26 @@ test (§10) checks the CLIs and the user manual against it.
   "version": 1,
   "commands": [
     {
-      "id": "update.install",
+      "id": "update.install", "title": "Install", "screen": "versions",
       "argv": ["brewberry-update", "install", "{version}"],
       "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },
-      "kind": "action",
-      "confirm": true,
-      "job": true,
-      "screen": "versions",
-      "manual": "user-manual.md#list-install-roll-back"
+      "kind": "action", "confirm": true, "job": true
     },
     {
-      "id": "account.password",
-      "web_only": "The CLI uses the standard 'passwd'; see user-manual.md#4-logging-in",
-      "kind": "action",
-      "screen": "account"
+      "id": "account.password", "title": "Change the password", "screen": "account",
+      "kind": "action", "webOnly": "passwd",
+      "reason": "Linux's own passwd is the CLI counterpart; brewberry-passwd keeps the change across reboots for both."
     }
   ]
 }
 ```
 
-Fields: `id`; `argv` with `{placeholders}`; `args` with an anchored pattern per placeholder; `kind`
-(`query` or `action`); `confirm` (asks first, §5.3); `job` (runs as a transient unit, §6); `reboots`;
-`upload` (takes files, §8); `screen`; `manual` (the section that documents it); `web_only` with a
-reason, for the declared exceptions.
+Fields: `id`; `title`; `screen`; `argv` with `{placeholders}`; `args` with an anchored pattern per
+placeholder; `kind` (`query` or `action`); `confirm` (asks first, §5.3); `job` (runs as a transient
+unit, §6); `reboots`; `timeout` (seconds, default 60); `stdin` (a secret passed on standard input,
+the registry token); `upload` (`{upload}` becomes the uploaded files, §8); `download` (the file
+name of a query's raw output); `webOnly` with its CLI counterpart and a `reason`, for the declared
+exceptions.
 
 ### Commands per screen
 
@@ -156,11 +154,11 @@ Every command of the user manual's command reference, plus the ones its other se
 | Overview | `update.status`, `maint.status`, `system.info` | `system.info` is new (§5.4): replaces `cat /etc/brewberry-release` and adds hostname, addresses, uptime, `/data` usage |
 | App versions | `update.list`, `update.install <version>`, `update.rollback`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi` |
 | Registry | `update.login` | gets non-interactive input (§5.4) |
-| Configuration | `config.import <files>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
+| Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
 | USB stick | `usb.list`, `usb.install <version>`, `usb.import-config` | existing |
 | OS update | `maint.on`, `maint.off`, `maint.upgrade` | `upgrade` is new (§5.4): replaces `apt update && apt full-upgrade`; only in maintenance mode |
-| Logs | `system.logs <app\|safemode\|firstload\|outputs-off>` | new (§5.4): replaces the manual's `journalctl` lines |
-| Account | `account.password` | `web_only`: CLI counterpart is `passwd` |
+| Logs | `system.logs <app\|safemode\|firstload\|outputs-off\|web>` | new (§5.4): replaces the manual's `journalctl` lines |
+| Account | `account.password` | `webOnly`: CLI counterpart is `passwd` |
 
 ## 5. CLI changes
 
@@ -187,13 +185,12 @@ status --json`:
   "engine":   "NoProcess",
   "last":     { "time": "…", "phase": "done", "version": "1.2.3", "message": "1.2.3 is active" },
   "safemode": null,
-  "demo":     false,
-  "busy":     false
+  "demo":     false
 }
 ```
 
-Errors keep going to stderr; with `--json`, a failing command also prints `{"error": "<message>"}`
-on stdout and keeps its exit code.
+Errors keep going to stderr with a non-zero exit code; the helper returns stderr with the result,
+and the web interface shows it.
 
 ### 5.3 Confirmation and the brew warning (WEB-08)
 
@@ -215,8 +212,9 @@ Every action marked `confirm` in the catalogue follows one protocol, in the CLI:
 The web interface calls the command without `--yes`, shows the returned prompt in a dialog, and on
 **Confirm** calls it again with `--yes`. It is a warning, never a refusal, on both sides.
 
-This applies to `update install|rollback|demo|restart`, `usb install|import-config`,
-`config import`, and `maint on|off|upgrade`.
+This applies to `update install|rollback|demo|restart`, `usb install` (through `update install`)
+and `maint on|off|upgrade`. A config import restarts nothing (the app reads its configuration at
+start), so it doesn't ask; it ends with the hint to restart the app.
 
 **Behaviour change:** `brewberry-update install`, `rollback`, `demo` and `brewberry-usb install`
 now ask for confirmation, as `brewberry-maint` already does. Scripts and
@@ -228,11 +226,12 @@ now ask for confirmation, as `brewberry-maint` already does. Scripts and
 |---|---|---|
 | `brewberry-update restart` | `systemctl reset-failed brewberrypi; systemctl restart brewberrypi` | Restarts the app; reports a configuration error (exit 2/3) like `install` does |
 | `brewberry-update login --username <u> --password-stdin` | interactive `login` (still works) | Non-interactive form for the web interface; the token is read from stdin and never appears in an argument list or log |
-| `brewberry-config import <file>…` | the SSH steps in "Configuration → Over SSH" | Same checks, backup and atomic writes as `brewberry-usb import-config`, which then calls it; offers the app restart (confirm) |
+| `brewberry-config show` | `cat /data/config/config.json` | `config.json` and the recipe ids (`--json`) |
+| `brewberry-config import <source>` | the SSH steps in "Configuration → Over SSH" | A folder (`*.json`, `recipes/`), one `.json` file or an export `.tar.gz` (only plain files, no absolute or `..` paths): the checks, backup and atomic writes `brewberry-usb import-config` had, which now calls it |
 | `brewberry-config export` | `scp -r …:/data/config` | Writes a `.tar.gz` of `/data/config` (without `backup/`) to stdout |
 | `brewberry-maint upgrade` | `apt update && apt full-upgrade` | Refuses unless in maintenance mode; runs non-interactively (`-y`, keeps changed config files); logs to the job |
 | `brewberry-system info` | `cat /etc/brewberry-release` | OS release, hostname, addresses, uptime, `/data` usage |
-| `brewberry-system logs <unit> [--lines N]` | the `journalctl -u … -b` lines in "Troubleshooting" | Current boot's journal of `app`, `safemode`, `firstload` or `outputs-off` |
+| `brewberry-system logs <name> [--lines N]` | the `journalctl -u … -b` lines in "Troubleshooting" | Current boot's journal of `app`, `safemode`, `firstload`, `outputs-off` or `web` |
 
 `systemctl`, `journalctl` and `apt` keep working as before; the manual then shows the
 `brewberry-*` command first.
@@ -242,14 +241,16 @@ now ask for confirmation, as `brewberry-maint` already does. Scripts and
 An install can take minutes (pull, then a 60 s soak). Actions marked `job` therefore don't run
 inside the request:
 
-1. The helper starts `systemd-run --unit=brewberry-job-<UTC timestamp> --collect --property=…
-   <argv> --yes` and returns the job id at once (`202`).
-2. The web interface polls `GET /api/jobs/<id>`: unit state, exit code, the job's output
-   (`journalctl -u brewberry-job-<id> -o cat`) and, for installs, `/data/update/state.json`'s phase.
+1. The helper starts `systemd-run --unit=brewberry-job-<id> --collect helper.py --job <id> --
+   <argv> --yes` and returns the job id at once (`202`). Inside the unit, the helper runs the CLI,
+   copies its output to `/run/brewberry-jobs/<id>.log` (and the journal) and writes the exit code
+   to `<id>.exit` at the end. While one job runs, the helper refuses another (`423`).
+2. The web interface polls `GET /api/jobs/<id>`: `running`, `done`, `failed` (with the exit code)
+   or `lost` (the unit ended without a result, for example a reboot), plus the log.
 3. A closed browser or a restarted web server doesn't interrupt the job. The overview lists the
    running job, so any browser can follow it.
 4. The existing lock `/run/brewberry-update.lock` keeps a web job, a CLI command and safe mode from
-   running at the same time; `status --json` reports `busy`.
+   running at the same time, and the helper starts no second job while one runs.
 5. Actions that reboot (`maint on|off`) show a "rebooting" page that reconnects when the Pi is back.
 
 Job units and their logs live in RAM (volatile journal); a reboot clears them. The result of the
@@ -261,18 +262,11 @@ last install or rollback stays in `/data/update/state.json`, as today.
 
 `config/brewberrypi-base.yaml`:
 
-```yaml
-device:
-  user1: brewberry
-  user1passhash: '$y$j9T$…'    # yescrypt hash of "pi"
-  user1sudo: nopasswd
-```
-
-- rpi-image-gen's plain-text `user1pass` enforces strong passwords and would reject `pi`.
-  `user1passhash` is copied into `/etc/shadow` unchecked; the password typed at login is still
-  `pi`. The hash is generated once with `mkpasswd -m yescrypt pi`.
-- If Imager sets a password for `brewberry`, it replaces `pi`. If Imager creates another user,
-  `brewberry` keeps `pi` and the web interface keeps logging in as `brewberry`.
+`config/brewberrypi-base.yaml` keeps `user1: brewberry` with `user1sudo: nopasswd`.
+- rpi-image-gen can't take `pi` (`user1pass` enforces strong passwords; a `$`-laden hash in the
+  config would be expanded), so the `brewberry-web` layer sets it with `chpasswd` at build time.
+  cloud-init keeps it (`lock_passwd: false` for its default user) and doesn't set an existing
+  account's password from Imager, so Imager creates its own user next to `brewberry`.
 - SSH stays key-only unless Imager enables password logins
   (`sshd_config.d/90-brewberry.conf`), so `pi` does not open SSH by default.
 
@@ -281,11 +275,12 @@ device:
 The root is an overlay with a RAM upper layer, so today `passwd` changes `/etc/shadow` only until
 the next reboot. Two units fix this for `passwd` and the web interface alike:
 
-- `brewberry-passwd-persist.path` (`PathChanged=/etc/shadow`) starts a service that writes the
-  hashes of the login users (UID ≥ 1000) to `/data/secrets/shadow.d/<user>`, mode `0600`, atomically
-  (temp file, fsync, rename).
+- `brewberry-passwd-persist.path` (`PathChanged=/etc/shadow`) starts a service that runs
+  `brewberry-passwd persist`: it writes the hashes of the login users (UID 1000–59999) that changed
+  to `/data/secrets/shadow.d/<user>`, mode `0600`, atomically (temp file, fsync, rename).
 - `brewberry-passwd-restore.service` (after `data.mount`, before `ssh.service` and
-  `brewberry-web.service`) applies them at boot with `usermod -p`. That changes only the RAM layer,
+  `brewberry-web.service`) runs `brewberry-passwd restore`, which applies the hashes that differ
+  with `usermod -p`. That changes only the RAM layer,
   so the rule "never write to root at runtime" holds.
 
 ### 7.3 Web login (WEB-04)
@@ -297,7 +292,7 @@ the next reboot. Two units fix this for `passwd` and the web interface alike:
   `HttpOnly`, `SameSite=Strict` and `Path=/`, kept in memory, expiring after 30 minutes without
   activity. A web server restart logs everyone out.
 - After 5 failed logins from an address, each further attempt waits longer (1 s, doubling, up to
-  60 s).
+  60 s); until then the server answers `429`.
 - Every request except the login page and its assets needs a session (`401` otherwise).
 
 ### 7.4 Password change (WEB-06) and the reminder (WEB-07)
@@ -310,8 +305,9 @@ the next reboot. Two units fix this for `passwd` and the web interface alike:
 
 ## 8. HTTP API
 
-All JSON. Every `POST` must carry `Content-Type: application/json` (uploads: `multipart/form-data`)
-and the header `X-Brewberry: 1`, and its `Origin` must match `Host` (§11).
+All JSON. Every `POST` must carry the header `X-Brewberry: 1`, and its `Origin` (if sent) must match
+`Host` (§11). `GET /api/session` (`{user, loggedIn, defaultPassword}`) and the page itself need no
+session.
 
 | Request | Response |
 |---|---|
@@ -320,9 +316,10 @@ and the header `X-Brewberry: 1`, and its `Origin` must match `Host` (§11).
 | `POST /api/password` `{old, new}` | `204`; `400` (too short), `401` (old wrong) |
 | `GET /api/commands` | the catalogue, without `argv` |
 | `GET /api/run/<id>?<arg>=…` (queries) | `200 {output}` (the CLI's JSON); `422 {error}` |
-| `POST /api/run/<id>` `{args, yes}` (actions) | `409 {confirm}` (needs confirmation), `202 {job}` (job started), `200 {output}`, `422 {error}`, `423 {busy}` (lock held) |
-| `GET /api/jobs/<id>` | `{state, exitCode, log, phase}` |
-| `POST /api/run/config.import` (multipart) | as above; files are staged in `/data/tmp/web-upload/<id>/` (max 1 MiB each, like the USB import), handed to `brewberry-config import` and deleted |
+| `POST /api/run/<id>` `{args, yes}` (actions) | `409 {confirm}` (needs confirmation), `202 {job}` (job started), `200 {output}`, `422 {exit, stderr}` (the CLI failed), `423 {job}` (another job runs) |
+| `GET /api/jobs/<id>` | `{id, cmd, started, state, exit, log}` |
+| `GET /api/jobs` | the last 10 jobs, without logs |
+| `POST /api/run/config.import` `{files: [{name, data}]}` | as above; `data` is base64, `name` is `<x>.json`, `recipes/<id>.json` or one `.tar.gz`; at most 8 MiB in all. Staged in `/data/tmp/web-upload/<random>/`, handed to `brewberry-config import` (which checks every file, max 1 MiB each) and deleted |
 | `GET /api/run/config.export` | `application/gzip` download |
 
 ## 9. User interface
@@ -351,7 +348,7 @@ WEB-02 is enforced by a test, not by discipline alone. `tests/unit/parity.sh`, r
    helper accepts.
 3. **Catalogue ↔ manual:** the commands in the user manual's command reference and the catalogue.
 
-Declared exceptions (`web_only`, for example the password change) must name their CLI
+Declared exceptions (`webOnly`, for example the password change) must name their CLI
 counterpart. A new CLI command without a web control, or a web feature without a CLI command, is
 therefore a red CI run. `CLAUDE.md` states the rule for contributors: change the CLI, the catalogue,
 the web interface and the manual in one change.

@@ -37,9 +37,9 @@ mmdebstrap:
       # and the image's account (90-brewberry.cfg), as cloud-init reads it.
       distro=$(chroot "$1" python3 -c 'from cloudinit import util
       si = util.read_conf_with_confd("/etc/cloud/cloud.cfg")["system_info"]
-      print(si["distro"], si["default_user"]["name"])')
-      [ "$distro" = "debian brewberry" ] || {
-         echo "brewberry-imager: cloud-init uses distro/default user '$distro', not 'debian brewberry'" >&2
+      print(si["distro"], si["default_user"]["name"], si["default_user"].get("lock_passwd", True))')
+      [ "$distro" = "debian brewberry False" ] || {
+         echo "brewberry-imager: cloud-init uses distro/default user/lock_passwd '$distro', not 'debian brewberry False'" >&2
          exit 1
       }
       # Imager's SSH choice (cloud-init's 50-cloud-init.conf) must come before

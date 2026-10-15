@@ -68,7 +68,8 @@ To change the customisation later (Wi-Fi, hostname), reflash the card. Reflashin
   Raspberry Pi OS; no `raspi-config`.
 - `layer/brewberry-imager.yaml`: `cloud-init` and Raspberry Pi OS's `rpi-cloud-init-mods`. The
   NoCloud seed is in `/boot/firmware`, and netplan renders the network config through
-  NetworkManager. `90-brewberry.cfg` makes `brewberry` the default user and selects cloud-init's
+  NetworkManager. `90-brewberry.cfg` makes `brewberry` the default user (keeping its password `pi`
+  for the device web interface) and selects cloud-init's
   Debian distro class instead of Raspberry Pi OS's: that one creates Imager's user with
   `userconf-pi` and sets the keyboard with `raspi-config`, and the image has neither. Debian's
   class uses `useradd`, `chpasswd` and `console-setup`. The layer's build hook checks the merged

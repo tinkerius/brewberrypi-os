@@ -1,8 +1,9 @@
 # BrewberryPi OS user manual
 
 How to install, configure and run BrewberryPi OS on a Raspberry Pi. It's for the person who sets
-up and looks after the brewing controller. You need a computer with Raspberry Pi Imager and an
-SSH client, and you should be comfortable typing commands in a terminal.
+up and looks after the brewing controller. You need a computer with Raspberry Pi Imager and a
+browser. Everything after flashing can be done in the **device web interface**
+(`http://<hostname>.local:8081/`) or with the same commands over SSH; this manual shows both.
 
 The hardware (wiring, relay board, sensors) and the app itself (recipes, mashing, the web UI, the
 format of `config.json`) are documented in the
@@ -35,6 +36,10 @@ BrewberryPi OS is built to behave like a games console:
   automatically.
 - **The relays end up off** every time the app stops, whether it exits, crashes, hangs or the
   power is cut.
+- **Two web pages:** the app's own UI for brewing on port 8080, and the **device web interface**
+  on port 8081 for everything around it: app versions, configuration, USB stick, OS updates,
+  logs. The device web interface runs exactly the commands described here, with the same checks
+  and warnings ([Logging in](#4-logging-in)).
 
 What is kept where:
 
@@ -42,7 +47,7 @@ What is kept where:
 |---|---|
 | App configuration and recipes (`/data/config`) | Logs (`journalctl`) |
 | The installed app versions (active and previous) | Files in home directories |
-| The registry token (`/data/secrets`) | Changes to system files or packages |
+| The registry token and changed passwords (`/data/secrets`) | Changes to system files or packages |
 | Update state and the version list (`/data/update`) | |
 
 Reflashing the SD card erases everything, `/data` included.
@@ -93,7 +98,7 @@ SSH keys.
    | Setting | What to enter |
    |---|---|
    | Hostname | For example `brewberrypi` (the default). The Pi is then `brewberrypi.local` on your network. |
-   | User | A name of your own, with a password for logging in at the Pi's screen and keyboard. Not `brewberry`: that is the image's built-in account, and Imager can't set its password. |
+   | User | A name of your own, with a password for logging in at the Pi's screen and keyboard. Not `brewberry`: that is the image's built-in account (password `pi`, for the device web interface), and Imager can't set its password. |
    | SSH | Turn it on. **Allow public-key authentication only** with your public key (**ADD SSH KEY**, or paste `~/.ssh/id_ed25519.pub`) is the safer choice; **Use password authentication** lets you log in with the user's password. |
    | Wi-Fi | Network name, password and Wi-Fi country. Leave it empty if you use Ethernet. |
    | Time zone, keyboard | Your own. |
@@ -116,22 +121,55 @@ To change the hostname or Wi-Fi later, reflash the card. Save your configuration
 
 ## 4. Logging in
 
+### In a browser: the device web interface
+
+Open `http://<hostname>.local:8081/`, for example `http://brewberrypi.local:8081/`. Log in as the
+user **`brewberry`** (shown on the page) with the password; the default is **`pi`**.
+
+**Change the default password** right away under **Account**: everyone on your network knows `pi`.
+Until you do, every page reminds you. The password is also the Linux password of the user
+`brewberry`. It survives reboots, wherever you change it: under *Account*, or with `passwd`.
+
+The pages: **Overview** (app, device, system state), **App versions**, **Configuration**,
+**USB stick**, **OS update**, **Logs** and **Account**. Each button runs the command of the same
+name from this manual ([Command reference](#10-command-reference)) on the Pi, with the same checks.
+Actions that restart the app or reboot the Pi ask first, and warn when a brew is loaded or running.
+Long actions (an install, an OS update) keep running when you close the page; open it again to see
+how they ended.
+
+The page uses plain HTTP, like the app: passwords and the registry token cross your network
+unencrypted. Use it only on your own network. If `.local` names don't work, use the Pi's IP address
+from your router: `http://192.168.1.23:8081/`.
+
+### Over SSH
+
 ```sh
 ssh <user>@brewberrypi.local           # your Imager user and hostname
 ```
 
-If `.local` names don't work on your network, use the Pi's IP address from your router.
+If `.local` names don't work on your network, use the Pi's IP address from your router. SSH logins
+use your Imager user and key; `brewberry` can log in over SSH only if you chose password
+authentication in Imager.
 
 Check what's running:
 
 ```sh
-cat /etc/brewberry-release             # OS version
+sudo brewberry-system info             # OS version, board, addresses, /data usage
 sudo brewberry-update status           # app version and state
 systemctl status brewberrypi           # the app service
 ```
 
 Every command in this manual that changes something needs `sudo`. The admin user doesn't need a
 password for it.
+
+Commands that restart the app or reboot the Pi (`install`, `rollback`, `demo`, `restart`,
+`brewberry-maint on|upgrade|off`) ask you to type `yes`, and warn first when a brew is loaded or
+running, because they end it. Add `--yes` to skip the question in scripts. Without a terminal and
+without `--yes`, they print what they would do and exit with code 10, changing nothing. Queries
+take `--json` for machine-readable output.
+
+To change a password: `passwd` (your own) or `sudo passwd brewberry`. The change is saved to
+`/data` and survives reboots.
 
 ## 5. Configuration
 
@@ -153,7 +191,15 @@ them off after the app stops ([Output pins](#output-pins)):
 If the file or a key is missing, the defaults above apply. Pin numbers are BCM (GPIO) numbers.
 
 The app can't write its own configuration: inside the container `/data/config` is read-only.
-Change it from a USB stick (recommended) or over SSH.
+Change it in the device web interface, from a USB stick, or over SSH. All three check every file
+first, back up what they replace in `/data/config/backup/<date>/`, and write atomically, so a
+power cut leaves the old or the new file.
+
+### In the device web interface
+
+**Configuration** shows `config.json` and the recipes. To change them, upload `config.json`, recipe
+files (tick *These .json files are recipes*), or a `.tar.gz` downloaded with **Download**. Then
+**Restart the app**: it reads its configuration only at start.
 
 ### From a USB stick
 
@@ -176,34 +222,34 @@ This is the safest way: every file is checked first, and the old configuration i
 3. The app reads its configuration only at start. Restart it (this ends a running brew):
 
    ```sh
-   sudo systemctl restart brewberrypi
+   sudo brewberry-update restart
    ```
 
 ### Over SSH
 
-Copy the file to the Pi, check it, and swap it in with a rename, so that a power cut can't leave
-a half-written file:
+Copy the file to the Pi and import it. `brewberry-config import` takes a folder (`*.json` plus an
+optional `recipes/`, like the stick's `brewberrypi/config/`), one `.json` file, or a `.tar.gz`
+from `brewberry-config export`:
 
 ```sh
-scp config.json brewberry@brewberrypi.local:            # on your computer
+scp config.json <user>@brewberrypi.local:                # on your computer
 
-jq empty config.json && echo valid                       # on the Pi
-sudo cp config.json /data/config/config.json.tmp
-sudo sync /data/config/config.json.tmp
-sudo mv /data/config/config.json.tmp /data/config/config.json
-sudo systemctl restart brewberrypi
+sudo brewberry-config import config.json                 # on the Pi
+sudo brewberry-config show                               # what the app will read
+sudo brewberry-update restart
 ```
 
 ### Backing up the configuration
 
-Copy `/data/config` somewhere safe, for example to your computer:
+Download it under **Configuration → Download**, or over SSH:
 
 ```sh
-scp -r brewberry@brewberrypi.local:/data/config ./brewberrypi-config
+ssh <user>@brewberrypi.local sudo brewberry-config export > brewberrypi-config.tar.gz
 ```
 
-To restore it on a reflashed Pi, put `config.json` and the `recipes/` folder into
-`brewberrypi/config/` on a stick and run `brewberry-usb import-config`.
+The archive holds `config.json`, other top-level `.json` files and `recipes/`, without the
+backups. To restore it on a reflashed Pi, upload it under **Configuration**, or copy it over and
+run `sudo brewberry-config import brewberrypi-config.tar.gz`.
 
 ### Output pins
 
@@ -237,19 +283,21 @@ The Pi runs one app version, the *active* one, and keeps the one before it, the 
 to roll back to. App versions come from the private registry `ghcr.io/tinkerius/brewberrypi` and
 must be signed with the app's key. Unsigned or wrongly signed images are refused.
 
-Picking the version from the app's web UI is planned but not available yet. For now, use these
-commands over SSH.
+Pick versions in the device web interface under **App versions**, or with the commands below over
+SSH. Both do exactly the same.
 
 Until an app version is installed, the Pi runs a placeholder (the *contract stub*) that comes with
 the image. `http://<hostname>.local:8080/` then shows a page saying that the app isn't installed
-yet, with these steps. The placeholder never switches the outputs.
+yet, with these steps. The placeholder never switches the outputs. Its `/healthz` reports the
+placeholder's own version (for example `0.6.0`); real app versions replace it.
 
 ### Give the Pi access to the registry (once)
 
 1. On GitHub, open **Settings → Developer settings → Personal access tokens → Tokens (classic) →
    Generate new token (classic)**.
 2. Tick only the **`read:packages`** scope. Choose an expiry date and note it down.
-3. On the Pi:
+3. In the device web interface: **App versions → Registry access**, your GitHub user name and the
+   token. Or over SSH:
 
    ```sh
    sudo brewberry-update login
@@ -267,13 +315,18 @@ sudo brewberry-update list             # available versions, newest first
 sudo brewberry-update install 1.2.3    # install and switch to 1.2.3
 sudo brewberry-update status           # active and previous version, result of the last action
 sudo brewberry-update rollback         # switch back to the previous version
+sudo brewberry-update restart          # restart the app, for example after a config change
 ```
+
+In the device web interface: **App versions → Check the registry**, then **Install** next to a
+version; **Roll back** and **Restart the app** are on the same page.
 
 Versions are releases like `1.2.3` or pre-releases like `1.2.3-alpha.1` (also `-beta.N`, `-rc.N`).
 A pre-release has not been tested on hardware yet. It is listed before its release: `1.2.3-alpha.2`,
 `1.2.3-beta.1` and `1.2.3-rc.1` are all older than `1.2.3`.
 
-Installing or rolling back restarts the app, which **ends a running brew**. What `install` does:
+Installing, rolling back and restarting restart the app, which **ends a running brew**. They ask
+first, and say so when a brew is loaded or running. What `install` does:
 
 1. It downloads the version and checks its signature. If the signature check fails, nothing
    changes.
@@ -300,6 +353,8 @@ sudo brewberry-update demo on          # restart the app in demo mode
 sudo brewberry-update demo off         # back to the real hardware
 sudo brewberry-update status           # last line: demo mode: on|off
 ```
+
+In the device web interface: **App versions → Demo mode on / off**.
 
 Both restart the app, which ends a running brew. The setting is kept in `/data` across reboots and
 app updates, until you switch it off. While the placeholder runs (no app installed yet), its page
@@ -345,6 +400,9 @@ brewberrypi/
 
 ### Use it on the Pi
 
+Plug the stick in, then in the device web interface open **USB stick → Look at the stick**: it lists
+the versions with an **Install** button each, and **Import the stick's configuration**. Or over SSH:
+
 ```sh
 sudo brewberry-usb list                # versions and config files on the stick
 sudo brewberry-usb install 1.2.3       # same checks, switch and rollback as an online install
@@ -363,16 +421,21 @@ Plan for two reboots and no brew running.
 > **Keep the power connected** from `brewberry-maint on` until `brewberry-maint off` has rebooted.
 > In that window the system is writable, and pulling the plug can damage it.
 
+In the device web interface, **OS update** has the three steps as buttons: **Maintenance mode on**
+(reboots; the page reconnects), **Update the OS packages**, **Maintenance mode off** (reboots).
+Over SSH:
+
 ```sh
 sudo brewberry-maint on                # asks to confirm, then reboots
 # log in again
 sudo brewberry-maint status            # "NOT sealed ... maintenance mode since ..."
-sudo apt update
-sudo apt full-upgrade
+sudo brewberry-maint upgrade           # apt update + apt full-upgrade, keeps changed config files
 sudo brewberry-maint off               # asks to confirm, then reboots
 # log in again
 sudo brewberry-maint status            # "sealed"
 ```
+
+`apt update` and `apt full-upgrade` by hand work as well while in maintenance mode.
 
 The app keeps running in maintenance mode, with all its safety measures. If `off` refuses
 because an update removed the BrewberryPi block from `/boot/firmware/config.txt`, see
@@ -383,14 +446,18 @@ configuration first, and run `brewberry-update login` again afterwards.
 
 ## 9. Troubleshooting
 
-Logs are kept in memory and **lost at reboot**, so read them before you restart the Pi:
+Logs are kept in memory and **lost at reboot**, so read them before you restart the Pi: in the
+device web interface under **Logs**, or over SSH:
 
 ```sh
-journalctl -u brewberrypi -b                    # the app
-journalctl -u brewberrypi-safemode -b           # safe mode
-journalctl -u brewberry-firstload -b            # loading the app on first boot
+sudo brewberry-system logs app                  # the app
+sudo brewberry-system logs safemode             # safe mode
+sudo brewberry-system logs firstload            # loading the app on first boot
+sudo brewberry-system logs web                  # the device web interface and its actions
 sudo brewberry-update status
 ```
+
+`journalctl -u brewberrypi -b` and the like show the same.
 
 ### The first boot report
 
@@ -416,13 +483,13 @@ on the network.
 
 ### The app is down or in safe mode
 
-1. Look at `sudo brewberry-update status` and `journalctl -u brewberrypi -b`.
+1. Look at `sudo brewberry-update status` and `sudo brewberry-system logs app` (or the
+   **Overview** and **Logs** pages).
 2. If the app exited with code 2 or 3, it refused its configuration. Fix `/data/config`
-   ([Configuration](#5-configuration)), then:
+   ([Configuration](#5-configuration)), then restart it (**App versions → Restart the app**):
 
    ```sh
-   sudo systemctl reset-failed brewberrypi
-   sudo systemctl restart brewberrypi
+   sudo brewberry-update restart
    ```
 
 3. Otherwise the version itself is broken. Install a working version, or roll back:
@@ -431,8 +498,19 @@ on the network.
    sudo brewberry-update install 1.2.2
    ```
 
-`reset-failed` is needed because manual restarts also count towards the limit of 4 starts in
-10 minutes.
+`brewberry-update restart` also resets systemd's start counter: manual restarts count towards the
+limit of 4 starts in 10 minutes too.
+
+### I can't log in to the device web interface
+
+- The user is always `brewberry`; the default password is `pi`, unless you changed it.
+- Forgot the password: log in over SSH with your Imager user and run `sudo passwd brewberry`.
+- *Too many attempts*: after 5 wrong passwords each further try waits longer, up to a minute.
+- Nothing answers on port 8081: `sudo brewberry-system logs web`, and
+  `systemctl status brewberry-web`. Use the Pi's name or IP address in the address bar; the page
+  refuses other host names.
+- You are logged out after 30 minutes without activity, and when the Pi or the web interface
+  restarts.
 
 ### `brewberry-update` says "no registry token" or the login fails
 
@@ -460,26 +538,34 @@ Power the system off at the mains. Check that the pins in `config.json` match yo
 logs which outputs it switched off and whether that failed:
 
 ```sh
-journalctl -b | grep brewberrypi-outputs-off
+sudo brewberry-system logs outputs-off
 ```
 
 ## 10. Command reference
 
-All commands run as root (`sudo`).
+All commands run as root (`sudo`). The device web interface offers each of them
+(`tests/unit/parity.sh` keeps this table, the commands and the web interface in step). Queries take
+`--json`; commands that restart the app or reboot ask first and take `--yes`.
 
 | Command | What it does |
 |---|---|
-| `brewberry-update login` | Store the registry token |
+| `brewberry-update login` | Store the registry token (`--username <user> --password-stdin` without a prompt) |
 | `brewberry-update list` | Available app versions (releases and pre-releases), newest first |
 | `brewberry-update install <version>` | Install and switch to a version; rolls back if it fails |
 | `brewberry-update rollback` | Switch back to the previous version |
 | `brewberry-update status` | Active and previous version, last result, safe mode, demo mode |
 | `brewberry-update demo on\|off` | Run the app with a simulated kettle (no GPIO), or normally |
+| `brewberry-update restart` | Restart the app (ends a running brew), also after a configuration error |
 | `brewberry-usb list` | Versions and config files on a USB stick |
 | `brewberry-usb install <version>` | Install a version from a USB stick |
 | `brewberry-usb import-config` | Copy `brewberrypi/config/*.json` and `recipes/` from a stick to `/data/config` |
+| `brewberry-config show` | The configuration the app reads, and its recipes |
+| `brewberry-config import <source>` | Check, back up and replace config files from a folder, a `.json` file or an export |
+| `brewberry-config export` | `/data/config` as `.tar.gz` on stdout (a backup) |
 | `brewberry-maint status` | Sealed (normal) or in maintenance mode |
 | `brewberry-maint on` | Make the system writable for OS updates (reboots) |
+| `brewberry-maint upgrade` | In maintenance mode: `apt update` and `apt full-upgrade` |
 | `brewberry-maint off` | Seal the system again (reboots) |
-| `systemctl restart brewberrypi` | Restart the app (ends a running brew) |
-| `cat /etc/brewberry-release` | OS version |
+| `brewberry-system info` | OS version, board, hostname, addresses, uptime, `/data` usage |
+| `brewberry-system logs <name>` | This boot's log: `app`, `safemode`, `firstload`, `outputs-off` or `web` |
+| `passwd` | Change a password (`sudo passwd brewberry` for the web interface's user); kept across reboots |

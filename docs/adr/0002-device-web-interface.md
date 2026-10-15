@@ -1,6 +1,6 @@
 # ADR-0002: Device web interface with CLI parity
 
-- **Status:** Proposed
+- **Status:** Accepted (2026-10-15, implemented in OS9)
 - **Date:** 2026-10-15
 - **Deciders:** Benedikt Hauptmann (product owner); proposal by Claude Code
 
@@ -30,7 +30,8 @@ Facts this ADR relies on:
   has no login (app `IF-060`).
 - The root is an overlay with a RAM upper layer, so `passwd` today lasts only until the next
   reboot.
-- rpi-image-gen's `user1pass` rejects weak passwords such as `pi`; `user1passhash` is taken as is.
+- rpi-image-gen's `user1pass` rejects weak passwords such as `pi`, and its config values are
+  expanded as shell variables, so a `$y$…` hash in `user1passhash` doesn't survive either.
 - Python 3.13 (Trixie) has no `crypt` module; the system's libcrypt (yescrypt) is reachable
   through `ctypes`. python3 is on the image only as a cloud-init dependency.
 - The CLIs print text only; just `brewberry-maint` asks for confirmation (`--yes`).
@@ -73,8 +74,8 @@ We choose **option 4**. The design is specified in [docs/device-web-ui.md](../de
   talks to `brewberry-webcmd@.service` (root, socket-activated per request). Long actions run as
   transient `systemd-run` units, so a closed browser or a restarted web server doesn't interrupt an
   install. The existing update lock serialises CLI, web and safe mode.
-- **Accounts:** `brewberry` with a yescrypt hash of `pi` in `config/brewberrypi-base.yaml`,
-  passwordless `sudo`. Password changes (web or `passwd`) are saved to `/data/secrets/shadow.d/`
+- **Accounts:** `brewberry` (`config/brewberrypi-base.yaml`, passwordless `sudo`) gets the
+  password `pi` from a build hook with `chpasswd` (yescrypt); cloud-init leaves it unlocked. Password changes (web or `passwd`) are saved to `/data/secrets/shadow.d/`
   and applied at boot, which changes only the RAM layer.
 - **Login:** session cookie (`HttpOnly`, `SameSite=Strict`), `Origin`/`Host` checks, a custom
   header on every `POST`, rate-limited failures.

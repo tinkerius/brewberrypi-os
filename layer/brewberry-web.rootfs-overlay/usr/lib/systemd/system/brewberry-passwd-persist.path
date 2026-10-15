@@ -1,0 +1,11 @@
+# Passwords that survive the reboot (ADR-0002, OS9): the root is an overlay
+# with a RAM upper layer, so a changed /etc/shadow is saved to /data.
+[Unit]
+Description=Save changed passwords to /data
+
+[Path]
+PathChanged=/etc/shadow
+Unit=brewberry-passwd-persist.service
+
+[Install]
+WantedBy=paths.target

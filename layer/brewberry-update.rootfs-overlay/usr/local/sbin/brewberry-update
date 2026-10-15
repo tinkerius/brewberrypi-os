@@ -1,7 +1,8 @@
 #!/bin/bash
 # Select the BrewberryPi app version on the device (ADR-0001, OS4). Run as root.
 #
-#   brewberry-update login           store the registry token (/data/secrets/auth.json)
+#   brewberry-update login [--username <user> --password-stdin]
+#                                    store the registry token (/data/secrets/auth.json)
 #   brewberry-update list            available versions (also written to /data/update/tags.json)
 #   brewberry-update status          active and previous image, last result
 #   brewberry-update install <version> [--from-dir <dir>]
@@ -13,10 +14,21 @@
 #   brewberry-update demo on|off     run the app with a simulated kettle
 #                                    (--dummymode, never touches GPIO) or normally;
 #                                    kept across reboots, restarts the app
+#   brewberry-update restart         restart the app (also after a configuration error)
+#
+# Options: --json (list, status: machine-readable output), --yes (install,
+# rollback, demo, restart: don't ask; without it they ask on a terminal, and
+# otherwise print what they would do and exit 10). They warn when a brew is
+# loaded or running, because restarting the app ends it (ADR-0002).
 #
 # Images: localhost/brewberrypi:active runs; :previous is the one before and is
 # never garbage-collected. Nothing else is kept. Never 'podman image prune -a'.
 set -euo pipefail
+
+PROG=brewberry-update
+# BREWBERRY_LIB and BREWBERRY_UPDATE_ROOT are for tests (tests/unit/update.sh).
+# shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
+. "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
 
 # BREWBERRY_UPDATE_REPO is for the hardware test only (tests/hardware/os4-check.sh),
 # together with a temporary policy entry that a reboot removes.
@@ -27,8 +39,9 @@ SERVICE=brewberrypi.service
 CONTRACT=1
 # App versions (runtime contract §1): 1.2.3, or a pre-release 1.2.3-alpha.N, -beta.N, -rc.N.
 VERSION_RE='^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'
-# BREWBERRY_UPDATE_ROOT and BREWBERRY_SOAK_S are for tests (tests/unit/update.sh).
+# BREWBERRY_SOAK_S is for tests too.
 ROOT=${BREWBERRY_UPDATE_ROOT:-}
+APP_CONFIG=$ROOT/data/config/config.json
 SOAK_S=${BREWBERRY_SOAK_S:-60}
 UPDATE_DIR=$ROOT/data/update
 STATE=$UPDATE_DIR/state.json
@@ -38,20 +51,8 @@ APP_ARGS=$UPDATE_DIR/app-args.env
 LOCK=$ROOT/run/brewberry-update.lock
 export REGISTRY_AUTH_FILE=$ROOT/data/secrets/auth.json
 
-log() { echo "brewberry-update: $*" >&2; }
-die() { log "$*"; exit 1; }
-
 image_id() { podman image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
 label() { podman image inspect -f "{{index .Labels \"$2\"}}" "$1" 2>/dev/null || true; }
-
-# Atomic write of a small file on /data: temp file, fsync, rename, fsync dir.
-write_atomic() { # <path>  (content on stdin)
-   local tmp=$1.tmp
-   cat > "$tmp"
-   sync "$tmp"
-   mv "$tmp" "$1"
-   sync "$(dirname "$1")"
-}
 
 state() { # <phase> <message> [version]
    jq -n --arg phase "$1" --arg message "$2" --arg version "${3:-}" \
@@ -110,10 +111,17 @@ gc() {
    podman image prune -f > /dev/null || true
 }
 
-cmd_login() {
+cmd_login() { # [--username <user> --password-stdin]
    install -d -m 0700 "$(dirname "$REGISTRY_AUTH_FILE")"
-   echo "Registry token for $REPO: a GitHub classic PAT with read:packages only." >&2
-   podman login --authfile "$REGISTRY_AUTH_FILE" "${REPO%%/*}"
+   if [ $# -eq 3 ] && [ "$1" = --username ] && [ "$3" = --password-stdin ]; then
+      [[ $2 =~ ^[A-Za-z0-9-]+$ ]] || die "not a GitHub user name: $2"
+      podman login --authfile "$REGISTRY_AUTH_FILE" --username "$2" --password-stdin "${REPO%%/*}"
+   elif [ $# -eq 0 ]; then
+      echo "Registry token for $REPO: a GitHub classic PAT with read:packages only." >&2
+      podman login --authfile "$REGISTRY_AUTH_FILE" "${REPO%%/*}"
+   else
+      die "usage: brewberry-update login [--username <user> --password-stdin]"
+   fi
    chmod 0600 "$REGISTRY_AUTH_FILE"
    sync -f "$(dirname "$REGISTRY_AUTH_FILE")"
 }
@@ -132,10 +140,11 @@ cmd_list() {
    jq -n --argjson tags "$tags" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
       --arg active "$(label "$ACTIVE" org.opencontainers.image.version)" \
       '{time: $time, active: $active, tags: $tags}' | write_atomic "$UPDATE_DIR/tags.json"
-   echo "$tags" | jq -r '.[]'
+   if [ "$JSON" = 1 ]; then jq . "$UPDATE_DIR/tags.json"; else echo "$tags" | jq -r '.[]'; fi
 }
 
 cmd_status() {
+   [ "$JSON" = 0 ] || { status_json; return 0; }
    local ref
    for ref in "$ACTIVE" "$PREVIOUS"; do
       printf '%-32s %-10s %s\n' "$ref" "$(label "$ref" org.opencontainers.image.version)" \
@@ -149,20 +158,53 @@ cmd_status() {
    return 0
 }
 
+status_json() {
+   local ref out=() state=null safemode=null
+   for ref in "$ACTIVE" "$PREVIOUS"; do
+      out+=("$(jq -n --arg v "$(label "$ref" org.opencontainers.image.version)" --arg id "$(image_id "$ref")" \
+         'if $id == "" then null else {version: $v, id: $id[0:12]} end')")
+   done
+   [ -f "$STATE" ] && state=$(jq -c . "$STATE" 2> /dev/null || echo null)
+   [ -f "$SAFEMODE_MARK" ] && safemode=$(jq -c . "$SAFEMODE_MARK" 2> /dev/null || echo null)
+   jq -n --argjson active "${out[0]}" --argjson previous "${out[1]}" \
+      --arg service "$(systemctl is-active "$SERVICE" 2> /dev/null || true)" --arg engine "$(engine_state)" \
+      --argjson last "$state" --argjson safemode "$safemode" --arg demo "$(demo_state)" \
+      '{active: $active, previous: $previous, service: $service,
+        engine: (if $engine == "" then null else $engine end),
+        last: $last, safemode: $safemode, demo: ($demo == "on")}'
+}
+
 demo_state() {
    if grep -qx 'BREWBERRYPI_ARGS=--dummymode' "$APP_ARGS" 2>/dev/null; then echo on; else echo off; fi
 }
 
 cmd_demo() { # on|off
+   confirm "This switches demo mode $1 and restarts the app."
    lock
    case $1 in
       on) echo 'BREWBERRYPI_ARGS=--dummymode' | write_atomic "$APP_ARGS" ;;
       off) rm -f "$APP_ARGS"; sync "$UPDATE_DIR" ;;
    esac
-   log "demo mode $1; restarting the app (this ends a running brew)"
+   log "demo mode $1; restarting the app"
    systemctl reset-failed "$SERVICE" 2>/dev/null || true
    systemctl restart "$SERVICE" || die "the app did not start; see: journalctl -u $SERVICE -b"
    log "demo mode: $(demo_state)"
+}
+
+# Restart the app, as after a configuration change. Reports a configuration
+# error (exit code 2 or 3) like install does; never switches images.
+cmd_restart() {
+   confirm "This restarts the app."
+   lock
+   systemctl reset-failed "$SERVICE" 2>/dev/null || true
+   if systemctl restart "$SERVICE"; then
+      log "the app is running"
+      return 0
+   fi
+   if config_error; then
+      die "the app refuses its configuration (exit code $(systemctl show -p ExecMainStatus --value "$SERVICE")); fix /data/config"
+   fi
+   die "the app did not start; see: journalctl -u $SERVICE -b"
 }
 
 cmd_install() { # <version> [dir: export]
@@ -175,6 +217,7 @@ cmd_install() { # <version> [dir: export]
       need_auth
       source=$REPO:$version
    fi
+   confirm "This installs $version and restarts the app; if it fails within ${SOAK_S} s, the previous version comes back."
    lock
 
    state pulling "pulling $source" "$version"
@@ -236,6 +279,8 @@ cmd_install() { # <version> [dir: export]
 
 cmd_rollback() {
    local a p rc
+   [ -n "$(image_id "$PREVIOUS")" ] || die "there is no previous image"
+   confirm "This switches back to the previous version ($(label "$PREVIOUS" org.opencontainers.image.version)) and restarts the app."
    lock
    a=$(image_id "$ACTIVE")
    p=$(image_id "$PREVIOUS")
@@ -259,8 +304,10 @@ cmd_rollback() {
 
 [ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run as root"
 install -d -m 0755 "$UPDATE_DIR"
+parse_opts "$@"
+set -- "${ARGS[@]+"${ARGS[@]}"}"
 case ${1:-} in
-   login) cmd_login ;;
+   login) shift; cmd_login "$@" ;;
    list) cmd_list ;;
    status) cmd_status ;;
    install)
@@ -273,5 +320,6 @@ case ${1:-} in
          on | off) cmd_demo "$2" ;;
          *) die "usage: brewberry-update demo on|off" ;;
       esac ;;
-   *) sed -n '2,18s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+   restart) cmd_restart ;;
+   *) sed -n '2,25s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

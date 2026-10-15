@@ -1,0 +1,51 @@
+# METABEGIN
+# X-Env-Layer-Name: brewberry-web
+# X-Env-Layer-Category: app
+# X-Env-Layer-Desc: Device web interface (ADR-0002, OS9): every operator
+#  command of the CLIs in a browser on port 8081, after a login as the user
+#  brewberry (default password 'pi'). An unprivileged server
+#  (brewberry-web.service) forwards each request to a socket-activated root
+#  helper that runs only commands from the catalogue
+#  /usr/share/brewberry/commands.json; long actions run as transient units.
+#  Changed passwords (web or passwd) are saved to /data and restored at boot.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: brewberry-update,brewberry-readonly
+# METAEND
+---
+mmdebstrap:
+  packages:
+    # Server and helper use the standard library only; python3 is in the image
+    # anyway for cloud-init, but must not depend on it.
+    - python3
+    - libcrypt1
+    - passwd
+  customize-hooks:
+    - |-
+      set -eu
+      # The server's own system user; the helper socket belongs to its group.
+      if ! chroot "$1" id -u brewberry-web > /dev/null 2>&1; then
+         chroot "$1" useradd --system --user-group --no-create-home --home-dir /nonexistent \
+            --shell /usr/sbin/nologin brewberry-web
+      fi
+    - |-
+      set -eu
+      # The device account: rpi-image-gen's device-user-admin creates it
+      # (config/brewberrypi-base.yaml: user1 with passwordless sudo). Its
+      # default password 'pi' is set here, hashed by chpasswd as the image
+      # does (yescrypt): rpi-image-gen's user1pass refuses weak passwords, and
+      # a hash in the config would be expanded as shell variables. Change it in
+      # the web interface (Account) or with passwd; brewberry-passwd keeps it.
+      chroot "$1" id -u brewberry > /dev/null
+      echo 'brewberry:pi' | chroot "$1" chpasswd
+      chroot "$1" passwd -S brewberry | awk '$2 != "P" { exit 1 }' || {
+         echo "brewberry-web: the brewberry account has no usable password" >&2
+         exit 1
+      }
+    - |-
+      set -eu
+      # The catalogue must be valid JSON, and the server and helper must at
+      # least compile with the image's own Python.
+      chroot "$1" python3 -c 'import json; json.load(open("/usr/share/brewberry/commands.json"))'
+      chroot "$1" python3 -m py_compile /usr/lib/brewberry-web/server.py /usr/lib/brewberry-web/helper.py
+      rm -rf "$1/usr/lib/brewberry-web/__pycache__"
+    - $BDEBSTRAP_HOOKS/enable-units "$1" brewberry-web.service brewberry-webcmd.socket brewberry-passwd-persist.path brewberry-passwd-restore.service

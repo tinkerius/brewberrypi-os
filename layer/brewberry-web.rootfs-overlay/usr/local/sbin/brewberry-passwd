@@ -1,0 +1,65 @@
+#!/bin/bash
+# Passwords that survive the reboot (ADR-0002, OS9). Run as root, by systemd.
+#
+#   brewberry-passwd persist   save the password hashes of the login users
+#                              (UID 1000-59999) to /data/secrets/shadow.d/<user>
+#   brewberry-passwd restore   apply the saved hashes (at boot, before logins)
+#
+# The root is an overlay with a RAM upper layer, so 'passwd' (and the device
+# web interface's password change, which uses chpasswd) only changes
+# /etc/shadow until the next reboot. brewberry-passwd-persist.path runs
+# 'persist' whenever /etc/shadow changes; brewberry-passwd-restore.service
+# runs 'restore' at boot. usermod writes only the RAM layer, never the real root.
+set -euo pipefail
+
+PROG=brewberry-passwd
+# BREWBERRY_LIB and BREWBERRY_PASSWD_ROOT are for tests (tests/unit/passwd.sh).
+# shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
+. "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
+R=${BREWBERRY_PASSWD_ROOT:-}
+SAVED=$R/data/secrets/shadow.d
+
+login_users() { # name per line
+   awk -F: '$3 >= 1000 && $3 < 60000 { print $1 }' "$R/etc/passwd"
+}
+
+hash_of() { # <user>: the shadow hash, empty if none
+   awk -F: -v u="$1" '$1 == u { print $2 }' "$R/etc/shadow"
+}
+
+cmd_persist() {
+   local user hash
+   install -d -m 0700 "$R/data/secrets" "$SAVED"
+   for user in $(login_users); do
+      [[ $user =~ ^[a-z_][a-z0-9_-]*$ ]] || continue
+      hash=$(hash_of "$user")
+      [ -n "$hash" ] || continue
+      # Unchanged hashes are not written again: /data is written only on changes.
+      if [ ! -f "$SAVED/$user" ] || [ "$(cat "$SAVED/$user")" != "$hash" ]; then
+         (umask 077; printf '%s\n' "$hash" | write_atomic "$SAVED/$user")
+         log "saved the password of $user"
+      fi
+   done
+}
+
+cmd_restore() {
+   local f user hash
+   [ -d "$SAVED" ] || return 0
+   for f in "$SAVED"/*; do
+      [ -f "$f" ] || continue
+      user=${f##*/}
+      hash=$(head -n 1 "$f")
+      grep -q "^$user:" "$R/etc/passwd" || { log "no user $user; $f ignored"; continue; }
+      [[ $hash =~ ^[^:[:space:]]+$ ]] || { log "$f is not a password hash; ignored"; continue; }
+      [ "$(hash_of "$user")" = "$hash" ] && continue
+      usermod -p "$hash" "$user"
+      log "restored the password of $user"
+   done
+}
+
+[ -n "$R" ] || [ "$(id -u)" = 0 ] || die "run as root"
+case ${1:-} in
+   persist) cmd_persist ;;
+   restore) cmd_restore ;;
+   *) sed -n '2,7s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

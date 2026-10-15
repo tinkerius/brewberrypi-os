@@ -231,7 +231,11 @@ off.{heat_note}</p>
 
 <section>
 <h2>Install the app</h2>
-<p>Log in to the Pi over SSH (<code>ssh &lt;user&gt;@{hostname}.local</code>), then:</p>
+<p>Easiest: open the device web interface at
+<a href="http://{hostname}.local:8081/#versions">http://{hostname}.local:8081/</a>
+(user <code>brewberry</code>, default password <code>pi</code>), store the registry token under
+<em>App versions</em>, then pick a version there.</p>
+<p>Or log in to the Pi over SSH (<code>ssh &lt;user&gt;@{hostname}.local</code>), then:</p>
 <pre><code># once: your GitHub user, and a classic token with read:packages
 sudo brewberry-update login
 # the released app versions

@@ -22,9 +22,11 @@ through **maintenance mode** (ADR-0001, OS6). App versions are not OS updates; t
 
    ```sh
    sudo brewberry-maint status        # "NOT sealed ... maintenance mode since ..."
-   sudo apt update
-   sudo apt full-upgrade
+   sudo brewberry-maint upgrade       # apt update + apt full-upgrade (keeps changed config files)
    ```
+
+   `apt update` and `apt full-upgrade` by hand work as well. The device web interface
+   (`http://<hostname>.local:8081/`, **OS update**) has the same three steps as buttons.
 
    The app keeps running in maintenance mode with all its safety measures. Kernel and firmware
    updates write to the boot partition, which is writable now. The initramfs is rebuilt with

@@ -49,7 +49,7 @@ Until OS3 adds the outputs-off reset, don't connect a relay board to a mains hea
    ```
 
 3. From another machine: `curl http://brewberrypi.local:8080/healthz` answers
-   `{"status": "ok", "version": "0.3.0", "engine": "NoProcess"}`, and
+   `{"status": "ok", "version": "0.6.0", "engine": "NoProcess"}`, and
    `http://brewberrypi.local:8080/` in a browser shows the stub's page ("The brewing app isn't
    installed yet").
 
@@ -231,3 +231,34 @@ these Pi 5 differences:
 - the firmware's `gpio=` boot pins must work on RP1: in `os3-check.sh status`, all outputs must be
   off before the app ever drives them, and the power-on window (Q-18) must be measured again;
 - ext4 uses 16K blocks to match the 16K-page kernel.
+
+## OS9: device web interface
+
+On any board, after OS2 (the stub runs). Over SSH with your Imager user:
+
+```sh
+ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os9-check.sh
+ssh <user>@brewberrypi.local 'sudo sh -s -- password pi brewing-2026' < tests/hardware/os9-check.sh
+ssh <user>@brewberrypi.local 'sudo reboot'
+ssh <user>@brewberrypi.local 'sudo sh -s -- after-reboot brewing-2026' < tests/hardware/os9-check.sh
+```
+
+`run` checks the services, that the API needs a login and refuses cross-site requests, that the
+web interface reports the same app version and the same confirmation text as the CLI, and that a
+job (an app restart) finishes even when `brewberry-web` restarts in the middle. `password` and
+`after-reboot` check that a password changed in the browser is saved to `/data` and survives the
+reboot.
+
+By hand, in a browser on another machine (`http://brewberrypi.local:8081/`):
+
+1. The login page shows the user `brewberry`; `pi` logs in and the default-password reminder
+   shows until the password is changed.
+2. Every page loads; every button of the user manual's command reference works: **Check the
+   registry** and **Install** (with a registry token), **Roll back**, **Demo mode on/off**,
+   **Restart the app**, the USB stick page with a prepared stick (OS5), **Download** and **Import**
+   of the configuration, **Logs**, and the three **OS update** steps (OS6; the page reconnects after
+   each reboot).
+3. `sudo passwd brewberry` over SSH, then a reboot: the new password logs in to the web interface.
+
+The brew warning ("A brew is loaded or running…") needs the real app with a loaded recipe (OS8);
+the unit tests cover it with a fake `/healthz`.

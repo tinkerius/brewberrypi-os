@@ -11,12 +11,14 @@ MAINT=$ROOT_DIR/layer/brewberry-readonly.rootfs-overlay/usr/local/sbin/brewberry
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
 export R=$T/root BREWBERRY_MAINT_ROOT=$T/root LOG=$T/log
+export BREWBERRY_LIB=$ROOT_DIR/layer/brewberry-base.rootfs-overlay/usr/lib/brewberry
 
 mkdir -p "$T/bin"
-for cmd in mount systemctl brewberry-seal; do
+for cmd in mount systemctl brewberry-seal apt-get; do
    # shellcheck disable=SC2016  # $* and $LOG belong to the fake script
    printf '#!/bin/sh\necho "%s $*" >> "$LOG"\n' "$cmd" > "$T/bin/$cmd"
 done
+printf '#!/bin/sh\nexit 7\n' > "$T/bin/curl" # the app doesn't answer: no brew warning
 chmod +x "$T"/bin/*
 export PATH=$T/bin:$PATH
 
@@ -69,10 +71,25 @@ expect "off: moved boot pins are fine" "$RC $(cat "$LOG")" "0 brewberry-seal "
 fixture sealed; run "$MAINT" off --yes
 expect "off: refused when already sealed" "$RC $(grep -c . "$LOG")" "1 0"
 
-fixture sealed; RC=0; echo no | "$MAINT" on > /dev/null 2>&1 || RC=$?
-expect "on: cancelled without 'yes'" "$RC $(grep -c . "$LOG") $(grep -c overlayroot "$R/boot/firmware/cmdline.txt")" "1 0 1"
+fixture sealed; RC=0; echo yes | "$MAINT" on > /dev/null 2>&1 || RC=$?
+expect "on: without --yes and without a terminal: exit 10, nothing changed" \
+   "$RC $(grep -c . "$LOG") $(grep -c overlayroot "$R/boot/firmware/cmdline.txt")" "10 0 1"
+fixture sealed; RC=0; "$MAINT" on --json < /dev/null > "$T/out" 2> /dev/null || RC=$?
+expect "on --json: the prompt" "$RC $(jq -r '.confirm | startswith("Maintenance mode: the Pi reboots")' "$T/out")" "10 true"
 
 fixture sealed; run "$MAINT" status
 expect "status: sealed" "$(head -n1 "$T/out")" "sealed: overlay root, read-only boot"
+expect "status --json: sealed" "$("$MAINT" status --json | jq -c .)" '{"sealed":true,"maintenance":null}'
+fixture maintenance
+expect "status --json: maintenance mode" "$("$MAINT" status --json | jq -c '[.sealed, (.maintenance | startswith("since "))]')" '[false,true]'
+
+fixture maintenance; run "$MAINT" upgrade --yes
+expect "upgrade: apt update, then a non-interactive full-upgrade" "$RC $(grep -o 'apt-get [a-z-]*\( -y\)\?' "$LOG" | paste -sd ' ')" \
+   "0 apt-get update apt-get -y"
+expect "upgrade: keeps changed config files" "$(grep -c 'force-confold full-upgrade' "$LOG")" 1
+fixture sealed; run "$MAINT" upgrade --yes
+expect "upgrade: refused while sealed" "$RC $(grep -c . "$LOG")" "1 0"
+fixture maintenance; run "$MAINT" upgrade < /dev/null
+expect "upgrade without --yes: exit 10, apt not run" "$RC $(grep -c apt-get "$LOG")" "10 0"
 
 exit "$failures"

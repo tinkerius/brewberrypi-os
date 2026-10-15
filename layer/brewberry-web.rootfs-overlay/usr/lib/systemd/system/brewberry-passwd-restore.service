@@ -1,0 +1,15 @@
+# Applies the passwords saved by brewberry-passwd-persist before anyone can
+# log in. usermod writes only the overlay's RAM layer (ADR-0002, OS9).
+[Unit]
+Description=Restore passwords saved on /data
+After=data.mount brewberry-datalayout.service
+Requires=data.mount
+Before=ssh.service systemd-user-sessions.service brewberry-web.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/usr/local/sbin/brewberry-passwd restore
+
+[Install]
+WantedBy=multi-user.target

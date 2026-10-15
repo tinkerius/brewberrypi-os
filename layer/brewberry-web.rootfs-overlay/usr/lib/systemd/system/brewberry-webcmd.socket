@@ -1,0 +1,15 @@
+# The root helper's socket (ADR-0002, OS9): only the web server's group may
+# connect. One helper instance per connection.
+[Unit]
+Description=BrewberryPi device web interface: root helper socket
+
+[Socket]
+ListenStream=/run/brewberry-webcmd.sock
+SocketUser=root
+SocketGroup=brewberry-web
+SocketMode=0660
+Accept=yes
+MaxConnections=16
+
+[Install]
+WantedBy=sockets.target

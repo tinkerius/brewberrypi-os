@@ -20,7 +20,8 @@ check() { # <description> <command...>
 }
 version() { podman image inspect -f '{{index .Labels "org.opencontainers.image.version"}}' "localhost/brewberrypi:$1" 2>/dev/null; }
 is_version() { test "$(version "$1")" = "$2"; }
-update() { BREWBERRY_UPDATE_REPO=$REPO brewberry-update "$@"; }
+# --yes: install, rollback and demo ask for confirmation otherwise (ADR-0002).
+update() { BREWBERRY_UPDATE_REPO=$REPO brewberry-update "$@" --yes; }
 
 setup() { # <repo> <test.pub>
    repo=$1; key=$2
@@ -50,8 +51,8 @@ run() {
    before=$(version active)
    echo "active before: $before"
 
-   check "0.5.0 (signed with another key) is rejected" sh -c "! BREWBERRY_UPDATE_REPO=$REPO brewberry-update install 0.5.0"
-   check "0.4.0 (unsigned) is rejected" sh -c "! BREWBERRY_UPDATE_REPO=$REPO brewberry-update install 0.4.0"
+   check "0.5.0 (signed with another key) is rejected" sh -c "! BREWBERRY_UPDATE_REPO=$REPO brewberry-update install 0.5.0 --yes"
+   check "0.4.0 (unsigned) is rejected" sh -c "! BREWBERRY_UPDATE_REPO=$REPO brewberry-update install 0.4.0 --yes"
    check "active unchanged after the rejections" is_version active "$before"
 
    update install 0.2.0 >/dev/null 2>&1

@@ -97,7 +97,9 @@ expect "PAM hook: other users and other phases are ignored" "$(smbpw) $(grep -c 
 account '$y$j9T$third$hash'
 MOUNTED='' pam 'unmounted' > /dev/null
 expect "PAM hook: nothing written without /data" "$(smbpw) $(grep -c 'not mounted' "$LOG")" "New pass 1:x 1"
-rc=0; printf 'x' | env -i PATH="$T/nothing" "$SYNC" pam > /dev/null 2>&1 || rc=$?
+# Without any tools (no smbpasswd, awk, logger, mountpoint): still exit 0.
+rc=0; printf 'x' | env -i PATH="$T/nothing" BREWBERRY_LIB="$BREWBERRY_LIB" BREWBERRY_SHARE_ROOT="$R" \
+   BREWBERRY_SHARE_USER="$U" PAM_USER="$U" PAM_TYPE=password "$SYNC" pam > /dev/null 2>&1 || rc=$?
 expect "PAM hook: never fails the password change" "$rc" 0
 
 # The account hash changed without PAM (Imager's hashed password, usermod -p).

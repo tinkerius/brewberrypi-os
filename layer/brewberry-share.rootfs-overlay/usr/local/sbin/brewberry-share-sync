@@ -86,7 +86,10 @@ cmd_start() {
 # Never fails: the password change itself has already happened.
 cmd_pam() {
    local password=""
-   exec 2> >(logger -t "$PROG" 2> /dev/null || cat > /dev/null)
+   # Messages go to the journal; a missing or failed logger must not end
+   # the hook (no SIGPIPE).
+   trap '' PIPE
+   exec 2> >(logger -t "$PROG" 2> /dev/null || cat > /dev/null 2>&1)
    [ "${PAM_TYPE:-}" = password ] && [ "${PAM_USER:-}" = "$SHARE_USER" ] || return 0
    IFS= read -r -d '' password || true
    if [ -z "$password" ] || [[ $password == *$'\n'* ]]; then
@@ -101,9 +104,12 @@ cmd_pam() {
    return 0
 }
 
+if [ "${1:-}" = pam ]; then # pam_exec runs it as root; it never fails
+   cmd_pam || true
+   exit 0
+fi
 [ -n "$R" ] || [ "$(id -u)" = 0 ] || die "run as root"
 case ${1:-} in
    start) cmd_start ;;
-   pam) cmd_pam || true ;;
    *) sed -n '2,10s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

@@ -49,9 +49,13 @@ EnvironmentFile=-/data/update/app-args.env
 RestartPreventExitStatus=2 3
 TimeoutStartSec=60
 WatchdogSec=20
+# Remembers the outputs of the config the app starts with: the config can
+# change while it runs (import, file share), and the reset must still switch
+# off the pins the app drives.
+ExecStartPre=+/usr/local/sbin/brewberrypi-outputs-off --record
 # Runs on every exit path (clean stop, crash, kill -9, watchdog, failed start),
-# before Quadlet's own cleanup: removes the container, then drives every output
-# from /data/config/config.json to its off level.
+# before Quadlet's own cleanup: removes the container, then drives the recorded
+# outputs and every output from /data/config/config.json to its off level.
 ExecStopPost=+/usr/local/sbin/brewberrypi-outputs-off %t/%N.cid
 
 [Install]

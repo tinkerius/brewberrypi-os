@@ -1,7 +1,7 @@
 # The root helper's socket (ADR-0002, OS9): only the web server's group may
 # connect. One helper instance per connection.
 [Unit]
-Description=BrewberryPi device web interface: root helper socket
+Description=BrewberryPi OS web interface: root helper socket
 
 [Socket]
 ListenStream=/run/brewberry-webcmd.sock

@@ -2,7 +2,7 @@
 <!DOCTYPE service-group SYSTEM "avahi-service.dtd">
 <!-- The device web interface (ADR-0002, OS9), so it shows up in browsers' and routers' service lists. -->
 <service-group>
-  <name replace-wildcards="yes">BrewberryPi device %h</name>
+  <name replace-wildcards="yes">BrewberryPi OS %h</name>
   <service>
     <type>_http._tcp</type>
     <port>8081</port>

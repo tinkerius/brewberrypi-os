@@ -47,7 +47,7 @@ run() { # [password]
    pw=${1:-pi}
    check "brewberry-web.service is active" systemctl is-active --quiet brewberry-web.service
    check "brewberry-webcmd.socket is listening" systemctl is-active --quiet brewberry-webcmd.socket
-   check "the page answers on port 8081" sh -c "curl -sf $URL/ | grep -q 'BrewberryPi device'"
+   check "the page answers on port 8081" sh -c "curl -sf $URL/ | grep -q 'BrewberryPi OS'"
    check "the API needs a login" test "$(code GET /api/commands)" = 401
    check "a wrong password is refused" sh -c "! $(command -v curl) -sf -H 'X-Brewberry: 1' -d '{\"password\": \"wrong\"}' $URL/api/login"
    check "login as brewberry" login "$pw"

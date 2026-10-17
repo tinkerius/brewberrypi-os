@@ -327,7 +327,7 @@ session.
 One page, no build step: vanilla JavaScript and inline CSS in `index.html`, light and dark following
 the browser, and the app's look (indigo/slate, cards). English, like the app.
 
-- **Header:** "BrewberryPi device", hostname, OS version, user `brewberry`, **Log out**; a link to the
+- **Header:** "BrewberryPi OS", hostname, OS version, user `brewberry`, **Log out**; a link to the
   app's UI (`http://<host>:<server.port>/`).
 - **Banner** for the default password (§7.4) and for a running job.
 - **Screens** as tabs, matching §4: Overview, App versions (with Registry), Configuration, USB stick,

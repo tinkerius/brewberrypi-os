@@ -73,6 +73,7 @@ The layers, in the order the base config lists them:
 | `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-usb`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode` |
 | `brewberry-imager` | cloud-init for Imager's `cloudinit-rpi` customisation; disabled after first boot |
 | `brewberry-web` | Device web interface on port 8081 (server, root helper, command catalogue), the account password `pi`, `brewberry-passwd` (passwords kept on `/data`) |
+| `brewberry-share` | Samba file share of `/data/config` (ADR-0003): `smb.conf` (always on), `brewberry-share-sync` (smbd's start check and the PAM hook that keeps the share's password in step with `brewberry`'s), mDNS `_smb._tcp` |
 
 ## 3. Build host setup
 

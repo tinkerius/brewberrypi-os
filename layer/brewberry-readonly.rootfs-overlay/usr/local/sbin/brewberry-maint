@@ -110,6 +110,8 @@ cmd_upgrade() {
    sealed && die "the system is sealed: run brewberry-maint on first"
    confirm "This updates the OS packages (apt update, apt full-upgrade); services may restart. Run brewberry-maint off afterwards."
    export DEBIAN_FRONTEND=noninteractive
+   # Also for files kept by ucf instead of dpkg, such as Samba's smb.conf.
+   export UCF_FORCE_CONFFOLD=1
    apt-get update
    apt-get -y -o Dpkg::Options::=--force-confdef -o Dpkg::Options::=--force-confold full-upgrade
    log "packages updated; check that the BrewberryPi block is still in /boot/firmware/config.txt, then: brewberry-maint off"

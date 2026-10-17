@@ -1,0 +1,115 @@
+#!/bin/bash
+# Keeps the file share in step with the device (ADR-0003, OS10). Run as root,
+# by systemd and PAM, never by hand.
+#
+#   brewberry-share-sync start   before smbd starts: the files in /data/config
+#                                belong to brewberry, and the share's password
+#                                is the account's (or none, see below)
+#   brewberry-share-sync pam     PAM hook (pam_exec expose_authtok): the new
+#                                password of brewberry on stdin
+#
+# SMB needs its own password hash (NT hash), which can't be derived from the
+# account's yescrypt hash. So every password change through PAM (passwd, and
+# chpasswd in the device web interface) also sets the share's password, and
+# account-hash records which account hash it belongs to. At start, a share
+# password whose account hash no longer matches (changed without PAM, such as
+# Imager's hashed password) is removed: the share then refuses logins until
+# the password is set again. The default password 'pi' is recognised by the
+# build's hash (default-password.hash) and given to the share at first boot.
+set -euo pipefail
+# pam_exec passes only the PAM environment (no PATH); tests bring their fakes.
+[ -n "${BREWBERRY_SHARE_ROOT:-}" ] || export PATH=/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin
+
+PROG=brewberry-share-sync
+# BREWBERRY_LIB, BREWBERRY_SHARE_ROOT, BREWBERRY_SHARE_USER and
+# BREWBERRY_SHARE_GROUP are for tests (tests/unit/share.sh).
+# shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
+. "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
+R=${BREWBERRY_SHARE_ROOT:-}
+SHARE_USER=${BREWBERRY_SHARE_USER:-brewberry}
+SHARE_GROUP=${BREWBERRY_SHARE_GROUP:-$SHARE_USER}
+CONFIG_DIR=$R/data/config
+PRIVATE=$R/data/secrets/samba       # smb.conf's private dir
+RECORD=$PRIVATE/account-hash
+DEFAULT_HASH=$R/usr/share/brewberry/default-password.hash
+DEFAULT_PASSWORD=pi
+
+account_hash() {
+   awk -F: -v u="$SHARE_USER" '$1 == u { print $2 }' "$R/etc/shadow"
+}
+
+has_share_password() {
+   pdbedit -L 2> /dev/null | grep -q "^$SHARE_USER:"
+}
+
+set_share_password() { # <password>
+   # Explicit returns: the PAM hook calls this where set -e does not apply.
+   install -d -m 0700 "$PRIVATE" || return 1
+   printf '%s\n%s\n' "$1" "$1" | timeout 30 smbpasswd -s -a "$SHARE_USER" > /dev/null || return 1
+   (umask 077; account_hash | write_atomic "$RECORD")
+}
+
+remove_share_password() {
+   if has_share_password; then
+      timeout 30 smbpasswd -x "$SHARE_USER" > /dev/null
+   fi
+   rm -f "$RECORD"
+}
+
+# Files written as root (brewberry-config import, the seed config.json) would
+# be read-only on the share. Only wrong owners are changed, so a healthy /data
+# is not written to; -h changes a link itself, never what it points to.
+fix_owners() {
+   [ -d "$CONFIG_DIR" ] || return 0
+   find "$CONFIG_DIR" \( ! -user "$SHARE_USER" -o ! -group "$SHARE_GROUP" \) \
+      -exec chown -h "$SHARE_USER:$SHARE_GROUP" {} +
+}
+
+cmd_start() {
+   local hash
+   install -d -m 0700 "$PRIVATE"
+   fix_owners
+   hash=$(account_hash)
+   if [ -n "$hash" ] && has_share_password && [ -f "$RECORD" ] && [ "$(cat "$RECORD")" = "$hash" ]; then
+      return 0
+   fi
+   if [ -n "$hash" ] && [ -f "$DEFAULT_HASH" ] && [ "$(cat "$DEFAULT_HASH")" = "$hash" ]; then
+      set_share_password "$DEFAULT_PASSWORD"
+      log "the share's password is the default 'pi', like the account's"
+      return 0
+   fi
+   remove_share_password
+   log "the share has no password: brewberry's password was set without it (in Imager?)."
+   log "Set it again in the device web interface (Account; the same password is fine) or with passwd."
+}
+
+# Never fails: the password change itself has already happened.
+cmd_pam() {
+   local password=""
+   # Messages go to the journal; a missing or failed logger must not end
+   # the hook (no SIGPIPE).
+   trap '' PIPE
+   exec 2> >(logger -t "$PROG" 2> /dev/null || cat > /dev/null 2>&1)
+   [ "${PAM_TYPE:-}" = password ] && [ "${PAM_USER:-}" = "$SHARE_USER" ] || return 0
+   IFS= read -r -d '' password || true
+   if [ -z "$password" ] || [[ $password == *$'\n'* ]]; then
+      log "no usable password from PAM; the share keeps its old one"
+   elif ! mountpoint -q "$R/data"; then
+      log "/data is not mounted; the share gets the password at its next start only if it is 'pi'"
+   elif set_share_password "$password"; then
+      log "the share uses the new password of $SHARE_USER"
+   else
+      log "could not set the share's password; set the password again"
+   fi
+   return 0
+}
+
+if [ "${1:-}" = pam ]; then # pam_exec runs it as root; it never fails
+   cmd_pam || true
+   exit 0
+fi
+[ -n "$R" ] || [ "$(id -u)" = 0 ] || die "run as root"
+case ${1:-} in
+   start) cmd_start ;;
+   *) sed -n '2,10s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

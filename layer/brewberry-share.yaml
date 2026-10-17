@@ -1,0 +1,57 @@
+# METABEGIN
+# X-Env-Layer-Name: brewberry-share
+# X-Env-Layer-Category: app
+# X-Env-Layer-Desc: File share of the app's configuration (ADR-0003, OS10):
+#  Samba shares /data/config as \\<hostname>.local\config (SMB 3, signed, no
+#  guests, no NetBIOS) for the user brewberry, with the same password as the
+#  device web interface. A PAM hook sets the share's password on every
+#  password change (passwd, chpasswd); smbd's start check gives it the default
+#  'pi' at first boot and keeps the folder's files owned by brewberry.
+#  Always on; logs: brewberry-system logs share.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: brewberry-web,brewberry-readonly
+# METAEND
+---
+mmdebstrap:
+  packages:
+    - samba
+    # vfs_fruit, vfs_streams_xattr and vfs_catia for macOS (only recommended
+    # by samba, and the build installs no recommends).
+    - samba-vfs-modules
+    - libpam-runtime
+  customize-hooks:
+    - |-
+      set -eu
+      # brewberry-web has just given brewberry the default password 'pi'. Its
+      # hash tells brewberry-share-sync at boot that the password is still 'pi'.
+      hash=$(awk -F: '$1 == "brewberry" { print $2 }' "$1/etc/shadow")
+      case $hash in
+         '$'*) ;;
+         *) echo "brewberry-share: brewberry has no password hash" >&2; exit 1 ;;
+      esac
+      install -d "$1/usr/share/brewberry"
+      printf '%s\n' "$hash" > "$1/usr/share/brewberry/default-password.hash"
+    - |-
+      set -eu
+      # The PAM hook (usr/share/pam-configs/brewberry-share) goes into
+      # common-password, after pam_unix.
+      chroot "$1" env DEBIAN_FRONTEND=noninteractive pam-auth-update --package
+      grep -q 'brewberry-share-sync pam' "$1/etc/pam.d/common-password" || {
+         echo "brewberry-share: the PAM hook is not in common-password" >&2
+         exit 1
+      }
+    - |-
+      set -eu
+      # Only smbd: no NetBIOS (smb.conf also says so). smb.conf must load
+      # without unknown parameters (testparm only warns about those).
+      if [ -e "$1/usr/lib/systemd/system/nmbd.service" ]; then
+         systemctl --root="$1" disable nmbd.service
+      fi
+      out=$(chroot "$1" testparm -s --suppress-prompt /etc/samba/smb.conf 2>&1 > /dev/null) || {
+         printf '%s\n' "$out" >&2
+         exit 1
+      }
+      if printf '%s\n' "$out" | grep -i 'unknown parameter' >&2; then
+         exit 1
+      fi
+    - $BDEBSTRAP_HOOKS/enable-units "$1" smbd.service

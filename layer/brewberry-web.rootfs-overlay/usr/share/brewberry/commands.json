@@ -84,7 +84,7 @@
     {
       "id": "system.logs", "title": "Logs", "screen": "logs",
       "argv": ["brewberry-system", "logs", "{name}"],
-      "args": { "name": "^(app|safemode|firstload|outputs-off|web)$" }, "kind": "query"
+      "args": { "name": "^(app|safemode|firstload|outputs-off|web|share)$" }, "kind": "query"
     },
     {
       "id": "account.password", "title": "Change the password", "screen": "account",

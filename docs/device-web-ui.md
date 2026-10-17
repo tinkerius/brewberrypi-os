@@ -157,7 +157,7 @@ Every command of the user manual's command reference, plus the ones its other se
 | Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
 | USB stick | `usb.list`, `usb.install <version>`, `usb.import-config` | existing |
 | OS update | `maint.on`, `maint.off`, `maint.upgrade` | `upgrade` is new (§5.4): replaces `apt update && apt full-upgrade`; only in maintenance mode |
-| Logs | `system.logs <app\|safemode\|firstload\|outputs-off\|web>` | new (§5.4): replaces the manual's `journalctl` lines |
+| Logs | `system.logs <app\|safemode\|firstload\|outputs-off\|web\|share>` | new (§5.4): replaces the manual's `journalctl` lines |
 | Account | `account.password` | `webOnly`: CLI counterpart is `passwd` |
 
 ## 5. CLI changes
@@ -298,7 +298,8 @@ the next reboot. Two units fix this for `passwd` and the web interface alike:
 ### 7.4 Password change (WEB-06) and the reminder (WEB-07)
 
 - **Account** screen: current password, new password twice; at least 8 characters; the helper sets
-  it with `chpasswd` (yescrypt). The persistence unit (§7.2) saves it to `/data`.
+  it with `chpasswd` (yescrypt). The persistence unit (§7.2) saves it to `/data`. `chpasswd` goes
+  through PAM, so the file share's hook sets the share's password too (ADR-0003).
 - After each login the helper checks whether the hash still matches `pi`. If it does, every screen
   shows: "You are using the default password. Change it under *Account*." Everything keeps working;
   the change is never forced.

@@ -55,10 +55,16 @@ check_file() {
    jq empty "$1" 2> /dev/null || die "$2: not valid JSON; nothing imported"
 }
 
+# The folder's owner owns what is written into it: brewberry, so the file
+# share (ADR-0003) can change imported files too.
+own() { chown -h --reference="$CONFIG_DIR" "$@"; }
+
 # install_file <source> <target>: copy via a temp file and rename, so a power cut leaves the old or the new file.
 install_file() {
+   rm -f "$2.tmp"
    cp "$1" "$2.tmp"
    chmod 0644 "$2.tmp"
+   own "$2.tmp"
    sync "$2.tmp"
    mv "$2.tmp" "$2"
 }
@@ -118,6 +124,7 @@ cmd_import() { # <source>
    if [ -n "$files" ] && compgen -G "$CONFIG_DIR/*.json" > /dev/null; then
       mkdir -p "$backup"
       cp -p "$CONFIG_DIR"/*.json "$backup/"
+      own "$CONFIG_DIR/backup" "$backup"
    fi
    for f in $files; do
       install_file "$dir/$f" "$CONFIG_DIR/$f"
@@ -130,12 +137,14 @@ cmd_import() { # <source>
       new_recipes=$CONFIG_DIR/.recipes.new
       rm -rf "$new_recipes"
       mkdir -m 0755 "$new_recipes"
+      own "$new_recipes"
       for f in $recipes; do
          install_file "$dir/recipes/$f" "$new_recipes/$f"
       done
       sync "$new_recipes"
       if [ -d "$CONFIG_DIR/recipes" ]; then
          mkdir -p "$backup"
+         own "$CONFIG_DIR/backup" "$backup"
          mv "$CONFIG_DIR/recipes" "$backup/recipes"
       fi
       mv "$new_recipes" "$CONFIG_DIR/recipes"

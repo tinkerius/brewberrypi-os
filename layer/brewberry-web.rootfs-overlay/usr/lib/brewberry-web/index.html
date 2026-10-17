@@ -162,6 +162,13 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
           <button class="secondary" data-cmd="update.restart">Restart the app</button>
         </div>
       </div>
+      <div class="card">
+        <h2>File share</h2>
+        <p class="muted">This folder (<code>config.json</code>, <code>recipes/</code> and the import backups) is shared on the network:
+          open <code id="share-win"></code> in Windows Explorer, or <code id="share-url"></code> in macOS Finder (Go, Connect to Server) or a Linux file manager.
+          Log in as <code>brewberry</code> with the password of this page. Nothing checks a file saved there: the app reads its configuration at start,
+          so restart it after changing files, and look at <em>Current configuration</em> if it doesn't start.</p>
+      </div>
     </section>
 
     <section data-view="usb" class="hidden">
@@ -196,7 +203,7 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
           <select id="log-name">
             <option value="app">App</option><option value="outputs-off">Outputs switched off</option>
             <option value="safemode">Safe mode</option><option value="firstload">First app load</option>
-            <option value="web">Web interface and its actions</option>
+            <option value="web">Web interface and its actions</option><option value="share">File share</option>
           </select>
           <button data-cmd="system.logs">Show</button>
         </div>
@@ -353,6 +360,9 @@ const views = {
     if (app) showAppStatus($("#ver-status"), app);
   },
   async config() {
+    const host = location.hostname;
+    $("#share-win").textContent = `\\\\${host}\\config`;
+    $("#share-url").textContent = `smb://${host}/config`;
     const c = await query("config.show");
     if (!c) return;
     $("#cfg-summary").textContent = `Files: ${(c.files || []).join(", ") || "none"} · Recipes: ${c.builtinRecipes ? "the app's built-in catalogue" : ((c.recipes || []).join(", ") || "none")}`;

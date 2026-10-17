@@ -12,8 +12,8 @@ with version selection, rollback and safe mode.
 
 ## Layout
 
-- `docs/adr/`: decisions (copy `0000-template.md`). Start with `0001-os-image-and-app-runtime.md`; `0002-device-web-interface.md` adds the device web interface; `0003-config-file-share.md` the SMB share of `/data/config`.
-- `docs/implementation-plan.md`: milestones OS0–OS10.
+- `docs/adr/`: decisions (copy `0000-template.md`). Start with `0001-os-image-and-app-runtime.md`; `0002-device-web-interface.md` adds the device web interface; `0003-config-file-share.md` the SMB share of `/data/config`; `0004-wifi-setup-hotspot.md` (proposed) the Wi-Fi setup through a fallback hotspot.
+- `docs/implementation-plan.md`: milestones OS0–OS11.
 - `docs/device-web-ui.md`: design of the device web interface (OS9): `brewberry-web` on port 8081, root helper, command catalogue `/usr/share/brewberry/commands.json`, parity test.
 - `docs/research/`: research summary and raw JSON (claims with sources).
 - `docs/user-manual.md`: user manual for the OS (flashing, configuration, app versions, USB, OS updates, troubleshooting). Hardware, wiring and the app's config format belong in the app repo. Keep it in sync when commands or behaviour change.

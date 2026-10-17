@@ -2,7 +2,7 @@
 # it from the socket, runs only catalogue commands (no shell) and answers.
 # Long actions run as their own transient units (brewberry-job-*).
 [Unit]
-Description=BrewberryPi device web interface: root helper
+Description=BrewberryPi OS web interface: root helper
 After=data.mount brewberry-datalayout.service
 Requires=data.mount
 

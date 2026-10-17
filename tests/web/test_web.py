@@ -195,7 +195,7 @@ class WebTest(unittest.TestCase):
     def test_page_without_login(self):
         status, body, _ = self.request("GET", "/")
         self.assertEqual(status, 200)
-        self.assertIn(b"BrewberryPi device", body)
+        self.assertIn(b"BrewberryPi OS", body)
 
     def test_api_needs_a_session(self):
         self.assertEqual(self.request("GET", "/api/commands")[0], 401)

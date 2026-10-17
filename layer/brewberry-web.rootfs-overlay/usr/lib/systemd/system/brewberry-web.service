@@ -2,7 +2,7 @@
 # action goes to the root helper (brewberry-webcmd.socket), which runs only
 # catalogue commands.
 [Unit]
-Description=BrewberryPi device web interface (port 8081)
+Description=BrewberryPi OS web interface (port 8081)
 After=network.target brewberry-webcmd.socket brewberry-passwd-restore.service
 Wants=brewberry-webcmd.socket
 

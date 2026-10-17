@@ -3,14 +3,11 @@
 # OS10 hardware check (file share of /data/config, ADR-0003), run on the device as root:
 #
 #   ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os10-check.sh
-#   ssh <user>@brewberrypi.local 'sudo sh -s -- onoff' < tests/hardware/os10-check.sh
-#   (reboot)
-#   ssh <user>@brewberrypi.local 'sudo sh -s -- after-reboot' < tests/hardware/os10-check.sh
 #
-# run: smbd alone on port 445, the share's settings, its password in step with
-# brewberry's, file owners, the PAM hook, the outputs recorded at the app's
-# start. onoff: off and on again, then off; after-reboot: still off, then on.
-# The client side (log in from Windows, macOS or smbclient, change a file)
+# run: smbd alone on port 445 and restarted when it fails, the share's
+# settings, its password in step with brewberry's, file owners, the PAM hook,
+# the outputs recorded at the app's start. Run it again after a reboot. The
+# client side (log in from Windows, macOS or smbclient, change a file)
 # is in tests/hardware/README.md.
 set -u
 
@@ -21,11 +18,20 @@ check() { # <description> <command...>
 }
 param() { testparm -s --suppress-prompt --parameter-name="$1" 2>/dev/null; }
 listens() { ss -Hltn "sport = :$1" | grep -q .; }
+password_in_step() {
+   pdbedit -L | grep -q '^brewberry:' &&
+      test "$(cat /data/secrets/samba/account-hash)" = "$(awk -F: '$1 == "brewberry" { print $2 }' /etc/shadow)"
+}
+comes_back() { # smbd is restarted after a crash
+   systemctl kill -s KILL smbd.service
+   sleep 8
+   systemctl is-active --quiet smbd.service
+}
 owners_ok() { ! find /data/config \( ! -user brewberry -o ! -group brewberry \) | grep -q .; }
 modes_ok() { ! find /data/config -type f ! -perm 0644 | grep -q .; }
 
 run() {
-   check "smbd.service is active" systemctl is-active --quiet smbd.service
+   check "smbd.service is enabled and active" sh -c 'systemctl is-enabled --quiet smbd.service && systemctl is-active --quiet smbd.service'
    check "nmbd.service is not running (no NetBIOS)" sh -c '! systemctl is-active --quiet nmbd.service'
    check "port 445 is open" listens 445
    check "port 139 (NetBIOS) is closed" sh -c "! ss -Hltn 'sport = :139' | grep -q ."
@@ -36,7 +42,7 @@ run() {
    check "only one share: config" test "$(testparm -s --suppress-prompt 2>/dev/null | grep -c '^\[')" = 2
    check "the passdb is on /data" test -f /data/secrets/samba/passdb.tdb
    check "/data/secrets/samba is 0700" test "$(stat -c %a /data/secrets/samba)" = 700
-   check "the share has brewberry's password" sh -c 'brewberry-share status --json | jq -e ".password != \"missing\""'
+   check "the share has brewberry's password" password_in_step
    check "the PAM hook is in common-password" grep -q 'brewberry-share-sync pam' /etc/pam.d/common-password
    check "/data/config belongs to brewberry" owners_ok
    check "files in /data/config are 0644" modes_ok
@@ -49,32 +55,11 @@ run() {
       echo "SKIP  the running app's outputs are recorded (the app is not running)"
    fi
    check "brewberry-system logs share shows smbd" sh -c 'brewberry-system logs share --json | jq -e ".lines | length > 0"'
-}
-
-onoff() {
-   brewberry-share off
-   check "off: smbd stopped" sh -c '! systemctl is-active --quiet smbd.service'
-   check "off: port 445 closed" sh -c "! ss -Hltn 'sport = :445' | grep -q ."
-   check "off: marker on /data" test -e /data/secrets/samba/disabled
-   check "off: status says off" sh -c 'brewberry-share status --json | jq -e ".enabled == false"'
-   brewberry-share on
-   check "on: smbd running" systemctl is-active --quiet smbd.service
-   check "on: marker gone" test ! -e /data/secrets/samba/disabled
-   brewberry-share off
-   echo "The share is off now: reboot, then run 'after-reboot'."
-}
-
-after_reboot() {
-   check "after the reboot: still off" sh -c '! systemctl is-active --quiet smbd.service'
-   brewberry-share on
-   check "on again: smbd running" systemctl is-active --quiet smbd.service
-   run
+   check "smbd comes back after a kill -9" comes_back
 }
 
 case ${1:-} in
    run) run ;;
-   onoff) onoff ;;
-   after-reboot) after_reboot ;;
-   *) echo "usage: os10-check.sh run|onoff|after-reboot" >&2; exit 2 ;;
+   *) echo "usage: os10-check.sh run" >&2; exit 2 ;;
 esac
 exit "$fail"

@@ -11,7 +11,7 @@ ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
 CATALOGUE=$ROOT_DIR/layer/brewberry-web.rootfs-overlay/usr/share/brewberry/commands.json
 PAGE=$ROOT_DIR/layer/brewberry-web.rootfs-overlay/usr/lib/brewberry-web/index.html
 MANUAL=$ROOT_DIR/docs/user-manual.md
-CLIS="brewberry-update brewberry-usb brewberry-config brewberry-share brewberry-system brewberry-maint"
+CLIS="brewberry-update brewberry-usb brewberry-config brewberry-system brewberry-maint"
 
 failures=0
 same() { # <description> <set A> <set B>

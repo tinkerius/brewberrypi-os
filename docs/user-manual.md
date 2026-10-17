@@ -221,7 +221,7 @@ password of the device web interface (`pi` until you change it):
 | Linux | the file manager: `smb://brewberrypi.local/config`, or `smbclient //brewberrypi.local/config -U brewberry` |
 
 Use your hostname instead of `brewberrypi`, or the Pi's IP address. The **Configuration** page
-and `sudo brewberry-share status` show the address and whether the share is on.
+shows the address too. The share is always on.
 
 In the share you see `config.json`, `recipes/` (if there is one) and `backup/` with the files that
 imports replaced. Open, copy, change and delete files as on any network drive, then restart the
@@ -241,9 +241,8 @@ app. Keep in mind:
 - macOS keeps no `._` or `.DS_Store` files on the Pi; they don't disturb the app.
 
 The share speaks SMB 3 only, signs every request, and encrypts when the computer offers it (all
-current Windows, macOS and Linux versions do). There is no guest access. Turn it off, also across
-reboots, with **Share off** on the **Configuration** page or `sudo brewberry-share off`; turn it on
-again with `sudo brewberry-share on`.
+current Windows, macOS and Linux versions do). There is no guest access: anyone with the password
+can change the configuration, so [change the default password](#4-logging-in).
 
 ### From a USB stick
 
@@ -561,11 +560,11 @@ limit of 4 starts in 10 minutes too.
 
 ### The file share doesn't open, or refuses the password
 
-- The user is `brewberry` and the password is the one of the device web interface. `sudo
-  brewberry-share status` says whether the share is on and has a password.
-- *Password: none yet*: the password of `brewberry` was set without the share, for example by
-  Imager when your Imager user is called `brewberry`. Set it again under **Account** (the same
-  password is fine) or with `sudo passwd brewberry`; the share then takes it.
+- The user is `brewberry` and the password is the one of the device web interface.
+- The right password is refused, and `sudo brewberry-system logs share` says *the share has no
+  password*: the password of `brewberry` was set without the share, for example by Imager when
+  your Imager user is called `brewberry`. Set it again under **Account** (the same password is
+  fine) or with `sudo passwd brewberry`; the share then takes it.
 - Windows asks again and again: Windows offers its own account first. Enter `brewberry` as the
   user name; if Windows keeps a wrong saved password, remove it under *Credential Manager*.
 - The address isn't found: use the Pi's IP address (`\\192.168.1.23\config`). A firewall or VPN
@@ -623,9 +622,6 @@ All commands run as root (`sudo`). The device web interface offers each of them
 | `brewberry-config show` | The configuration the app reads, and its recipes |
 | `brewberry-config import <source>` | Check, back up and replace config files from a folder, a `.json` file or an export |
 | `brewberry-config export` | `/data/config` as `.tar.gz` on stdout (a backup) |
-| `brewberry-share status` | Whether the file share of `/data/config` is on, its address, whether it has a password |
-| `brewberry-share on` | Share `/data/config` on the network (the default) |
-| `brewberry-share off` | Stop sharing it, also after reboots |
 | `brewberry-maint status` | Sealed (normal) or in maintenance mode |
 | `brewberry-maint on` | Make the system writable for OS updates (reboots) |
 | `brewberry-maint upgrade` | In maintenance mode: `apt update` and `apt full-upgrade` |

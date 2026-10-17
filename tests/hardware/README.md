@@ -269,15 +269,12 @@ On any board, after OS9 (the web interface and the account). Over SSH with your 
 
 ```sh
 ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os10-check.sh
-ssh <user>@brewberrypi.local 'sudo sh -s -- onoff' < tests/hardware/os10-check.sh
-ssh <user>@brewberrypi.local 'sudo reboot'
-ssh <user>@brewberrypi.local 'sudo sh -s -- after-reboot' < tests/hardware/os10-check.sh
 ```
 
-`run` checks that only smbd runs (port 445, no NetBIOS), the share's settings (SMB 3, signing, no
-guests, one share), that its password belongs to the `brewberry` account, the PAM hook, the file
-owners in `/data/config`, and the outputs recorded when the app started. `onoff` and
-`after-reboot` check that `brewberry-share off` stops the share and keeps it off across a reboot.
+`run` checks that only smbd runs (port 445, no NetBIOS) and comes back after a `kill -9`, the
+share's settings (SMB 3, signing, no guests, one share), that its password belongs to the
+`brewberry` account, the PAM hook, the file owners in `/data/config`, and the outputs recorded
+when the app started. Run it again after a reboot.
 
 By hand, from another machine on the LAN:
 

@@ -7,7 +7,7 @@
 #  device web interface. A PAM hook sets the share's password on every
 #  password change (passwd, chpasswd); smbd's start check gives it the default
 #  'pi' at first boot and keeps the folder's files owned by brewberry.
-#  brewberry-share on|off|status turns it on and off.
+#  Always on; logs: brewberry-system logs share.
 # X-Env-Layer-Version: 1.0.0
 # X-Env-Layer-Requires: brewberry-web,brewberry-readonly
 # METAEND

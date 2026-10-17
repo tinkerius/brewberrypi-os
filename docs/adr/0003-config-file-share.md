@@ -66,9 +66,10 @@ We choose **option 1** with the account's password (option 5, last), in a new la
   account hash no longer matches is removed (logins fail until the password is set again); on a
   fresh image the build's hash of `pi` (`/usr/share/brewberry/default-password.hash`) gives the
   share `pi`.
-- **On and off:** `brewberry-share status|on|off` (catalogue `share.*`, Configuration screen,
-  user manual), on by default. Off is a marker on `/data` (`ConditionPathExists=!` on smbd), so it
-  lasts across reboots. Logs: `brewberry-system logs share`.
+- **Always on**, as the product owner decided (2026-10-17): no command to turn it off, so no new
+  operator command for CLI ⇄ web parity. smbd is restarted when it fails (`Restart=on-failure`).
+  The Configuration screen shows the address from the page's own host name. Logs:
+  `brewberry-system logs share`.
 - **Safety:** `brewberrypi.service` runs `brewberrypi-outputs-off --record` as `ExecStartPre=`: it
   writes the outputs of the config the app starts with to `/run/brewberrypi/outputs-started`. The
   reset after a stop drives those first, then the current config's other pins (and the defaults if
@@ -87,8 +88,9 @@ We choose **option 1** with the account's password (option 5, last), in a new la
     rollback, outputs off); there is no automatic backup of files changed in the share.
   - A power cut while a client writes can leave a truncated file.
   - Moving an output pin in the share doesn't warn about the boot-time `gpio=` pins, as imports do.
-  - A third network service (SMB, port 445): attack surface and memory (smbd, about 20–40 MB on a
-    Pi 3). NTLMv2 with the default password `pi` is weak against anyone on the LAN.
+  - A third network service (SMB, port 445) that can't be switched off: attack surface and memory
+    (smbd, about 20–40 MB on a Pi 3). NTLMv2 with the default password `pi` is weak against
+    anyone on the LAN.
   - A password set without PAM (Imager's hash for a user called `brewberry`) leaves the share
     without a password until it is set again.
   - Windows' Network view lists the Pi only with WS-Discovery, which is not installed; the

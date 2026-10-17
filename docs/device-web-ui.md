@@ -155,7 +155,6 @@ Every command of the user manual's command reference, plus the ones its other se
 | App versions | `update.list`, `update.install <version>`, `update.rollback`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi` |
 | Registry | `update.login` | gets non-interactive input (§5.4) |
 | Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
-| Configuration | `share.status`, `share.on`, `share.off` | the file share of `/data/config` ([ADR-0003](adr/0003-config-file-share.md), OS10), CLI `brewberry-share` |
 | USB stick | `usb.list`, `usb.install <version>`, `usb.import-config` | existing |
 | OS update | `maint.on`, `maint.off`, `maint.upgrade` | `upgrade` is new (§5.4): replaces `apt update && apt full-upgrade`; only in maintenance mode |
 | Logs | `system.logs <app\|safemode\|firstload\|outputs-off\|web\|share>` | new (§5.4): replaces the manual's `journalctl` lines |

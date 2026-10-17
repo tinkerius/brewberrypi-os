@@ -1,15 +1,13 @@
 #!/bin/bash
 # Tests for the file share (ADR-0003, OS10) with a fake root
-# (BREWBERRY_SHARE_ROOT) and fake pdbedit, smbpasswd, systemctl, hostname,
-# mountpoint and logger: brewberry-share-sync gives the share the default
+# (BREWBERRY_SHARE_ROOT) and fake pdbedit, smbpasswd, mountpoint and logger: brewberry-share-sync gives the share the default
 # password at first start, follows every password change through PAM, drops a
-# password that no longer belongs to the account and fixes file owners;
-# brewberry-share status, on and off. Run by scripts/lint.sh.
+# password that no longer belongs to the account and fixes file owners. Run by
+# scripts/lint.sh.
 set -euo pipefail
 
 ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
 SBIN=$ROOT_DIR/layer/brewberry-share.rootfs-overlay/usr/local/sbin
-SHARE=$SBIN/brewberry-share
 SYNC=$SBIN/brewberry-share-sync
 T=$(mktemp -d)
 trap 'rm -rf "$T"' EXIT
@@ -44,16 +42,6 @@ case $1 in
        rm -f "$FAKE/pw-$user" ;;
 esac
 FAKE
-cat > "$T/bin/systemctl" <<'FAKE'
-#!/bin/sh
-echo "systemctl $*" >> "$LOG"
-case $1 in
-   is-active) [ -e "$FAKE/active" ] ;;
-   start) touch "$FAKE/active" ;;
-   stop) rm -f "$FAKE/active" ;;
-esac
-FAKE
-printf '#!/bin/sh\necho brewberrypi\n' > "$T/bin/hostname"
 # shellcheck disable=SC2016  # $MOUNTED, $LOG and $* belong to the fake scripts
 printf '#!/bin/sh\nexec test -n "$MOUNTED"\n' > "$T/bin/mountpoint"
 # shellcheck disable=SC2016
@@ -80,7 +68,6 @@ pam() { # <stdin password> [user] [type]: what pam_exec runs, with its environme
 }
 smbpw() { cat "$FAKE/pw-$U" 2> /dev/null || echo none; }
 record() { cat "$PRIV/account-hash" 2> /dev/null || echo none; }
-pwstate() { "$SHARE" status --json | jq -r .password; }
 
 failures=0
 expect() { # <description> <got> <want>
@@ -89,10 +76,8 @@ expect() { # <description> <got> <want>
 run() { RC=0; "$@" > "$T/out" 2>&1 || RC=$?; }
 
 fixture
-expect "status before the first start: no password" "$(pwstate)" missing
 run "$SYNC" start
 expect "first start: the share gets the default password 'pi'" "$RC $(smbpw) $(record) $(stat -c %a "$PRIV")" "0 pi $DEFAULT_HASH 700"
-expect "status: default password" "$(pwstate)" default
 : > "$LOG"; run "$SYNC" start
 expect "next start: in step, the passdb is not written" "$RC $(grep -c smbpasswd "$LOG")" "0 0"
 
@@ -101,7 +86,6 @@ account '$y$j9T$new$hash'
 pam 'New pass 1:x' > /dev/null
 # shellcheck disable=SC2016
 expect "PAM hook: the share gets the new password (spaces kept)" "$(smbpw) $(record)" 'New pass 1:x $y$j9T$new$hash'
-expect "status: the account's password" "$(pwstate)" set
 run "$SYNC" start
 expect "start after a PAM change: kept" "$RC $(smbpw)" "0 New pass 1:x"
 
@@ -119,23 +103,8 @@ expect "PAM hook: never fails the password change" "$rc" 0
 # The account hash changed without PAM (Imager's hashed password, usermod -p).
 run "$SYNC" start
 expect "start: a password of an old account hash is removed" "$RC $(smbpw) $(record) $(grep -c '^' "$FAKE/passdb")" "0 none none 0"
-expect "status: no password" "$(pwstate)" missing
 grep -q "Set it again in the device web interface" "$T/out" && hint=yes || hint=no
 expect "start: says how to give the share a password" "$hint" yes
-
-fixture; "$SYNC" start > /dev/null 2>&1
-run "$SHARE" off
-expect "off: marker on /data, smbd stopped" "$RC $([ -e "$PRIV/disabled" ] && echo marker) $(tail -n 1 "$LOG")" \
-   "0 marker systemctl stop smbd.service"
-expect "status --json: off" "$("$SHARE" status --json | jq -c '[.enabled, .running, .user, .windows, .url]')" \
-   "[false,false,\"$U\",\"\\\\\\\\brewberrypi.local\\\\config\",\"smb://brewberrypi.local/config\"]"
-run "$SHARE" on
-expect "on: marker removed, smbd started" "$RC $([ -e "$PRIV/disabled" ] && echo marker || echo none) $(tail -n 1 "$LOG")" \
-   "0 none systemctl start smbd.service"
-expect "status: text" "$("$SHARE" status | sed -n '1,2p' | paste -sd '|')" \
-   'share:    on (running)|address:  \\brewberrypi.local\config (Windows), smb://brewberrypi.local/config (macOS, Linux)'
-run "$SHARE" restart
-expect "unknown subcommand: usage, exit 2" "$RC" 2
 
 # Files written as root (an import, the seed config) are given to brewberry.
 if [ "$(id -u)" = 0 ]; then

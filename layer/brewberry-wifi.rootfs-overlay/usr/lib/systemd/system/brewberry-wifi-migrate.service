@@ -1,0 +1,16 @@
+# First boot only (ADR-0004, OS11): Imager's Wi-Fi, which cloud-init wrote to
+# netplan, moves into /data/config/wifi.json before the system is sealed, so
+# wifi.json is the only place Wi-Fi is configured.
+[Unit]
+Description=BrewberryPi OS: move Imager's Wi-Fi settings into wifi.json
+ConditionPathExists=!/etc/cloud/cloud-init.disabled
+After=data.mount brewberry-datalayout.service cloud-init-local.service cloud-init-network.service cloud-init-main.service
+Before=brewberry-wifi.service brewberry-seal.service
+Requires=data.mount
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/brewberry-wifi-manager migrate
+
+[Install]
+WantedBy=multi-user.target

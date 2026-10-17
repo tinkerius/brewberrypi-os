@@ -1,6 +1,6 @@
 # ADR-0004: Wi-Fi setup through a fallback hotspot
 
-- **Status:** Proposed (milestone OS11, not yet implemented)
+- **Status:** Accepted (2026-10-17, implemented in OS11, not yet tested on hardware)
 - **Date:** 2026-10-17
 - **Deciders:** Benedikt Hauptmann (product owner); proposal by Claude Code
 
@@ -18,8 +18,9 @@ Product-owner decisions (2026-10-17):
 - Joining the hotspot opens the device web interface by itself, like a captive portal.
 - The networks are stored in a file in the configuration folder.
 - The app is reachable over the hotspot only once the user has given the hotspot a password.
-- The hotspot starts 10 s without a home connection; while it is up, the home network is tried
-  every 60 s.
+- The hotspot starts after about 90 s without a home connection. While it is up, the home networks
+  are tried every few minutes, only when one is configured and no phone or computer is connected
+  to the hotspot (first decided as 10 s and 60 s, changed the same day).
 - Imager's Wi-Fi setting stays in the flashing guide; on the first boot it moves into the file.
 
 Facts this ADR relies on:
@@ -49,8 +50,11 @@ Facts this ADR relies on:
   `show` prints only `config.json` and lists the other names. The app reads only `config.json`
   and its recipes from `/config`.
 - Phones and laptops detect captive portals over plain HTTP (Apple `captive.apple.com`, Android
-  `connectivitycheck.gstatic.com/generate_204`, Windows `www.msftconnecttest.com`), and newer
-  ones also read the portal address from DHCP option 114 (RFC 8910).
+  `connectivitycheck.gstatic.com/generate_204`, Windows `www.msftconnecttest.com`). DHCP option
+  114 (RFC 8910) names an RFC 8908 API, which must be HTTPS with a trusted certificate, so it is
+  of no use here.
+- Linux accepts a packet for any of its addresses on any interface, so blocking the app by the
+  hotspot's address alone would leave its other addresses reachable from the hotspot.
 
 ## Options considered
 
@@ -85,43 +89,52 @@ We choose **option 4** with option 5's last variant, in a new layer `brewberry-w
   }
   ```
 
-  A missing file means no networks and an open hotspot. A file that can't be read is treated the
-  same (logged, shown in the status), so the user can always reach the Pi to fix it. A path unit
-  applies changes at once.
+  `password` is the passphrase (8–63 characters) or the 64-digit hex key, empty for an open
+  network. A missing file means no networks and an open hotspot. A file that can't be read is
+  treated the same (logged, shown in the status), so the user can always reach the Pi to fix it;
+  `brewberry-wifi add` then backs it up and starts a new one. The CLI writes it `0600`, so the app
+  container can't read it (a file created in the share gets the share's `0644`). The service
+  reads it every 5 s, so a change in the share applies at once too.
 - **Profiles:** `brewberry-wifi` renders one NetworkManager profile per network, and the hotspot
   profile, into `/run/NetworkManager/system-connections/` (`0600`, root), and sets the country
   with `iw reg set`.
 - **Hotspot:** SSID = the host name (`brewberrypi` by default), 2.4 GHz, address `10.42.0.1/24`,
   IPv6 off. Open while `hotspot.password` is empty, WPA2-PSK when it is set (8–63 characters).
-- **Switching** (`brewberry-wifi.service`, a loop over `nmcli`, `Restart=always`):
+- **Switching** (`brewberry-wifi.service`: `brewberry-wifi-manager`, a loop over `nmcli` every
+  5 s, `Restart=always`):
   - With Ethernet connected there is no hotspot.
-  - Without networks in the file, the hotspot starts at once.
-  - With networks, NetworkManager tries them. When there has been no home connection, and no
-    attempt in progress, for **10 s** (after boot, after a failed attempt or after a drop), the
-    hotspot starts. A single attempt (association and DHCP) may take up to 30 s.
-  - While the hotspot is up and networks are configured, every **60 s** the hotspot is taken
-    down and the networks are tried; if none connects, the hotspot is back within 10 s. If the
-    driver can scan while it is a hotspot, a network is only tried when it is visible, so the
-    hotspot stays up while the home network is out of range.
-  - A network that fails with a wrong password is not retried until its entry changes: the user is
-    then on the hotspot to fix it, and a retry every 60 s would cut them off for nothing.
+  - Without usable networks in the file, the hotspot starts at once.
+  - With networks, NetworkManager connects to them by itself (`autoconnect`, in the file's order).
+    After **90 s** without a home connection (after boot or after a drop) the hotspot starts.
+  - While the hotspot is up, every **3 minutes** the home networks are tried, but only if one is
+    configured and no device is connected to the hotspot. The hotspot goes down, the Pi scans, and
+    each configured network in range (hidden ones always) gets one attempt of up to 30 s. If none
+    connects, the hotspot comes straight back.
+  - A network added or changed while the hotspot is up is tried 5 s later (the browser gets its
+    answer first), whoever is connected.
+  - A network that fails with a wrong password is not tried again, by the service or by
+    NetworkManager, until its entry changes or the Pi restarts: the user is on the hotspot to fix
+    it, and retries would cut them off for nothing.
   - The app and the GPIOs are never touched: a brew continues through every switch.
 - **Captive portal:** in hotspot mode NetworkManager's dnsmasq answers every name with
-  `10.42.0.1` and sends DHCP option 114. A small redirector on port 80 (part of `brewberry-web`,
+  `10.42.0.1`. A small redirector on port 80 (part of `brewberry-web`,
   socket-activated, unprivileged) answers every request with a redirect to the device web
   interface's Wi-Fi screen: `http://10.42.0.1:8081/` when it arrives on the hotspot, otherwise
   the request's own host name with port 8081 (so `http://brewberrypi.local/` works too). The
   login stays as it is (ADR-0002).
-- **Access over the hotspot:** while the hotspot is active and has no password, an nftables rule
-  (loaded and removed by a NetworkManager dispatcher script) drops connections to port 8080 that
-  arrive on the Wi-Fi interface. Ports 80, 8081 and 445 stay open. With a hotspot password the
-  rule isn't loaded, and the app can be used without a home network.
+- **Access over the hotspot:** while the hotspot is open, an nftables rule refuses connections to
+  the app's port (8080 and `server.port` from `config.json`) that arrive on the Wi-Fi interface,
+  over IPv4 and IPv6. The service loads it before it starts an open hotspot (no rule, no hotspot)
+  and removes it once the hotspot is down. Ports 80, 8081 and 445 stay open. With a hotspot
+  password there is no rule, and the app can be used without a home network.
 - **Operator command** (CLI ⇄ web parity, ADR-0002): `brewberry-wifi status|scan|add <ssid>|
   forget <ssid>|country <code>|hotspot-password`, with `--json` on queries; passwords on stdin,
-  never as arguments. `add` and `forget` explain that the browser loses its connection when the
-  Pi changes network, and where to find it afterwards; that text comes from the CLI. The web
-  interface gets a Wi-Fi screen, and the overview shows the network status. Catalogue, page and
-  the user manual's command reference change in the same commit (`tests/unit/parity.sh`).
+  never as arguments (an empty line: open). `add` explains that the browser loses its connection
+  when the Pi leaves the hotspot, and where to find it afterwards; `forget` of the network the Pi
+  is on asks first (the confirmation protocol, without the brew warning: the app keeps running).
+  Those texts come from the CLI. The web interface gets a Wi-Fi screen, and the overview shows the
+  network status. Catalogue, page and the user manual's command reference change in the same
+  commit (`tests/unit/parity.sh`). Logs: `brewberry-system logs wifi`.
 - **Imager's Wi-Fi:** stays in the flashing guide, optional. On the first boot, before the seal,
   `brewberry-wifi migrate` copies the networks and the regulatory domain from cloud-init's
   netplan file into `wifi.json` (keeping entries already there) and removes the Wi-Fi part of the
@@ -144,14 +157,17 @@ We choose **option 4** with option 5's last variant, in a new layer `brewberry-w
     and by the app container (it reads `/config`).
   - **Single radio:** after "connect", the hotspot and the page disappear; the user sees success
     only by finding the Pi on the home network. A failure shows only when the hotspot comes back.
-  - **60 s retries:** a phone on the hotspot loses it for up to about 40 s every minute while a
-    configured home network is in range but unreachable (or always, if the driver can't scan as a
-    hotspot); a slow router after a power cut gets 10 s before the hotspot starts.
+  - **Retries only without hotspot clients:** a phone that stays on the hotspot keeps the Pi off
+    the home network until it leaves (or the user adds the network again). A home network
+    that comes back a while after a power cut is found within about 3 minutes.
   - With several BrewberryPis on the default host name, their hotspots and `.local` names clash.
   - Without internet on the hotspot the clock isn't synchronised (no RTC on Pi 3/4).
   - Phones may send other traffic over mobile data while on a hotspot without internet; the Pi's
     own address still works.
-  - New packages: `dnsmasq-base`, `nftables`. A fourth listening service (port 80).
+  - New packages: `dnsmasq-base`, `nftables`. A fourth listening service (port 80, also on the
+    home network, where it only redirects to port 8081).
+  - WPA3-only (SAE) home networks are not supported (profiles use WPA-PSK, which covers WPA2 and
+    WPA2/WPA3 mixed mode).
   - Not yet tested on hardware: `brcmfmac` hotspot mode and scanning on Pi 3/4/5, `iw reg set` with
     its firmware, captive-portal pop-ups on iOS, Android, Windows and macOS, the netplan
     migration with Imager's file.

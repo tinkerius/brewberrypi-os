@@ -84,7 +84,37 @@
     {
       "id": "system.logs", "title": "Logs", "screen": "logs",
       "argv": ["brewberry-system", "logs", "{name}"],
-      "args": { "name": "^(app|safemode|firstload|outputs-off|web|share)$" }, "kind": "query"
+      "args": { "name": "^(app|safemode|firstload|outputs-off|web|share|wifi)$" }, "kind": "query"
+    },
+    {
+      "id": "wifi.status", "title": "Wi-Fi", "screen": "wifi",
+      "argv": ["brewberry-wifi", "status"], "kind": "query"
+    },
+    {
+      "id": "wifi.scan", "title": "Networks in range", "screen": "wifi",
+      "argv": ["brewberry-wifi", "scan"], "kind": "query", "timeout": 60
+    },
+    {
+      "id": "wifi.add", "title": "Add a network", "screen": "wifi",
+      "argv": ["brewberry-wifi", "add", "{ssid}"],
+      "args": { "ssid": "^[^-\\u0000-\\u001f\\u007f][^\\u0000-\\u001f\\u007f]{0,31}$" },
+      "stdin": "password", "stdinOptional": true, "kind": "action", "timeout": 60
+    },
+    {
+      "id": "wifi.forget", "title": "Forget the network", "screen": "wifi",
+      "argv": ["brewberry-wifi", "forget", "{ssid}"],
+      "args": { "ssid": "^[^-\\u0000-\\u001f\\u007f][^\\u0000-\\u001f\\u007f]{0,31}$" },
+      "kind": "action", "confirm": true
+    },
+    {
+      "id": "wifi.country", "title": "Wi-Fi country", "screen": "wifi",
+      "argv": ["brewberry-wifi", "country", "{code}"], "args": { "code": "^[A-Za-z]{2}$" },
+      "kind": "action"
+    },
+    {
+      "id": "wifi.hotspot-password", "title": "Hotspot password", "screen": "wifi",
+      "argv": ["brewberry-wifi", "hotspot-password"],
+      "stdin": "password", "stdinOptional": true, "kind": "action"
     },
     {
       "id": "account.password", "title": "Change the password", "screen": "account",

@@ -1,0 +1,28 @@
+# The redirect on port 80 (ADR-0004, OS11), started by brewberry-portal.socket.
+# Unprivileged, like the device web interface: it only answers with redirects.
+[Unit]
+Description=BrewberryPi OS: redirect from port 80 to the device web interface
+Requires=brewberry-portal.socket
+
+[Service]
+ExecStart=/usr/bin/python3 /usr/lib/brewberry-wifi/portal.py
+User=brewberry-web
+Group=brewberry-web
+Restart=always
+RestartSec=3
+NoNewPrivileges=true
+CapabilityBoundingSet=
+AmbientCapabilities=
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+RestrictNamespaces=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+SystemCallArchitectures=native
+MemoryMax=48M

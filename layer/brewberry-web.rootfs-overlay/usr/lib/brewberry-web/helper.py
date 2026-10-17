@@ -212,13 +212,17 @@ def op_run(req):
             return {"confirm": result["confirm"]}
         return {"exit": rc, "output": result, "stderr": err}
 
+    if cmd.get("confirm"):
+        argv = argv + ["--yes"]  # confirmed in the browser
     if cmd.get("job"):
-        return start_job(cmd["id"], argv + (["--yes"] if cmd.get("confirm") else []))
+        return start_job(cmd["id"], argv)
 
     stdin = None
     if cmd.get("stdin"):
-        value = req.get("stdin")
-        if not isinstance(value, str) or not value or "\n" in value:
+        # One line; empty only where the command gives it a meaning
+        # ("stdinOptional": an open network or hotspot).
+        value = req.get("stdin", "" if cmd.get("stdinOptional") else None)
+        if not isinstance(value, str) or (not value and not cmd.get("stdinOptional")) or "\n" in value or "\r" in value:
             raise Refused(f"{cmd['stdin']} missing")
         stdin = (value + "\n").encode()
     if cmd.get("upload"):

@@ -37,7 +37,8 @@ report() {
       echo "$h: ${n:-0} authorized key(s)"
    done
    for u in cloud-init-main cloud-init-local cloud-init-network cloud-config cloud-final \
-            brewberry-growdata brewberry-datalayout brewberry-firstload NetworkManager; do
+            brewberry-growdata brewberry-datalayout brewberry-firstload brewberry-wifi-migrate \
+            brewberry-wifi NetworkManager; do
       echo; echo "== journal: $u"; journalctl -b -u "$u" --no-pager -n 150
    done
    echo; echo "== /var/log/cloud-init.log (last 200 lines)"; tail -n 200 /var/log/cloud-init.log

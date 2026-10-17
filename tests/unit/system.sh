@@ -46,6 +46,9 @@ expect "logs outputs-off --json: only the reset's lines" "$("$SYSTEM" logs outpu
 run "$SYSTEM" logs share
 expect "logs share: smbd and the share's password hook" "$RC $(cat "$LOG")" \
    "0 journalctl -b --no-pager -o short-iso -n 200 _SYSTEMD_UNIT=smbd.service + SYSLOG_IDENTIFIER=brewberry-share-sync"
+run "$SYSTEM" logs wifi
+expect "logs wifi: the Wi-Fi service, its first-boot move and NetworkManager" "$RC $(cat "$LOG")" \
+   "0 journalctl -b --no-pager -o short-iso -n 200 -u brewberry-wifi.service -u brewberry-wifi-migrate.service -u NetworkManager.service"
 run "$SYSTEM" logs kernel
 expect "logs: unknown name refused" "$RC $(grep -c . "$LOG")" "1 0"
 run "$SYSTEM" logs app --lines 0

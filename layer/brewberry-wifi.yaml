@@ -1,0 +1,30 @@
+# METABEGIN
+# X-Env-Layer-Name: brewberry-wifi
+# X-Env-Layer-Category: app
+# X-Env-Layer-Desc: Wi-Fi setup without flashing settings (ADR-0004, OS11):
+#  the home networks from /data/config/wifi.json, and without one the setup
+#  hotspot <hostname> (open, or with a password) at 10.42.0.1, whose captive
+#  portal opens the device web interface's Wi-Fi page. An open hotspot keeps
+#  the app off it (nftables). brewberry-wifi is the operator command;
+#  Imager's Wi-Fi moves into wifi.json on the first boot.
+#  Logs: brewberry-system logs wifi.
+# X-Env-Layer-Version: 1.0.0
+# X-Env-Layer-Requires: brewberry-web,brewberry-readonly
+# METAEND
+---
+mmdebstrap:
+  packages:
+    # DHCP and DNS for NetworkManager's shared (hotspot) connections.
+    - dnsmasq-base
+    - nftables
+  customize-hooks:
+    - |-
+      set -eu
+      # NetworkManager runs dnsmasq itself; the nftables service would load
+      # /etc/nftables.conf, which BrewberryPi OS doesn't use.
+      if [ -e "$1/usr/lib/systemd/system/nftables.service" ]; then
+         systemctl --root="$1" disable nftables.service
+      fi
+      chroot "$1" python3 -m py_compile /usr/lib/brewberry-wifi/portal.py
+      rm -rf "$1/usr/lib/brewberry-wifi/__pycache__"
+    - $BDEBSTRAP_HOOKS/enable-units "$1" brewberry-wifi.service brewberry-wifi-migrate.service brewberry-portal.socket

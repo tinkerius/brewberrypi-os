@@ -1,0 +1,230 @@
+#!/bin/bash
+# Wi-Fi: the home networks and the setup hotspot (ADR-0004, OS11). Run as root.
+#
+#   brewberry-wifi status            connection, hotspot, configured networks, last attempt
+#   brewberry-wifi scan              Wi-Fi networks in range
+#   brewberry-wifi add <ssid>        add or change a network; its password on stdin
+#                                    (an empty line: an open network)
+#   brewberry-wifi forget <ssid>     remove a network
+#   brewberry-wifi country <code>    the Wi-Fi country, two letters such as DE
+#   brewberry-wifi hotspot-password  the hotspot's password on stdin, 8 to 63
+#                                    characters (an empty line: an open hotspot)
+#
+# Options: --json (status, scan), --yes (forget). The settings are in
+# /data/config/wifi.json (also in the file share); brewberry-wifi.service
+# applies changes within seconds. Without a home network the Pi opens the
+# hotspot <hostname>, with the device web interface at http://10.42.0.1:8081/.
+# An open hotspot keeps the app off it; with a password the app works over it.
+# shellcheck disable=SC2016  # jq programs in single quotes
+set -euo pipefail
+
+PROG=brewberry-wifi
+# BREWBERRY_LIB, BREWBERRY_WIFI_LIB, BREWBERRY_WIFI_ROOT and
+# BREWBERRY_WIFI_OWNER are for tests (tests/unit/wifi.sh).
+# shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
+. "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
+R=${BREWBERRY_WIFI_ROOT:-}
+# shellcheck source=layer/brewberry-wifi.rootfs-overlay/usr/lib/brewberry/wifi.sh
+. "${BREWBERRY_WIFI_LIB:-/usr/lib/brewberry}/wifi.sh"
+APP_CONFIG=$R/data/config/config.json
+
+service_state() { jq -c . "$WIFI_STATE" 2> /dev/null || echo '{}'; }
+
+read_secret() { # <prompt>: one line from stdin, not echoed on a terminal
+   local s=""
+   if [ -t 0 ]; then
+      IFS= read -r -s -p "$1: " s || true
+      echo >&2
+   else
+      IFS= read -r s || true
+   fi
+   printf '%s' "$s"
+}
+
+# The settings for a change: an unusable wifi.json is backed up, and the
+# change starts from empty settings.
+settings_for_change() {
+   local backup
+   wifi_read
+   if [ -n "$WIFI_ERROR" ]; then
+      backup=$WIFI_BACKUP_DIR/$(date -u +%Y%m%dT%H%M%SZ)
+      mkdir -p "$backup"
+      cp -p "$WIFI_FILE" "$backup/wifi.json"
+      chown "$WIFI_OWNER" "$WIFI_BACKUP_DIR" "$backup" "$backup/wifi.json"
+      log "$WIFI_ERROR; it was moved to ${backup#"$R"}/wifi.json, and new settings start empty"
+   fi
+}
+
+# Networks in range: a fresh scan, or the service's last one while the
+# hotspot is up (the Wi-Fi can't scan then).
+scan_json() {
+   local dev nets
+   dev=$(wifi_device)
+   if [ -n "$dev" ] && nets=$(wifi_scan_live "$dev") && [ "$nets" != "[]" ]; then
+      jq -n -c --argjson n "$nets" '{networks: $n, cached: false, time: null}'
+   elif [ -f "$WIFI_SCAN" ]; then
+      jq -c '{networks, cached: true, time: (.time | todate)}' "$WIFI_SCAN"
+   else
+      echo '{"networks":[],"cached":false,"time":null}'
+   fi
+}
+
+status_json() {
+   local dev mode="waiting" network="" eth=false clients=0 addrs="" svc st
+   dev=$(wifi_device)
+   wifi_read
+   st=$(service_state)
+   ethernet_connected && eth=true
+   if [ -z "$dev" ]; then
+      mode=no-wifi
+   else
+      wifi_device_state "$dev"
+      addrs=$(wifi_addresses "$dev")
+      if [ "$DEV_CON" = "$HOTSPOT_ID" ]; then
+         mode=hotspot
+         clients=$(wifi_clients "$dev")
+      elif [ "$DEV_STATE" = 100 ] && [ -n "$DEV_CON" ]; then
+         mode=home
+         network=$(wifi_connection_ssid "$DEV_CON")
+      fi
+      [ "$mode" = hotspot ] || [ "$eth" = false ] || mode=ethernet
+   fi
+   svc=$(systemctl is-active brewberry-wifi.service 2> /dev/null || true)
+   jq -n -c --arg mode "$mode" --arg dev "$dev" --arg network "$network" --arg addrs "$addrs" \
+      --argjson eth "$eth" --argjson clients "${clients:-0}" --arg hs "$(wifi_hotspot_ssid)" \
+      --arg hsaddr "$HOTSPOT_ADDRESS" --argjson cfg "$WIFI_JSON" --arg err "$WIFI_ERROR" \
+      --argjson st "$st" --arg svc "${svc:-unknown}" '
+      def ornull: if . == "" then null else . end;
+      {mode: $mode, device: ($dev | ornull), network: ($network | ornull),
+       addresses: ($addrs | split("\n") | map(select(. != ""))), ethernet: $eth,
+       hotspot: {ssid: $hs, address: $hsaddr, open: ($cfg.hotspot.password == ""), active: ($mode == "hotspot"),
+                 clients: $clients, appBlocked: ($mode == "hotspot" and $cfg.hotspot.password == "")},
+       country: $cfg.country,
+       networks: [$cfg.networks[] | {ssid, open: (.password == ""), hidden,
+                  problem: ($st.failed[.ssid].reason // null)}],
+       last: (if $st.last then $st.last | .time |= todate else null end),
+       fileError: ($err | ornull), service: $svc}'
+}
+
+cmd_status() {
+   local s
+   s=$(status_json)
+   if [ "$JSON" = 1 ]; then
+      echo "$s"
+      return
+   fi
+   jq -r '
+      def mode:
+         if .mode == "home" then "home network \"\(.network)\" (\(.addresses | join(" ")))"
+         elif .mode == "hotspot" then "hotspot \"\(.hotspot.ssid)\" at \(.hotspot.address), "
+            + (if .hotspot.open then "open: the app is blocked on it" else "with a password" end)
+            + ", \(.hotspot.clients) device(s) connected"
+         elif .mode == "ethernet" then "Ethernet (\(.addresses | join(" ")))"
+         elif .mode == "no-wifi" then "no Wi-Fi device"
+         else "waiting for a home network (the hotspot opens after 90 s without one)" end;
+      "wifi:      \(mode)",
+      "country:   \(.country // "not set (worldwide channels only)")",
+      "networks:  \(if (.networks | length) == 0 then "none" else
+         [.networks[] | .ssid + (if .open then " (open)" else "" end) + (if .hidden then " (hidden)" else "" end)
+            + (if .problem then " (\(.problem): change it to try again)" else "" end)] | join(", ") end)",
+      (if .last then "last try:  \(.last.time) \(.last.result): \(.last.message)" else empty end),
+      (if .fileError then "wifi.json: \(.fileError); the Pi uses no networks and an open hotspot" else empty end),
+      (if .service != "active" then "service:   brewberry-wifi.service is \(.service)" else empty end)' <<< "$s"
+}
+
+cmd_scan() {
+   local s
+   s=$(scan_json)
+   if [ "$JSON" = 1 ]; then
+      echo "$s"
+      return
+   fi
+   jq -r '(if .cached then "(the hotspot is up: networks seen at \(.time))" else empty end),
+      (if (.networks | length) == 0 then "no networks found" else
+         (.networks[] | "\(.signal | tostring | (" " * (3 - length)) + .)  \(if .security == "" then "open" else .security end)  \(.ssid)") end)' <<< "$s"
+}
+
+cmd_add() { # <ssid>
+   local ssid=$1 problem password hidden new mode
+   problem=$(wifi_ssid_problem "$ssid")
+   [ -z "$problem" ] || die "$problem"
+   password=$(read_secret "Password of '$ssid' (empty: an open network)")
+   problem=$(wifi_key_problem "$password" password)
+   [ -z "$problem" ] || die "$problem"
+   # A network that isn't in range now may be hidden; probing for it does no harm.
+   hidden=true
+   if scan_json | jq -e --arg s "$ssid" 'any(.networks[]; .ssid == $s)' > /dev/null; then
+      hidden=false
+   fi
+   wifi_lock
+   settings_for_change
+   new=$(jq -c --arg s "$ssid" --arg p "$password" --argjson h "$hidden" \
+      '.networks = [{ssid: $s, password: $p, hidden: $h}] + [.networks[] | select(.ssid != $s)]' <<< "$WIFI_JSON")
+   wifi_write "$new"
+   mode=$(status_json | jq -r .mode)
+   if [ "$mode" = hotspot ]; then
+      log "saved '$ssid'. In a few seconds the Pi closes its hotspot '$(wifi_hotspot_ssid)' and joins '$ssid'." \
+         "Connect this device to '$ssid' too, and open http://$(hostname).local:8081/." \
+         "If the Pi can't join it, the hotspot comes back within a minute, and the Wi-Fi page says why."
+   else
+      log "saved '$ssid'. The Pi tries it first whenever it isn't connected (now: $mode)."
+   fi
+}
+
+cmd_forget() { # <ssid>
+   local ssid=$1 s
+   wifi_read
+   [ -z "$WIFI_ERROR" ] || die "$WIFI_ERROR; fix it in the file share, or add a network to start again"
+   jq -e --arg s "$ssid" 'any(.networks[]; .ssid == $s)' <<< "$WIFI_JSON" > /dev/null ||
+      die "'$ssid' is not one of the configured networks"
+   s=$(status_json)
+   if [ "$(jq -r --arg s "$ssid" '.mode == "home" and .network == $s' <<< "$s")" = true ]; then
+      confirm "The Pi is connected to '$ssid'. Forgetting it disconnects the Pi, so this page loses its connection; the Pi joins another configured network, or opens its hotspot '$(wifi_hotspot_ssid)' after 90 s." --no-brew
+   fi
+   wifi_lock
+   wifi_read
+   wifi_write "$(jq -c --arg s "$ssid" '.networks |= map(select(.ssid != $s))' <<< "$WIFI_JSON")"
+   log "forgot '$ssid'"
+}
+
+cmd_country() { # <code>
+   local code
+   code=$(tr '[:lower:]' '[:upper:]' <<< "$1")
+   [[ $code =~ ^[A-Z]{2}$ ]] || die "the country is two letters, such as DE (ISO 3166)"
+   wifi_lock
+   settings_for_change
+   wifi_write "$(jq -c --arg c "$code" '.country = $c' <<< "$WIFI_JSON")"
+   log "Wi-Fi country: $code"
+}
+
+cmd_hotspot_password() {
+   local password problem ssid mode
+   password=$(read_secret "Hotspot password (8 to 63 characters; empty: an open hotspot)")
+   problem=$(wifi_key_problem "$password" "hotspot password")
+   [ -z "$problem" ] || die "$problem"
+   [[ ! $password =~ ^[0-9A-Fa-f]{64}$ ]] || die "the hotspot password has 8 to 63 characters"
+   wifi_lock
+   settings_for_change
+   wifi_write "$(jq -c --arg p "$password" '.hotspot.password = $p' <<< "$WIFI_JSON")"
+   ssid=$(wifi_hotspot_ssid)
+   if [ -z "$password" ]; then
+      log "the hotspot '$ssid' is open: anyone nearby can join it, and the app is blocked on it."
+   else
+      log "the hotspot '$ssid' needs this password now, and the app can be used over it."
+   fi
+   mode=$(status_json | jq -r .mode)
+   [ "$mode" != hotspot ] || log "The hotspot restarts in a few seconds: join '$ssid' again."
+}
+
+[ -n "$R" ] || [ "$(id -u)" = 0 ] || die "run as root"
+parse_opts "$@"
+set -- "${ARGS[@]+"${ARGS[@]}"}"
+case ${1:-} in
+   status) [ $# -eq 1 ] || die "usage: brewberry-wifi status [--json]"; cmd_status ;;
+   scan) [ $# -eq 1 ] || die "usage: brewberry-wifi scan [--json]"; cmd_scan ;;
+   add) [ $# -eq 2 ] || die "usage: brewberry-wifi add <ssid> (password on stdin)"; cmd_add "$2" ;;
+   forget) [ $# -eq 2 ] || die "usage: brewberry-wifi forget <ssid>"; cmd_forget "$2" ;;
+   country) [ $# -eq 2 ] || die "usage: brewberry-wifi country <code>"; cmd_country "$2" ;;
+   hotspot-password) [ $# -eq 1 ] || die "usage: brewberry-wifi hotspot-password (password on stdin)"; cmd_hotspot_password ;;
+   *) sed -n '2,11s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

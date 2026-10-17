@@ -90,6 +90,7 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
     </section>
     <nav id="tabs">
       <button data-screen="overview">Overview</button>
+      <button data-screen="wifi">Wi-Fi</button>
       <button data-screen="versions">App versions</button>
       <button data-screen="config">Configuration</button>
       <button data-screen="usb">USB stick</button>
@@ -106,6 +107,58 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
           <div class="row"><button class="secondary" data-cmd="system.info">Refresh</button></div></div>
         <div class="card"><h2>System</h2><dl id="ov-maint"></dl>
           <div class="row"><button class="secondary" data-cmd="maint.status">Refresh</button></div></div>
+        <div class="card"><h2>Wi-Fi</h2><dl id="ov-wifi"></dl>
+          <div class="row"><button class="secondary" data-cmd="wifi.status">Refresh</button></div></div>
+      </div>
+    </section>
+
+    <section data-view="wifi" class="hidden">
+      <div id="wifi-banner" class="banner warn hidden"></div>
+      <div class="card">
+        <h2>Connection</h2>
+        <dl id="wifi-status"></dl>
+        <div class="row"><button class="secondary" data-cmd="wifi.status">Refresh</button></div>
+      </div>
+      <div class="card">
+        <h2>Networks</h2>
+        <p class="muted">The Pi joins the first of these it can reach. Without one for 90 s it opens its own
+          hotspot <strong class="wifi-hs"></strong>; join it and this page opens (or go to <code>http://10.42.0.1:8081/</code>).
+          While the hotspot is up, the Pi looks for these networks every 3 minutes when no device is connected to it.</p>
+        <table id="wifi-networks"></table>
+      </div>
+      <div class="card">
+        <h2>Add a network</h2>
+        <div class="row"><button class="secondary" data-cmd="wifi.scan">Look for networks</button></div>
+        <p id="wifi-scan-note" class="muted hidden"></p>
+        <table id="wifi-scan"></table>
+        <form id="wifiform">
+          <label for="wifi-ssid">Network name (SSID)</label>
+          <input type="text" id="wifi-ssid" autocomplete="off" maxlength="32" required style="width:100%">
+          <label for="wifi-password">Password (empty for an open network)</label>
+          <input type="password" id="wifi-password" autocomplete="off" maxlength="64" style="width:100%">
+          <div class="row"><button type="submit" data-cmd="wifi.add">Save and connect</button></div>
+        </form>
+        <p class="muted">If you reached this page through the hotspot, the hotspot closes a few seconds after saving while the Pi joins the network:
+          connect this device to the same network and open <code id="wifi-home-url"></code>. If the Pi can't join it,
+          the hotspot comes back within a minute, and this page says why.</p>
+      </div>
+      <div class="card">
+        <h2>Wi-Fi country</h2>
+        <p class="muted">Which channels the Pi may use. Without it, a network on 5 GHz or on channels 12 and 13 may not be found.</p>
+        <div class="row">
+          <input type="text" id="wifi-country" maxlength="2" size="3" placeholder="DE" autocomplete="off">
+          <button class="secondary" data-cmd="wifi.country">Set the country</button>
+        </div>
+      </div>
+      <div class="card">
+        <h2>Hotspot password</h2>
+        <p class="muted">An open hotspot lets anyone nearby join it, so the app (port 8080) is blocked on it: only setup works there.
+          With a password (8 to 63 characters) the app can be used over the hotspot too, for brewing without a home network.
+          Leave the field empty to make the hotspot open again.</p>
+        <form id="hotspotform">
+          <input type="password" id="hotspot-password" autocomplete="new-password" maxlength="63" style="width:100%">
+          <div class="row"><button type="submit" data-cmd="wifi.hotspot-password">Set the hotspot password</button></div>
+        </form>
       </div>
     </section>
 
@@ -204,6 +257,7 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
             <option value="app">App</option><option value="outputs-off">Outputs switched off</option>
             <option value="safemode">Safe mode</option><option value="firstload">First app load</option>
             <option value="web">Web interface and its actions</option><option value="share">File share</option>
+            <option value="wifi">Wi-Fi</option>
           </select>
           <button data-cmd="system.logs">Show</button>
         </div>
@@ -344,7 +398,7 @@ function waitForReboot() {
 // --- screens -----------------------------------------------------------------
 const views = {
   async overview() {
-    const [app, sys, maint] = await Promise.all([query("update.status"), query("system.info"), query("maint.status")]);
+    const [app, sys, maint, wifi] = await Promise.all([query("update.status"), query("system.info"), query("maint.status"), query("wifi.status")]);
     if (app) showAppStatus($("#ov-app"), app);
     if (sys && sys.os) {
       const up = sys.uptimeSeconds || 0;
@@ -354,6 +408,34 @@ const views = {
       $("#hostinfo").textContent = `${sys.hostname} · ${sys.os.version}`;
     }
     if (maint) showMaint($("#ov-maint"), maint);
+    if (wifi) showWifi($("#ov-wifi"), wifi);
+  },
+  async wifi() {
+    const w = await query("wifi.status");
+    if (!w) return;
+    // On the hotspot the page has the hotspot's address; at home the Pi has its name (the hotspot's SSID).
+    $("#wifi-home-url").textContent = `http://${location.hostname === w.hotspot.address ? w.hotspot.ssid + ".local" : location.hostname}:8081/`;
+    showWifi($("#wifi-status"), w);
+    for (const el of $$(".wifi-hs")) el.textContent = w.hotspot.ssid;
+    if (w.country) $("#wifi-country").value = w.country;
+    const banner = $("#wifi-banner");
+    const notes = [];
+    if (w.fileError) notes.push(`${w.fileError}. The Pi uses no networks and an open hotspot until it is fixed (in the file share), or until you add a network here.`);
+    if (w.hotspot.appBlocked) notes.push("You are on the open hotspot: the app is blocked here. Add your home network below, or give the hotspot a password to use the app over it.");
+    banner.textContent = notes.join(" ");
+    banner.classList.toggle("hidden", !notes.length);
+    const t = $("#wifi-networks");
+    t.replaceChildren();
+    for (const n of w.networks) {
+      const tr = t.insertRow();
+      const flags = [n.open ? "open" : "", n.hidden ? "hidden" : "", n.problem ? `${n.problem}: add it again with the right password` : ""].filter(Boolean);
+      tr.insertCell().textContent = n.ssid + (n.ssid === w.network ? "  (connected)" : "") + (flags.length ? `  (${flags.join(", ")})` : "");
+      const b = document.createElement("button");
+      b.textContent = "Forget"; b.className = "secondary";
+      b.dataset.cmd = "wifi.forget"; b.dataset.argSsid = n.ssid;
+      tr.insertCell().append(b);
+    }
+    if (!w.networks.length) t.insertRow().insertCell().textContent = "No networks yet.";
   },
   async versions() {
     const app = await query("update.status");
@@ -383,6 +465,21 @@ function showAppStatus(dl, s) {
     ["Engine", s.engine || "not answering"], ["Demo mode", s.demo ? "on" : "off"],
     ["Last action", s.last ? `${s.last.phase}: ${s.last.message} (${s.last.time})` : null],
     ["Safe mode", s.safemode ? `switched at ${s.safemode.time}` : "no"]]);
+}
+
+function showWifi(dl, w) {
+  const modes = {
+    home: `home network ${w.network} (${(w.addresses || []).join(" ")})`,
+    hotspot: `hotspot ${w.hotspot.ssid} at ${w.hotspot.address}, ${w.hotspot.open ? "open: the app is blocked on it" : "with a password"}`,
+    ethernet: `Ethernet (${(w.addresses || []).join(" ")})`,
+    waiting: "waiting for a home network",
+    "no-wifi": "no Wi-Fi device",
+  };
+  fill(dl, [["Connection", modes[w.mode] || w.mode],
+    ["Hotspot devices", w.mode === "hotspot" ? w.hotspot.clients : undefined],
+    ["Country", w.country || "not set"],
+    ["Last try", w.last ? `${w.last.time}: ${w.last.result === "connected" ? "connected to " + w.last.network : w.last.message}` : undefined],
+    ["Service", w.service !== "active" ? w.service : undefined]]);
 }
 
 function showMaint(dl, m) {
@@ -429,7 +526,44 @@ async function onCommand(el) {
   el.disabled = true;
   try {
     switch (id) {
-      case "update.status": case "system.info": case "maint.status": case "config.show": refresh(); break;
+      case "update.status": case "system.info": case "maint.status": case "config.show": case "wifi.status": refresh(); break;
+      case "wifi.scan": {
+        const out = await query(id);
+        const t = $("#wifi-scan");
+        t.replaceChildren();
+        if (!out) break;
+        const note = $("#wifi-scan-note");
+        note.textContent = out.cached ? `The hotspot is up, so the Pi can't look now: networks seen at ${out.time}.` : "";
+        note.classList.toggle("hidden", !out.cached);
+        for (const n of out.networks || []) {
+          const tr = t.insertRow();
+          tr.insertCell().textContent = `${n.ssid}  (${n.security || "open"}, signal ${n.signal})`;
+          const b = document.createElement("button");
+          b.type = "button"; b.textContent = "Use"; b.className = "secondary";
+          b.addEventListener("click", () => { $("#wifi-ssid").value = n.ssid; $("#wifi-password").focus(); });
+          tr.insertCell().append(b);
+        }
+        if (!(out.networks || []).length) t.insertRow().insertCell().textContent = "No networks found.";
+        break;
+      }
+      case "wifi.add": {
+        const ssid = $("#wifi-ssid").value;
+        if (!ssid) { message("Enter the network name.", "warn"); break; }
+        await action(id, { ssid }, { stdin: $("#wifi-password").value });
+        $("#wifi-password").value = "";
+        break;
+      }
+      case "wifi.country": {
+        const code = $("#wifi-country").value.trim();
+        if (!/^[A-Za-z]{2}$/.test(code)) { message("The country is two letters, such as DE.", "warn"); break; }
+        await action(id, { code });
+        break;
+      }
+      case "wifi.hotspot-password": {
+        await action(id, {}, { stdin: $("#hotspot-password").value });
+        $("#hotspot-password").value = "";
+        break;
+      }
       case "update.list": {
         const out = await query(id);
         const t = $("#ver-list");

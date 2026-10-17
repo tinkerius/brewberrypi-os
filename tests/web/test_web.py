@@ -42,6 +42,10 @@ case "$(basename "$0") $1" in
    "brewberry-config import") (cd "$2" 2>/dev/null && find . -type f | sort || echo "file:$(basename "$2")") >> "$FAKE/imported"; echo "imported" >&2 ;;
    "brewberry-config export") printf 'TARDATA' ;;
    "brewberry-system logs") echo '{"name": "'"$2"'", "lines": ["one"]}' ;;
+   "brewberry-wifi add") IFS= read -r pw; printf '%s' "$pw" > "$FAKE/wifi-password"; echo "saved $2" >&2 ;;
+   "brewberry-wifi forget")
+      if [ "$2" = Home ] && [ $yes = 0 ]; then echo '{"confirm": "The Pi is connected to Home."}'; exit 10; fi
+      echo "forgot $2" >&2 ;;
    *) echo '{}' ;;
 esac
 """
@@ -104,7 +108,7 @@ class WebTest(unittest.TestCase):
         bindir = os.path.join(t, "bin")
         os.makedirs(cls.fake)
         os.makedirs(bindir)
-        for name in ("brewberry-update", "brewberry-usb", "brewberry-config", "brewberry-system", "brewberry-maint"):
+        for name in ("brewberry-update", "brewberry-usb", "brewberry-config", "brewberry-system", "brewberry-maint", "brewberry-wifi"):
             cls._script(os.path.join(bindir, name), FAKE_CLI)
         cls._script(os.path.join(bindir, "systemd-run"), FAKE_SYSTEMD_RUN)
         cls._script(os.path.join(bindir, "systemctl"), FAKE_SYSTEMCTL)
@@ -278,6 +282,34 @@ class WebTest(unittest.TestCase):
             self.assertEqual(f.read(), "ghp_secret\n")
         self.assertIn("brewberry-update login --username tinkerius --password-stdin", self.log())
         self.assertNotIn("ghp_secret", self.log())
+
+    def test_wifi_password_on_stdin_empty_for_an_open_network(self):
+        status, data = self.api("POST", "/api/run/wifi.add", {"args": {"ssid": "Mein WLAN"}, "stdin": "secret pass"})
+        self.assertEqual((status, data["stderr"]), (200, "saved Mein WLAN\n"))
+        with open(os.path.join(self.fake, "wifi-password")) as f:
+            self.assertEqual(f.read(), "secret pass")
+        self.assertNotIn("secret pass", self.log())
+        status, data = self.api("POST", "/api/run/wifi.add", {"args": {"ssid": "Guest"}, "stdin": ""})
+        self.assertEqual(status, 200)
+        with open(os.path.join(self.fake, "wifi-password")) as f:
+            self.assertEqual(f.read(), "")
+        # Other commands still need their secret.
+        self.assertEqual(self.api("POST", "/api/run/update.login", {"args": {"username": "x"}, "stdin": ""})[0], 400)
+
+    def test_wifi_names_checked_before_the_cli(self):
+        before = self.log()
+        for ssid in ("--yes", "a\nb", "x" * 33, ""):
+            self.assertEqual(self.api("POST", "/api/run/wifi.forget", {"args": {"ssid": ssid}})[0], 400, ssid)
+        self.assertEqual(self.log(), before)
+
+    def test_wifi_forget_asks_only_for_the_current_network(self):
+        status, data = self.api("POST", "/api/run/wifi.forget", {"args": {"ssid": "Shed"}})
+        self.assertEqual((status, data["stderr"]), (200, "forgot Shed\n"))
+        status, data = self.api("POST", "/api/run/wifi.forget", {"args": {"ssid": "Home"}})
+        self.assertEqual((status, data["confirm"]), (409, "The Pi is connected to Home."))
+        status, data = self.api("POST", "/api/run/wifi.forget", {"args": {"ssid": "Home"}, "yes": True})
+        self.assertEqual((status, data["stderr"]), (200, "forgot Home\n"))
+        self.assertIn("brewberry-wifi forget Home --yes", self.log())
 
     def test_upload_goes_through_brewberry_config(self):
         files = [{"name": "config.json", "data": base64.b64encode(b"{}").decode()},

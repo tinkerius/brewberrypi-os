@@ -20,6 +20,7 @@ How to use it: [user manual](user-manual.md#4-logging-in). How to add a command:
 11. [Security](#11-security)
 12. [Tests](#12-tests)
 13. [What does not change](#13-what-does-not-change)
+14. [Wi-Fi setup and the captive portal (OS11)](#14-wi-fi-setup-and-the-captive-portal-os11)
 
 ## 1. Goal and requirements
 
@@ -141,7 +142,8 @@ test (§10) checks the CLIs and the user manual against it.
 Fields: `id`; `title`; `screen`; `argv` with `{placeholders}`; `args` with an anchored pattern per
 placeholder; `kind` (`query` or `action`); `confirm` (asks first, §5.3); `job` (runs as a transient
 unit, §6); `reboots`; `timeout` (seconds, default 60); `stdin` (a secret passed on standard input,
-the registry token); `upload` (`{upload}` becomes the uploaded files, §8); `download` (the file
+the registry token, Wi-Fi passwords); `stdinOptional` (an empty line is allowed: an open
+network or hotspot); `upload` (`{upload}` becomes the uploaded files, §8); `download` (the file
 name of a query's raw output); `webOnly` with its CLI counterpart and a `reason`, for the declared
 exceptions.
 
@@ -157,7 +159,8 @@ Every command of the user manual's command reference, plus the ones its other se
 | Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
 | USB stick | `usb.list`, `usb.install <version>`, `usb.import-config` | existing |
 | OS update | `maint.on`, `maint.off`, `maint.upgrade` | `upgrade` is new (§5.4): replaces `apt update && apt full-upgrade`; only in maintenance mode |
-| Logs | `system.logs <app\|safemode\|firstload\|outputs-off\|web\|share>` | new (§5.4): replaces the manual's `journalctl` lines |
+| Wi-Fi | `wifi.status`, `wifi.scan`, `wifi.add <ssid>`, `wifi.forget <ssid>`, `wifi.country <code>`, `wifi.hotspot-password` | OS11 (§14); `wifi.status` is on the overview too |
+| Logs | `system.logs <app\|safemode\|firstload\|outputs-off\|web\|share\|wifi>` | new (§5.4): replaces the manual's `journalctl` lines |
 | Account | `account.password` | `webOnly`: CLI counterpart is `passwd` |
 
 ## 5. CLI changes
@@ -214,7 +217,10 @@ The web interface calls the command without `--yes`, shows the returned prompt i
 
 This applies to `update install|rollback|demo|restart`, `usb install` (through `update install`)
 and `maint on|off|upgrade`. A config import restarts nothing (the app reads its configuration at
-start), so it doesn't ask; it ends with the hint to restart the app.
+start), so it doesn't ask; it ends with the hint to restart the app. `brewberry-wifi forget` asks
+only for the network the Pi is connected to, and without the brew warning (`confirm --no-brew`):
+it drops the browser's connection, not the app. A confirmed action that is not a job gets `--yes`
+from the helper the same way.
 
 **Behaviour change:** `brewberry-update install`, `rollback`, `demo` and `brewberry-usb install`
 now ask for confirmation, as `brewberry-maint` already does. Scripts and
@@ -331,8 +337,8 @@ the browser, and the app's look (indigo/slate, cards). English, like the app.
 - **Header:** "BrewberryPi OS", hostname, OS version, user `brewberry`, **Log out**; a link to the
   app's UI (`http://<host>:<server.port>/`).
 - **Banner** for the default password (§7.4) and for a running job.
-- **Screens** as tabs, matching §4: Overview, App versions (with Registry), Configuration, USB stick,
-  OS update, Logs, Account.
+- **Screens** as tabs, matching §4: Overview, Wi-Fi, App versions (with Registry), Configuration,
+  USB stick, OS update, Logs, Account.
 - Buttons carry the catalogue id (`data-cmd="update.install"`), which the parity test reads.
 - Confirmation dialog shows the CLI's prompt text verbatim (§5.3); the brew warning appears in bold.
 - The OS update screen repeats the manual's warning: the power must stay connected from
@@ -395,3 +401,25 @@ watchdogs, signature policy and `/data`-only writes.
   interface on port 8081 does it.
 - The app container: no `/update` mount, no access to the registry token.
 - Safety measures, `policy.json` and the image tags `active` and `previous`.
+
+## 14. Wi-Fi setup and the captive portal (OS11)
+
+[ADR-0004](adr/0004-wifi-setup-hotspot.md): without a reachable home network the Pi opens the
+hotspot `<hostname>` at `10.42.0.1`, and the device web interface is how the user sets up Wi-Fi
+over it.
+
+- **Port 80** (`brewberry-portal.socket` → `portal.py`, layer `brewberry-wifi`, user
+  `brewberry-web`, unprivileged like the web server): answers every request with a redirect. On
+  the hotspot, NetworkManager's dnsmasq resolves every name to `10.42.0.1`
+  (`dnsmasq-shared.d/brewberry-portal.conf`), so the captive-portal checks of phones and computers
+  get `302 http://10.42.0.1:8081/#wifi` and open the Wi-Fi screen. A request for the Pi's own name
+  or an IP address goes to the same host on port 8081 (`http://brewberrypi.local/` works).
+- **No change to the server's checks:** the page is opened by IP address, which the `Host` check
+  already accepts, and the login stays as it is.
+- **The Wi-Fi screen** runs `wifi.status`, `wifi.scan` (while the hotspot is up the Wi-Fi can't
+  scan: the service's last scan is shown, marked `cached`), `wifi.add` (password on stdin, empty
+  for an open network), `wifi.forget` (buttons per network), `wifi.country` and
+  `wifi.hotspot-password` (empty: open). The texts after saving come from the CLI: where to find the
+  Pi once it has left the hotspot.
+- **On an open hotspot** the app's port is closed by the service's nftables rule, so the header's
+  link to the app doesn't work there; the Wi-Fi screen says so in a banner.

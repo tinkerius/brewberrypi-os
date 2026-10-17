@@ -43,12 +43,15 @@ BrewberryPi OS is built to behave like a games console:
 - **A file share** of the app's configuration folder, `\\<hostname>.local\config`: open,
   download and change `config.json` and the recipes from Windows, macOS or Linux
   ([In the file share](#in-the-file-share)).
+- **Wi-Fi without flashing settings:** when the Pi can't reach a Wi-Fi network, it opens its own,
+  `brewberrypi`. Join it with a phone or laptop, and the device web interface opens: choose your
+  network there ([Wi-Fi](#wi-fi)).
 
 What is kept where:
 
 | Kept across reboots (`/data`) | Lost at every reboot |
 |---|---|
-| App configuration and recipes (`/data/config`) | Logs (`journalctl`) |
+| App configuration and recipes, Wi-Fi settings (`/data/config`) | Logs (`journalctl`) |
 | The installed app versions (active and previous) | Files in home directories |
 | The registry token and changed passwords (`/data/secrets`) | Changes to system files or packages |
 | Update state and the version list (`/data/update`) | |
@@ -60,7 +63,7 @@ Reflashing the SD card erases everything, `/data` included.
 - A Raspberry Pi 3, 4 or 5 (also 400, 500, CM4, CM5). Only 64-bit images exist.
 - A microSD card, 8 GB or more.
 - The BrewberryPi hardware, wired as the app's documentation describes.
-- A network: Wi-Fi or Ethernet.
+- A network: Wi-Fi or Ethernet. Wi-Fi can be set up after flashing, from a phone.
 - On your computer: [Raspberry Pi Imager](https://www.raspberrypi.com/software/) **2.x** (1.8 works
   too), and for key logins an SSH key pair. To make one: `ssh-keygen -t ed25519`.
 - For online app updates: a GitHub account with access to `ghcr.io/tinkerius/brewberrypi`.
@@ -81,8 +84,8 @@ Each release on the [Releases page](https://github.com/tinkerius/brewberrypi-os/
 ### Flash with Raspberry Pi Imager
 
 Open the image **through the manifest**. Imager only offers its settings (Wi-Fi, SSH key and so on)
-for images it opens that way. With *Use custom*, the Pi gets no Wi-Fi settings and none of your
-SSH keys.
+for images it opens that way. With *Use custom*, the Pi gets none of your SSH keys (Wi-Fi can still
+be set up afterwards, [Wi-Fi](#wi-fi)).
 
 1. Open the manifest:
    - **Public release:** download `brewberrypi-os.rpi-imager-manifest` and double-click it.
@@ -103,10 +106,12 @@ SSH keys.
    | Hostname | For example `brewberrypi` (the default). The Pi is then `brewberrypi.local` on your network. |
    | User | A name of your own, with a password for logging in at the Pi's screen and keyboard. Not `brewberry`: that is the image's built-in account (password `pi`, for the device web interface), and Imager can't set its password. |
    | SSH | Turn it on. **Allow public-key authentication only** with your public key (**ADD SSH KEY**, or paste `~/.ssh/id_ed25519.pub`) is the safer choice; **Use password authentication** lets you log in with the user's password. |
-   | Wi-Fi | Network name, password and Wi-Fi country. Leave it empty if you use Ethernet. |
+   | Wi-Fi | Optional: network name, password and Wi-Fi country. On the first boot the Pi moves them into its own Wi-Fi settings. Leave it empty to set up Wi-Fi from a phone afterwards ([Wi-Fi](#wi-fi)), or if you use Ethernet. |
    | Time zone, keyboard | Your own. |
 
-   Imager shows no settings for SPI, I2C or 1-Wire: the image sets those itself.
+   Imager shows no settings for SPI, I2C or 1-Wire: the image sets those itself. You can also skip
+   **Customise** altogether: then set up Wi-Fi through the Pi's hotspot and do everything in the
+   device web interface (SSH has no key then).
 4. Write the card.
 
 ### First boot
@@ -119,8 +124,69 @@ Put the card in the Pi, connect the network and power it on. On the first boot t
 
 This takes a few minutes. **Don't pull the plug during the first boot.**
 
-To change the hostname or Wi-Fi later, reflash the card. Save your configuration first
-([Backing up the configuration](#backing-up-the-configuration)).
+To change the hostname later, reflash the card. Save your configuration first
+([Backing up the configuration](#backing-up-the-configuration)). Wi-Fi is changed on the Pi itself.
+
+### Wi-Fi
+
+The Pi joins the Wi-Fi networks in its settings, in their order. When it has none, or can't reach
+any for 90 seconds (and no Ethernet cable is connected), it opens its own Wi-Fi, the **hotspot**:
+its name is the hostname, `brewberrypi` by default, and it has no password.
+
+To set up Wi-Fi, or to change it later:
+
+1. Power on the Pi and wait a few minutes (on the first boot it reboots once).
+2. On a phone or laptop, join the Wi-Fi network **`brewberrypi`**. A page opens by itself (on some
+   phones after tapping *Sign in to network*); if it doesn't, open `http://10.42.0.1:8081/`.
+3. Log in (user `brewberry`, default password `pi`) and open **Wi-Fi**.
+4. Under **Add a network**, tap **Look for networks**, pick yours (or type its name) and enter its
+   password. Set the **Wi-Fi country** too, so the Pi uses all of your country's channels. Then
+   **Save and connect**.
+5. A few seconds later the hotspot closes and the Pi joins your network. Connect the phone back to
+   your own Wi-Fi and open `http://brewberrypi.local:8081/`, or the app at
+   `http://brewberrypi.local:8080/`.
+6. If the Pi can't join it, the hotspot comes back within about a minute. Join it again: the Wi-Fi
+   page shows why (for example *wrong password*).
+
+Good to know:
+
+- **On the open hotspot the app is blocked.** Anyone nearby can join an open Wi-Fi, so only setup
+  works there: the device web interface and the file share, both behind the password. To brew
+  without a home network, set a **hotspot password** on the Wi-Fi page (8 to 63 characters): the
+  hotspot then needs it, and the app works over it at `http://10.42.0.1:8080/`.
+- When your Wi-Fi goes away (router off, out of range), the Pi opens the hotspot after 90 seconds.
+  While the hotspot is up and nobody is connected to it, the Pi looks for your networks every 3
+  minutes and goes back to them by itself. A running brew carries on all the while: the network
+  never touches the app or the outputs.
+- A network that refused the password isn't tried again until you add it again with the right one
+  (or the Pi restarts).
+- The settings are the file `/data/config/wifi.json`: they survive reboots and are part of a
+  [configuration backup](#backing-up-the-configuration). You can edit it in the
+  [file share](#in-the-file-share) or bring it on a [USB stick](#from-a-usb-stick) too. It holds
+  the Wi-Fi passwords in plain text, so anyone with the device password can read them.
+
+  ```json
+  {
+    "country": "DE",
+    "networks": [ { "ssid": "My Network", "password": "my wifi password", "hidden": false } ],
+    "hotspot": { "password": "" }
+  }
+  ```
+
+- Wi-Fi from Imager ends up in this file on the first boot.
+- WPA2 and WPA2/WPA3 mixed networks work; WPA3-only networks don't.
+- `http://brewberrypi.local/` (without a port) leads to the device web interface too.
+
+Over SSH:
+
+```sh
+sudo brewberry-wifi status                # connection, hotspot, networks, last try
+sudo brewberry-wifi scan                  # networks in range
+sudo brewberry-wifi add 'My Network'      # asks for the password (empty: an open network)
+sudo brewberry-wifi country DE
+sudo brewberry-wifi forget 'Old Network'
+sudo brewberry-wifi hotspot-password      # asks for it (empty: an open hotspot again)
+```
 
 ## 4. Logging in
 
@@ -134,7 +200,7 @@ Until you do, every page reminds you. The password is also the Linux password of
 `brewberry` and the password of the [file share](#in-the-file-share). It survives reboots,
 wherever you change it: under *Account*, or with `passwd`.
 
-The pages: **Overview** (app, device, system state), **App versions**, **Configuration**,
+The pages: **Overview** (app, device, system and Wi-Fi state), **Wi-Fi**, **App versions**, **Configuration**,
 **USB stick**, **OS update**, **Logs** and **Account**. Each button runs the command of the same
 name from this manual ([Command reference](#10-command-reference)) on the Pi, with the same checks.
 Actions that restart the app or reboot the Pi ask first, and warn when a brew is loaded or running.
@@ -223,8 +289,8 @@ password of the device web interface (`pi` until you change it):
 Use your hostname instead of `brewberrypi`, or the Pi's IP address. The **Configuration** page
 shows the address too. The share is always on.
 
-In the share you see `config.json`, `recipes/` (if there is one) and `backup/` with the files that
-imports replaced. Open, copy, change and delete files as on any network drive, then restart the
+In the share you see `config.json`, `recipes/` (if there is one), `wifi.json` (the
+[Wi-Fi settings](#wi-fi)) and `backup/` with the files that imports replaced. Open, copy, change and delete files as on any network drive, then restart the
 app. Keep in mind:
 
 - **Nothing is checked** when you save. If a file isn't valid, the app refuses to start (exit code
@@ -236,6 +302,8 @@ app. Keep in mind:
 - **Changing an output pin** (`hardware.*.pin`) while the app runs is safe: when it stops, the OS
   switches off the pins it was started with as well as the new ones. Nothing warns you about the
   boot-time pins, as the imports do: see [Output pins](#output-pins).
+- **`wifi.json`** takes effect within seconds. If the Pi can't read it, it uses no networks and
+  opens its open hotspot; the Wi-Fi page says what is wrong.
 - Wait a few seconds after saving before you pull the plug; a file being written at that moment
   may be lost.
 - macOS keeps no `._` or `.DS_Store` files on the Pi; they don't disturb the app.
@@ -500,6 +568,7 @@ sudo brewberry-system logs safemode             # safe mode
 sudo brewberry-system logs firstload            # loading the app on first boot
 sudo brewberry-system logs web                  # the device web interface and its actions
 sudo brewberry-system logs share                # the file share
+sudo brewberry-system logs wifi                 # Wi-Fi and the hotspot
 sudo brewberry-update status
 ```
 
@@ -519,13 +588,26 @@ on the network.
 
 - Wait a few minutes after the first power-on: the Pi reboots once by itself.
 - Use the IP address from your router instead of `<hostname>.local`.
-- Wi-Fi settings are only applied on the first boot. If they were wrong, reflash.
+- Look for its hotspot, a Wi-Fi named like the hostname (`brewberrypi`): it is up when the Pi
+  can't reach any Wi-Fi network. Join it and fix the Wi-Fi settings ([Wi-Fi](#wi-fi)).
 - Check [the first boot report](#the-first-boot-report): if cloud-init found no Imager settings,
   the card was flashed with *Use custom* instead of the manifest, or customisation was skipped.
 - `Permission denied (publickey)`: Imager's SSH setting was *public-key authentication only* (or
   SSH had no setting) and the key you use isn't the one you gave Imager. The first boot report's
   `== ssh` section shows whether passwords are on and how many keys each user has. To switch to
   password logins, reflash with *Use password authentication*.
+
+### The Pi keeps opening its hotspot
+
+- On the **Wi-Fi** page (over the hotspot), or with `sudo brewberry-wifi status`: *last try* says
+  what happened. *Wrong password*: add the network again with the right one. *Not in range*: move
+  the Pi closer to the router, or check the network name (upper and lower case count).
+- Set the **Wi-Fi country**: without it, networks on 5 GHz or on channels 12 and 13 may not be
+  found.
+- A phone or laptop that stays connected to the hotspot keeps the Pi on it: the Pi only looks for
+  your networks while nobody is on the hotspot. Disconnect it, or add the network again to make the
+  Pi try at once.
+- More: `sudo brewberry-system logs wifi`.
 
 ### The app is down or in safe mode
 
@@ -627,5 +709,11 @@ All commands run as root (`sudo`). The device web interface offers each of them
 | `brewberry-maint upgrade` | In maintenance mode: `apt update` and `apt full-upgrade` |
 | `brewberry-maint off` | Seal the system again (reboots) |
 | `brewberry-system info` | OS version, board, hostname, addresses, uptime, `/data` usage |
-| `brewberry-system logs <name>` | This boot's log: `app`, `safemode`, `firstload`, `outputs-off`, `web` or `share` |
+| `brewberry-system logs <name>` | This boot's log: `app`, `safemode`, `firstload`, `outputs-off`, `web`, `share` or `wifi` |
+| `brewberry-wifi status` | Wi-Fi connection, hotspot, configured networks and the last try |
+| `brewberry-wifi scan` | Wi-Fi networks in range (while the hotspot is up: the last ones seen) |
+| `brewberry-wifi add <ssid>` | Add or change a network; the password on stdin or at the prompt (empty: an open network) |
+| `brewberry-wifi forget <ssid>` | Remove a network (asks first if the Pi is connected to it) |
+| `brewberry-wifi country <code>` | The Wi-Fi country, two letters such as `DE` |
+| `brewberry-wifi hotspot-password` | The hotspot's password, 8 to 63 characters (empty: an open hotspot, which blocks the app) |
 | `passwd` | Change a password (`sudo passwd brewberry` for the web interface's and the file share's user); kept across reboots |

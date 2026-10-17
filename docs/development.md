@@ -54,11 +54,11 @@ The Pi switches a **mains-powered heater**. These hold for every change, tests i
 | `stub/` | Contract stub app (`brewberrypi-stub.py`, `Containerfile`, `test_stub.py`) |
 | `scripts/` | Build, lint, release and helper scripts; `common.sh` pins rpi-image-gen |
 | `tests/unit/` | Host-side tests with fakes, run by `scripts/lint.sh`; `parity.sh` checks CLI ⇄ web parity |
-| `tests/web/` | Python tests of the device web interface's server and root helper |
+| `tests/web/` | Python tests of the device web interface's server and root helper, and of the port-80 redirect |
 | `tests/integration/signing.sh` | Signature policy against a local registry with cosign v2 |
 | `tests/hardware/` | On-device checks, the milestones' "done when" (see its README) |
 | `docs/adr/` | Decisions; copy `0000-template.md` for a new one |
-| `docs/implementation-plan.md` | Milestones OS0–OS9 |
+| `docs/implementation-plan.md` | Milestones OS0–OS11 |
 | `docs/device-web-ui.md` | Design of the device web interface (ADR-0002) |
 
 The layers, in the order the base config lists them:
@@ -74,6 +74,7 @@ The layers, in the order the base config lists them:
 | `brewberry-imager` | cloud-init for Imager's `cloudinit-rpi` customisation; disabled after first boot |
 | `brewberry-web` | Device web interface on port 8081 (server, root helper, command catalogue), the account password `pi`, `brewberry-passwd` (passwords kept on `/data`) |
 | `brewberry-share` | Samba file share of `/data/config` (ADR-0003): `smb.conf` (always on), `brewberry-share-sync` (smbd's start check and the PAM hook that keeps the share's password in step with `brewberry`'s), mDNS `_smb._tcp` |
+| `brewberry-wifi` | Wi-Fi setup through a fallback hotspot (ADR-0004): `brewberry-wifi` (operator command), `brewberry-wifi-manager` (the service: profiles from `/data/config/wifi.json` in `/run/NetworkManager/system-connections/`, hotspot after 90 s, retries, the nftables rule that keeps the app off an open hotspot, the first boot's move of Imager's netplan Wi-Fi), the shared `/usr/lib/brewberry/wifi.sh`, dnsmasq's captive-portal answer and the port-80 redirect `portal.py` |
 
 ## 3. Build host setup
 
@@ -190,15 +191,16 @@ what you need explicitly.
 Every operator command exists four times, and `tests/unit/parity.sh` fails CI when they differ
 (ADR-0002, [device-web-ui.md](device-web-ui.md)):
 
-1. **The CLI** (`brewberry-update`, `-usb`, `-config`, `-system`, `-maint`): the implementation.
-   List the subcommand in the usage header at the top of the script. Source
+1. **The CLI** (`brewberry-update`, `-usb`, `-config`, `-system`, `-maint`, `-wifi`): the
+   implementation. List the subcommand in the usage header at the top of the script. Source
    `/usr/lib/brewberry/common.sh`; give queries `--json` output, and call `confirm "<what it
    does>"` before anything that restarts the app or reboots (it adds the brew warning, handles
-   `--yes` and exits 10 without a terminal).
+   `--yes` and exits 10 without a terminal; `--no-brew` leaves the warning out for an action that
+   doesn't touch the app). A new CLI also goes into `CLIS` in `tests/unit/parity.sh`.
 2. **The catalogue** `layer/brewberry-web.rootfs-overlay/usr/share/brewberry/commands.json`:
    `id`, `argv` with `{placeholders}`, an anchored pattern per placeholder, `kind` (`query` or
-   `action`), and `confirm`, `job` (long actions), `reboots`, `stdin`, `upload`, `download` as
-   needed. The root helper runs nothing else.
+   `action`), and `confirm`, `job` (long actions), `reboots`, `stdin` (`stdinOptional` when an
+   empty line means something), `upload`, `download` as needed. The root helper runs nothing else.
 3. **The web page** `…/usr/lib/brewberry-web/index.html`: a control with `data-cmd="<id>"`.
 4. **The user manual's command reference** (§10), plus the section that explains it.
 
@@ -260,7 +262,13 @@ with. The CLIs source the shared library through `BREWBERRY_LIB`; point it at
 `tests/web/test_web.py` starts the web server on a free port and the root helper per connection,
 as `brewberry-webcmd.socket` does, with fake CLIs, `systemd-run`, `systemctl` and `chpasswd` and a
 fake shadow file (`BREWBERRY_CATALOGUE`, `BREWBERRY_SHADOW`, `BREWBERRY_JOBS_DIR`,
-`BREWBERRY_UPLOAD_DIR`, `BREWBERRY_WEB_PORT`, `BREWBERRY_WEBCMD_SOCKET`).
+`BREWBERRY_UPLOAD_DIR`, `BREWBERRY_WEB_PORT`, `BREWBERRY_WEBCMD_SOCKET`). `tests/web/test_portal.py`
+runs the port-80 redirect on a free port (`BREWBERRY_PORTAL_PORT`).
+
+`tests/unit/wifi.sh` drives `brewberry-wifi` and `brewberry-wifi-manager` against a fake
+`nmcli` that keeps the Wi-Fi device's state in files (active profile, state number, scan list,
+failing attempts), fake `iw`, `nft` and `hostname`, and a fake clock (`BREWBERRY_WIFI_CLOCK`, a
+file the manager's pauses advance): one `brewberry-wifi-manager tick` per simulated 5 s round.
 
 The signing test starts a local registry, signs test images with throwaway keys and checks that
 the device's real `policy.json` accepts only the right ones: from the registry, from a USB `dir:`

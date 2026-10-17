@@ -62,6 +62,18 @@
       "argv": ["brewberry-config", "export"], "download": "brewberrypi-config.tar.gz", "kind": "query"
     },
     {
+      "id": "share.status", "title": "File share", "screen": "config",
+      "argv": ["brewberry-share", "status"], "kind": "query"
+    },
+    {
+      "id": "share.on", "title": "File share on", "screen": "config",
+      "argv": ["brewberry-share", "on"], "kind": "action", "timeout": 60
+    },
+    {
+      "id": "share.off", "title": "File share off", "screen": "config",
+      "argv": ["brewberry-share", "off"], "kind": "action", "timeout": 60
+    },
+    {
       "id": "maint.status", "title": "Maintenance mode", "screen": "overview",
       "argv": ["brewberry-maint", "status"], "kind": "query"
     },
@@ -84,7 +96,7 @@
     {
       "id": "system.logs", "title": "Logs", "screen": "logs",
       "argv": ["brewberry-system", "logs", "{name}"],
-      "args": { "name": "^(app|safemode|firstload|outputs-off|web)$" }, "kind": "query"
+      "args": { "name": "^(app|safemode|firstload|outputs-off|web|share)$" }, "kind": "query"
     },
     {
       "id": "account.password", "title": "Change the password", "screen": "account",

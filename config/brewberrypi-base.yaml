@@ -9,7 +9,8 @@
 # boot-time off levels, outputs-off reset, watchdogs (brewberry-safety).
 # Signed updates, rollback and safe mode (brewberry-update). NetworkManager
 # (brewberry-suite) and cloud-init for Raspberry Pi Imager's customisation on
-# the first boot (brewberry-imager).
+# the first boot (brewberry-imager). The device web interface on port 8081
+# (brewberry-web) and the file share of /data/config (brewberry-share).
 
 device:
   hostname: brewberrypi
@@ -43,3 +44,4 @@ layer:
   update: brewberry-update
   imager: brewberry-imager
   web: brewberry-web
+  share: brewberry-share

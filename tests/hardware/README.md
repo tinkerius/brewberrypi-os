@@ -262,3 +262,35 @@ By hand, in a browser on another machine (`http://brewberrypi.local:8081/`):
 
 The brew warning ("A brew is loaded or running…") needs the real app with a loaded recipe (OS8);
 the unit tests cover it with a fake `/healthz`.
+
+## OS10: file share
+
+On any board, after OS9 (the web interface and the account). Over SSH with your Imager user:
+
+```sh
+ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os10-check.sh
+ssh <user>@brewberrypi.local 'sudo sh -s -- onoff' < tests/hardware/os10-check.sh
+ssh <user>@brewberrypi.local 'sudo reboot'
+ssh <user>@brewberrypi.local 'sudo sh -s -- after-reboot' < tests/hardware/os10-check.sh
+```
+
+`run` checks that only smbd runs (port 445, no NetBIOS), the share's settings (SMB 3, signing, no
+guests, one share), that its password belongs to the `brewberry` account, the PAM hook, the file
+owners in `/data/config`, and the outputs recorded when the app started. `onoff` and
+`after-reboot` check that `brewberry-share off` stops the share and keeps it off across a reboot.
+
+By hand, from another machine on the LAN:
+
+1. **Windows:** Explorer, `\\brewberrypi.local\config`, user `brewberry`, password `pi` on a fresh
+   image. **macOS:** Finder, Go, Connect to Server, `smb://brewberrypi.local/config`; the Pi also
+   shows under Network. **Linux:** `smbclient //brewberrypi.local/config -U brewberry -c ls`.
+2. Copy a recipe into `recipes/`, edit `config.json` (change `server.port`, say), delete a recipe:
+   `sudo brewberry-config show` shows each change; `brewberry-update restart` makes the app use it.
+   From macOS, check that no `._*` or `.DS_Store` files appear on the Pi.
+3. Change the password in the web interface (Account): the old one no longer opens the share, the
+   new one does, also after a reboot. The same with `sudo passwd brewberry` over SSH.
+4. A wrong password, a guest login and an SMB 1 or 2 client (`smbclient -m SMB2`) are refused.
+5. **Safety, with the relay board or LEDs (OS3):** start a "heating" stub, change
+   `hardware.heating.pin` in `config.json` through the share, then `sudo systemctl kill -s KILL
+   brewberrypi`. The heater relay goes off, and `brewberry-system logs outputs-off` shows the
+   running app's pins first, then the new config's.

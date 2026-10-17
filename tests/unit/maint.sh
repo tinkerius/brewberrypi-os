@@ -18,6 +18,8 @@ for cmd in mount systemctl brewberry-seal apt-get; do
    # shellcheck disable=SC2016  # $* and $LOG belong to the fake script
    printf '#!/bin/sh\necho "%s $*" >> "$LOG"\n' "$cmd" > "$T/bin/$cmd"
 done
+# shellcheck disable=SC2016  # $UCF_FORCE_CONFFOLD and $LOG belong to the fake script
+printf '#!/bin/sh\necho "ucf-force-conffold=${UCF_FORCE_CONFFOLD:-}" >> "$LOG"\n' >> "$T/bin/apt-get"
 printf '#!/bin/sh\nexit 7\n' > "$T/bin/curl" # the app doesn't answer: no brew warning
 chmod +x "$T"/bin/*
 export PATH=$T/bin:$PATH
@@ -87,6 +89,7 @@ fixture maintenance; run "$MAINT" upgrade --yes
 expect "upgrade: apt update, then a non-interactive full-upgrade" "$RC $(grep -o 'apt-get [a-z-]*\( -y\)\?' "$LOG" | paste -sd ' ')" \
    "0 apt-get update apt-get -y"
 expect "upgrade: keeps changed config files" "$(grep -c 'force-confold full-upgrade' "$LOG")" 1
+expect "upgrade: also those kept by ucf (smb.conf)" "$(grep -c '^ucf-force-conffold=1$' "$LOG")" 2
 fixture sealed; run "$MAINT" upgrade --yes
 expect "upgrade: refused while sealed" "$RC $(grep -c . "$LOG")" "1 0"
 fixture maintenance; run "$MAINT" upgrade < /dev/null

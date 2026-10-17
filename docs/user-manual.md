@@ -40,6 +40,9 @@ BrewberryPi OS is built to behave like a games console:
   on port 8081 for everything around it: app versions, configuration, USB stick, OS updates,
   logs. The device web interface runs exactly the commands described here, with the same checks
   and warnings ([Logging in](#4-logging-in)).
+- **A file share** of the app's configuration folder, `\\<hostname>.local\config`: open,
+  download and change `config.json` and the recipes from Windows, macOS or Linux
+  ([In the file share](#in-the-file-share)).
 
 What is kept where:
 
@@ -128,7 +131,8 @@ user **`brewberry`** (shown on the page) with the password; the default is **`pi
 
 **Change the default password** right away under **Account**: everyone on your network knows `pi`.
 Until you do, every page reminds you. The password is also the Linux password of the user
-`brewberry`. It survives reboots, wherever you change it: under *Account*, or with `passwd`.
+`brewberry` and the password of the [file share](#in-the-file-share). It survives reboots,
+wherever you change it: under *Account*, or with `passwd`.
 
 The pages: **Overview** (app, device, system state), **App versions**, **Configuration**,
 **USB stick**, **OS update**, **Logs** and **Account**. Each button runs the command of the same
@@ -169,7 +173,7 @@ without `--yes`, they print what they would do and exit with code 10, changing n
 take `--json` for machine-readable output.
 
 To change a password: `passwd` (your own) or `sudo passwd brewberry`. The change is saved to
-`/data` and survives reboots.
+`/data` and survives reboots; for `brewberry`, the file share uses the new password at once.
 
 ## 5. Configuration
 
@@ -193,13 +197,53 @@ If the file or a key is missing, the defaults above apply. Pin numbers are BCM (
 The app can't write its own configuration: inside the container `/data/config` is read-only.
 Change it in the device web interface, from a USB stick, or over SSH. All three check every file
 first, back up what they replace in `/data/config/backup/<date>/`, and write atomically, so a
-power cut leaves the old or the new file.
+power cut leaves the old or the new file. Or change the files directly in the
+[file share](#in-the-file-share), like on a network drive: quicker, but without these checks.
+
+Whichever way you choose, the app reads its configuration only at start: restart it afterwards
+(**Restart the app**, or `sudo brewberry-update restart`; this ends a running brew).
 
 ### In the device web interface
 
 **Configuration** shows `config.json` and the recipes. To change them, upload `config.json`, recipe
 files (tick *These .json files are recipes*), or a `.tar.gz` downloaded with **Download**. Then
 **Restart the app**: it reads its configuration only at start.
+
+### In the file share
+
+The Pi shares `/data/config` on your network as **`config`**. Log in as **`brewberry`** with the
+password of the device web interface (`pi` until you change it):
+
+| On | Open |
+|---|---|
+| Windows | Explorer, address bar: `\\brewberrypi.local\config` |
+| macOS | Finder, *Go → Connect to Server*: `smb://brewberrypi.local/config` (the Pi also shows under *Network*) |
+| Linux | the file manager: `smb://brewberrypi.local/config`, or `smbclient //brewberrypi.local/config -U brewberry` |
+
+Use your hostname instead of `brewberrypi`, or the Pi's IP address. The **Configuration** page
+and `sudo brewberry-share status` show the address and whether the share is on.
+
+In the share you see `config.json`, `recipes/` (if there is one) and `backup/` with the files that
+imports replaced. Open, copy, change and delete files as on any network drive, then restart the
+app. Keep in mind:
+
+- **Nothing is checked** when you save. If a file isn't valid, the app refuses to start (exit code
+  2 or 3, [The app is down](#the-app-is-down-or-in-safe-mode)): fix the file and restart it. `sudo
+  brewberry-config show` shows what the app will read. The imports above check first and keep a
+  backup; for bigger changes, take a [backup](#backing-up-the-configuration) first.
+- **Creating `recipes/`** replaces the app's built-in recipes with the ones in it, as an import
+  does.
+- **Changing an output pin** (`hardware.*.pin`) while the app runs is safe: when it stops, the OS
+  switches off the pins it was started with as well as the new ones. Nothing warns you about the
+  boot-time pins, as the imports do: see [Output pins](#output-pins).
+- Wait a few seconds after saving before you pull the plug; a file being written at that moment
+  may be lost.
+- macOS keeps no `._` or `.DS_Store` files on the Pi; they don't disturb the app.
+
+The share speaks SMB 3 only, signs every request, and encrypts when the computer offers it (all
+current Windows, macOS and Linux versions do). There is no guest access. Turn it off, also across
+reboots, with **Share off** on the **Configuration** page or `sudo brewberry-share off`; turn it on
+again with `sudo brewberry-share on`.
 
 ### From a USB stick
 
@@ -255,12 +299,14 @@ run `sudo brewberry-config import brewberrypi-config.tar.gz`.
 
 The OS switches the outputs off at two moments:
 
-- **After every stop of the app** (exit, crash, hang, update): the pins from `config.json`, or the
+- **After every stop of the app** (exit, crash, hang, update): the pins the app was started with,
+  then the pins in `config.json` now (they differ if it changed while the app ran), or the
   defaults.
 - **At power-on**, before Linux starts: the firmware switches the **default** pins off (BCM 23
   and 22 driven high, BCM 10 driven low). These are set in `/boot/firmware/config.txt`.
 
-If `config.json` moves an output to another pin, `brewberry-usb import-config` warns about it.
+If `config.json` moves an output to another pin, `brewberry-usb import-config` and `brewberry-config
+import` warn about it (a change in the file share doesn't).
 Then change the `gpio=` lines in `config.txt` to match; otherwise the new pin is only switched off
 after the app stops, not at power-on. The boot partition is read-only, so do this in maintenance
 mode:
@@ -454,6 +500,7 @@ sudo brewberry-system logs app                  # the app
 sudo brewberry-system logs safemode             # safe mode
 sudo brewberry-system logs firstload            # loading the app on first boot
 sudo brewberry-system logs web                  # the device web interface and its actions
+sudo brewberry-system logs share                # the file share
 sudo brewberry-update status
 ```
 
@@ -512,6 +559,20 @@ limit of 4 starts in 10 minutes too.
 - You are logged out after 30 minutes without activity, and when the Pi or the web interface
   restarts.
 
+### The file share doesn't open, or refuses the password
+
+- The user is `brewberry` and the password is the one of the device web interface. `sudo
+  brewberry-share status` says whether the share is on and has a password.
+- *Password: none yet*: the password of `brewberry` was set without the share, for example by
+  Imager when your Imager user is called `brewberry`. Set it again under **Account** (the same
+  password is fine) or with `sudo passwd brewberry`; the share then takes it.
+- Windows asks again and again: Windows offers its own account first. Enter `brewberry` as the
+  user name; if Windows keeps a wrong saved password, remove it under *Credential Manager*.
+- The address isn't found: use the Pi's IP address (`\\192.168.1.23\config`). A firewall or VPN
+  on your computer can block SMB (port 445).
+- Very old systems (Windows 7, SMB 1 or 2 only) can't connect: the share speaks SMB 3 only.
+- More: `sudo brewberry-system logs share`.
+
 ### `brewberry-update` says "no registry token" or the login fails
 
 Run `sudo brewberry-update login` with a token that has the `read:packages` scope and hasn't
@@ -562,10 +623,13 @@ All commands run as root (`sudo`). The device web interface offers each of them
 | `brewberry-config show` | The configuration the app reads, and its recipes |
 | `brewberry-config import <source>` | Check, back up and replace config files from a folder, a `.json` file or an export |
 | `brewberry-config export` | `/data/config` as `.tar.gz` on stdout (a backup) |
+| `brewberry-share status` | Whether the file share of `/data/config` is on, its address, whether it has a password |
+| `brewberry-share on` | Share `/data/config` on the network (the default) |
+| `brewberry-share off` | Stop sharing it, also after reboots |
 | `brewberry-maint status` | Sealed (normal) or in maintenance mode |
 | `brewberry-maint on` | Make the system writable for OS updates (reboots) |
 | `brewberry-maint upgrade` | In maintenance mode: `apt update` and `apt full-upgrade` |
 | `brewberry-maint off` | Seal the system again (reboots) |
 | `brewberry-system info` | OS version, board, hostname, addresses, uptime, `/data` usage |
-| `brewberry-system logs <name>` | This boot's log: `app`, `safemode`, `firstload`, `outputs-off` or `web` |
-| `passwd` | Change a password (`sudo passwd brewberry` for the web interface's user); kept across reboots |
+| `brewberry-system logs <name>` | This boot's log: `app`, `safemode`, `firstload`, `outputs-off`, `web` or `share` |
+| `passwd` | Change a password (`sudo passwd brewberry` for the web interface's and the file share's user); kept across reboots |

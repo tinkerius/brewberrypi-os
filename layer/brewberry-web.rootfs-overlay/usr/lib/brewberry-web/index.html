@@ -162,6 +162,18 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
           <button class="secondary" data-cmd="update.restart">Restart the app</button>
         </div>
       </div>
+      <div class="card">
+        <h2>File share</h2>
+        <p class="muted">This folder (<code>config.json</code>, <code>recipes/</code> and the import backups) is shared on the network:
+          open <code id="share-win"></code> in Windows Explorer, or <code id="share-url"></code> in macOS Finder (Go, Connect to Server) or a Linux file manager.
+          Log in as <code>brewberry</code> with the password of this page. The app reads its configuration at start: restart it after changing files.</p>
+        <dl id="share-status"></dl>
+        <div class="row">
+          <button class="secondary" data-cmd="share.status">Refresh</button>
+          <button class="secondary" data-cmd="share.on">Share on</button>
+          <button class="secondary" data-cmd="share.off">Share off</button>
+        </div>
+      </div>
     </section>
 
     <section data-view="usb" class="hidden">
@@ -196,7 +208,7 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
           <select id="log-name">
             <option value="app">App</option><option value="outputs-off">Outputs switched off</option>
             <option value="safemode">Safe mode</option><option value="firstload">First app load</option>
-            <option value="web">Web interface and its actions</option>
+            <option value="web">Web interface and its actions</option><option value="share">File share</option>
           </select>
           <button data-cmd="system.logs">Show</button>
         </div>
@@ -353,7 +365,8 @@ const views = {
     if (app) showAppStatus($("#ver-status"), app);
   },
   async config() {
-    const c = await query("config.show");
+    const [c, share] = await Promise.all([query("config.show"), query("share.status")]);
+    if (share) showShare(share);
     if (!c) return;
     $("#cfg-summary").textContent = `Files: ${(c.files || []).join(", ") || "none"} · Recipes: ${c.builtinRecipes ? "the app's built-in catalogue" : ((c.recipes || []).join(", ") || "none")}`;
     $("#cfg-json").textContent = JSON.stringify(c.config, null, 2);
@@ -373,6 +386,15 @@ function showAppStatus(dl, s) {
     ["Engine", s.engine || "not answering"], ["Demo mode", s.demo ? "on" : "off"],
     ["Last action", s.last ? `${s.last.phase}: ${s.last.message} (${s.last.time})` : null],
     ["Safe mode", s.safemode ? `switched at ${s.safemode.time}` : "no"]]);
+}
+
+function showShare(s) {
+  $("#share-win").textContent = s.windows;
+  $("#share-url").textContent = s.url;
+  const pw = { set: "the same as this page", default: "the default 'pi': change it under Account",
+    missing: "none yet: set the password under Account again (the same one is fine)" };
+  fill($("#share-status"), [["Share", `${s.enabled ? "on" : "off"} (${s.running ? "running" : "not running"})`],
+    ["User", s.user], ["Password", pw[s.password] || s.password]]);
 }
 
 function showMaint(dl, m) {
@@ -419,7 +441,7 @@ async function onCommand(el) {
   el.disabled = true;
   try {
     switch (id) {
-      case "update.status": case "system.info": case "maint.status": case "config.show": refresh(); break;
+      case "update.status": case "system.info": case "maint.status": case "config.show": case "share.status": refresh(); break;
       case "update.list": {
         const out = await query(id);
         const t = $("#ver-list");

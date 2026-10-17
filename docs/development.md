@@ -73,6 +73,7 @@ The layers, in the order the base config lists them:
 | `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-usb`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode` |
 | `brewberry-imager` | cloud-init for Imager's `cloudinit-rpi` customisation; disabled after first boot |
 | `brewberry-web` | Device web interface on port 8081 (server, root helper, command catalogue), the account password `pi`, `brewberry-passwd` (passwords kept on `/data`) |
+| `brewberry-share` | Samba file share of `/data/config` (ADR-0003): `smb.conf`, `brewberry-share` (status/on/off), `brewberry-share-sync` (smbd's start check and the PAM hook that keeps the share's password in step with `brewberry`'s), mDNS `_smb._tcp` |
 
 ## 3. Build host setup
 
@@ -189,7 +190,7 @@ what you need explicitly.
 Every operator command exists four times, and `tests/unit/parity.sh` fails CI when they differ
 (ADR-0002, [device-web-ui.md](device-web-ui.md)):
 
-1. **The CLI** (`brewberry-update`, `-usb`, `-config`, `-system`, `-maint`): the implementation.
+1. **The CLI** (`brewberry-update`, `-usb`, `-config`, `-share`, `-system`, `-maint`): the implementation.
    List the subcommand in the usage header at the top of the script. Source
    `/usr/lib/brewberry/common.sh`; give queries `--json` output, and call `confirm "<what it
    does>"` before anything that restarts the app or reboots (it adds the brew warning, handles

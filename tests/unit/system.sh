@@ -43,6 +43,9 @@ run "$SYSTEM" logs safemode --lines 50
 expect "logs --lines" "$RC $(cat "$LOG")" "0 journalctl -b --no-pager -o short-iso -n 50 -u brewberrypi-safemode.service"
 expect "logs outputs-off --json: only the reset's lines" "$("$SYSTEM" logs outputs-off --json | jq -c '[.name, (.lines | length), (.lines[0] | test("heating"))]')" \
    '["outputs-off",1,true]'
+run "$SYSTEM" logs share
+expect "logs share: smbd and the share's password hook" "$RC $(cat "$LOG")" \
+   "0 journalctl -b --no-pager -o short-iso -n 200 _SYSTEMD_UNIT=smbd.service + SYSLOG_IDENTIFIER=brewberry-share-sync"
 run "$SYSTEM" logs kernel
 expect "logs: unknown name refused" "$RC $(grep -c . "$LOG")" "1 0"
 run "$SYSTEM" logs app --lines 0

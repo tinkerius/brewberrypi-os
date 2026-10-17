@@ -82,4 +82,13 @@ expect "import a missing file: refused" "$RC" 1
 fixture; echo x > "$T/notes.txt"; run "$CONFIG" import "$T/notes.txt"
 expect "import another file type: refused" "$RC $(grep -c 'import a folder, a .json file or a .tar.gz' "$T/out")" "1 1"
 
+# The folder belongs to brewberry on the Pi (the file share, ADR-0003).
+if [ "$(id -u)" = 0 ]; then
+   fixture; chown -R 65534:65534 "$D"; run "$CONFIG" import "$T/src"
+   expect "import: written files and backups belong to the folder's owner" \
+      "$RC $(find "$D" \( ! -user 65534 -o ! -group 65534 \) | wc -l) $(find "$D/backup" -name HIPA.json | wc -l)" "0 0 1"
+else
+   echo "skip  import: owners (needs root)"
+fi
+
 exit "$failures"

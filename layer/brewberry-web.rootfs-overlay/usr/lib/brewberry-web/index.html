@@ -103,10 +103,8 @@ dialog::backdrop { background: rgb(0 0 0 / .45); }
       <div class="grid">
         <div class="card"><h2>App</h2><dl id="ov-app"></dl>
           <div class="row"><button class="secondary" data-cmd="update.status">Refresh</button></div></div>
-        <div class="card"><h2>Device</h2><dl id="ov-system"></dl>
+        <div class="card"><h2>OS</h2><dl id="ov-os"></dl>
           <div class="row"><button class="secondary" data-cmd="system.info">Refresh</button></div></div>
-        <div class="card"><h2>System</h2><dl id="ov-maint"></dl>
-          <div class="row"><button class="secondary" data-cmd="maint.status">Refresh</button></div></div>
         <div class="card"><h2>Wi-Fi</h2><dl id="ov-wifi"></dl>
           <div class="row"><button class="secondary" data-cmd="wifi.status">Refresh</button></div></div>
       </div>
@@ -400,14 +398,17 @@ const views = {
   async overview() {
     const [app, sys, maint, wifi] = await Promise.all([query("update.status"), query("system.info"), query("maint.status"), query("wifi.status")]);
     if (app) showAppStatus($("#ov-app"), app);
+    // One card for the OS: brewberry-system info and brewberry-maint status.
+    const rows = [];
     if (sys && sys.os) {
       const up = sys.uptimeSeconds || 0;
-      fill($("#ov-system"), [["OS", sys.os.version], ["Board", sys.board], ["Hostname", sys.hostname],
+      rows.push(["Version", sys.os.version], ["Board", sys.board], ["Hostname", sys.hostname],
         ["Addresses", (sys.addresses || []).join(" ")], ["Uptime", `${Math.floor(up / 3600)} h ${Math.floor(up % 3600 / 60)} min`],
-        ["/data", sys.data ? `${Math.round(sys.data.used / 1048576)} MiB used, ${Math.round(sys.data.free / 1048576)} MiB free` : null]]);
+        ["/data", sys.data ? `${Math.round(sys.data.used / 1048576)} MiB used, ${Math.round(sys.data.free / 1048576)} MiB free` : null]);
       $("#hostinfo").textContent = `${sys.hostname} · ${sys.os.version}`;
     }
-    if (maint) showMaint($("#ov-maint"), maint);
+    if (maint) rows.push(...maintRows(maint));
+    fill($("#ov-os"), rows);
     if (wifi) showWifi($("#ov-wifi"), wifi);
   },
   async wifi() {
@@ -482,8 +483,12 @@ function showWifi(dl, w) {
     ["Service", w.service !== "active" ? w.service : undefined]]);
 }
 
+function maintRows(m) {
+  return [["State", m.sealed ? "sealed (normal)" : "writable (maintenance)"], ["Maintenance mode", m.maintenance || "off"]];
+}
+
 function showMaint(dl, m) {
-  fill(dl, [["State", m.sealed ? "sealed (normal)" : "writable (maintenance)"], ["Maintenance mode", m.maintenance || "off"]]);
+  fill(dl, maintRows(m));
 }
 
 function current() { return location.hash.slice(1) || "overview"; }

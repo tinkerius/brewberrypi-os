@@ -200,7 +200,7 @@ Until you do, every page reminds you. The password is also the Linux password of
 `brewberry` and the password of the [file share](#in-the-file-share). It survives reboots,
 wherever you change it: under *Account*, or with `passwd`.
 
-The pages: **Overview** (app, device, system and Wi-Fi state), **Wi-Fi**, **App versions**, **Configuration**,
+The pages: **Overview** (app, OS and Wi-Fi state), **Wi-Fi**, **App versions**, **Configuration**,
 **USB stick**, **OS update**, **Logs** and **Account**. Each button runs the command of the same
 name from this manual ([Command reference](#10-command-reference)) on the Pi, with the same checks.
 Actions that restart the app or reboot the Pi ask first, and warn when a brew is loaded or running.

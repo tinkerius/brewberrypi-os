@@ -153,7 +153,7 @@ Every command of the user manual's command reference, plus the ones its other se
 
 | Screen | Catalogue ids → CLI | Notes |
 |---|---|---|
-| Overview | `update.status`, `maint.status`, `system.info` | `system.info` is new (§5.4): replaces `cat /etc/brewberry-release` and adds hostname, addresses, uptime, `/data` usage |
+| Overview | `update.status`, `system.info` + `maint.status` (one card, *OS*), `wifi.status` | `system.info` is new (§5.4): replaces `cat /etc/brewberry-release` and adds hostname, addresses, uptime, `/data` usage |
 | App versions | `update.list`, `update.install <version>`, `update.rollback`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi` |
 | Registry | `update.login` | gets non-interactive input (§5.4) |
 | Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |

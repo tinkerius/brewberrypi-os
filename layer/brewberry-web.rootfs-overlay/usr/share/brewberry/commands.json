@@ -78,7 +78,7 @@
       "argv": ["brewberry-maint", "off"], "kind": "action", "confirm": true, "job": true, "reboots": true
     },
     {
-      "id": "system.info", "title": "Device", "screen": "overview",
+      "id": "system.info", "title": "OS", "screen": "overview",
       "argv": ["brewberry-system", "info"], "kind": "query"
     },
     {

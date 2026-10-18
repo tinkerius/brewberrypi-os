@@ -28,7 +28,8 @@ comes_back() { # smbd is restarted after a crash
    systemctl is-active --quiet smbd.service
 }
 owners_ok() { ! find /data/config \( ! -user brewberry -o ! -group brewberry \) | grep -q .; }
-modes_ok() { ! find /data/config -type f ! -perm 0644 | grep -q .; }
+# wifi.json holds Wi-Fi passwords: brewberry-wifi writes it 0600 (ADR-0004).
+modes_ok() { ! find /data/config -type f ! -perm 0644 ! -name wifi.json | grep -q .; }
 
 run() {
    check "smbd.service is enabled and active" sh -c 'systemctl is-enabled --quiet smbd.service && systemctl is-active --quiet smbd.service'

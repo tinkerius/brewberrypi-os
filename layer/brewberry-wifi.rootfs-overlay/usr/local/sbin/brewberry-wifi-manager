@@ -1,0 +1,452 @@
+#!/bin/bash
+# The Wi-Fi service of BrewberryPi OS (ADR-0004, OS11). Run as root, by
+# systemd, never by hand.
+#
+#   brewberry-wifi-manager run       brewberry-wifi.service: home networks and the setup hotspot
+#   brewberry-wifi-manager migrate   first boot: Imager's Wi-Fi (cloud-init's netplan) into wifi.json
+#   brewberry-wifi-manager tick      one round of 'run' (tests/unit/wifi.sh)
+#
+# Every 5 s it renders /data/config/wifi.json into NetworkManager profiles in
+# /run (when it changed) and decides between the home networks and the hotspot:
+#   - Ethernet connected: no hotspot.
+#   - No usable network: the hotspot at once.
+#   - Otherwise NetworkManager connects by itself; after HOTSPOT_AFTER s
+#     without a home connection the hotspot starts.
+#   - While the hotspot is up: every RETRY_EVERY s, when no device is connected
+#     to it, each home network in range gets one attempt; a network added or
+#     changed is tried 5 s later. If none connects, the hotspot comes back.
+#   - A network refused for its password isn't tried again until its entry
+#     changes (or the Pi restarts).
+#   - An open hotspot never runs without the firewall rule that keeps the
+#     app's port off the Wi-Fi.
+# It never touches the app or the GPIOs.
+# shellcheck disable=SC2016  # jq programs in single quotes (st_set)
+set -euo pipefail
+
+PROG=brewberry-wifi-manager
+# BREWBERRY_LIB, BREWBERRY_WIFI_LIB, BREWBERRY_WIFI_ROOT, BREWBERRY_WIFI_CLOCK
+# (a file holding the time; pauses advance it) and the timings are for tests
+# (tests/unit/wifi.sh).
+# shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
+. "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
+R=${BREWBERRY_WIFI_ROOT:-}
+# shellcheck source=layer/brewberry-wifi.rootfs-overlay/usr/lib/brewberry/wifi.sh
+. "${BREWBERRY_WIFI_LIB:-/usr/lib/brewberry}/wifi.sh"
+APP_CONFIG=$R/data/config/config.json
+
+HOTSPOT_AFTER=${BREWBERRY_WIFI_HOTSPOT_AFTER:-90}
+RETRY_EVERY=${BREWBERRY_WIFI_RETRY_EVERY:-180}
+TICK=5
+ATTEMPT_TIMEOUT=30
+FW_TABLE=brewberry_wifi
+
+now() {
+   if [ -n "${BREWBERRY_WIFI_CLOCK:-}" ]; then cat "$BREWBERRY_WIFI_CLOCK"; else date +%s; fi
+}
+pause() { # <seconds>
+   if [ -n "${BREWBERRY_WIFI_CLOCK:-}" ]; then
+      echo $(($(now) + $1)) > "$BREWBERRY_WIFI_CLOCK"
+   else
+      sleep "$1"
+   fi
+}
+
+# --- state (/run/brewberry-wifi/state.json, kept for this boot) -------------
+ST=""
+st() { jq -r "$1" <<< "$ST"; }
+st_set() { # [jq options...] <filter>
+   ST=$(jq -c "$@" <<< "$ST")
+}
+load_state() { # <now>
+   ST=$(jq -c . "$WIFI_STATE" 2> /dev/null || true)
+   [ -n "$ST" ] || ST=$(jq -n -c --argjson t "$1" '{since: $t, lastTry: 0, failed: {}, keys: [],
+      last: null, pending: false, firewall: false, applied: {}, hotspotStarted: "", hotspotRetryAt: 0}')
+}
+save_state() { # <now>
+   st_set --argjson t "$1" '.updated = $t'
+   install -d -m 0700 "$WIFI_STATE_DIR"
+   write_atomic "$WIFI_STATE" <<< "$ST"
+}
+set_mode() { # <mode> [network]
+   st_set --arg m "$1" --arg n "${2:-}" '.mode = $m | .network = (if $n == "" then null else $n end)'
+}
+record() { # <now> <connected|failed> <network> <message>
+   st_set --argjson t "$1" --arg r "$2" --arg n "$3" --arg m "$4" \
+      '.last = {time: $t, result: $r, network: (if $n == "" then null else $n end), message: $m}'
+}
+
+app_port() {
+   local port
+   port=$(jq -r '.server.port // 8080' "$APP_CONFIG" 2> /dev/null || echo 8080)
+   [[ $port =~ ^[0-9]+$ ]] && [ "$port" -ge 1 ] && [ "$port" -le 65535 ] || port=8080
+   echo "$port"
+}
+
+hotspot_open() { [ "$(jq -r '.hotspot.password' <<< "$WIFI_JSON")" = "" ]; }
+
+# The networks without a "wrong password" mark, as JSON lines in their order.
+usable_networks() {
+   jq -c --argjson failed "$(st '.failed')" '.networks[] | select($failed[.ssid] == null)' <<< "$WIFI_JSON"
+}
+
+# --- NetworkManager profiles ------------------------------------------------
+ssid_bytes() { # <ssid>: keyfile's byte list, safe for any SSID
+   printf '%s' "$1" | od -An -v -tu1 | tr -s ' \n' ';' | sed 's/^;//'
+}
+keyfile_escape() { # <value>: GKeyFile escapes for a string value
+   printf '%s' "$1" | sed 's/\\/\\\\/g; s/ /\\s/g'
+}
+uuid_of() { # <id>
+   local h
+   h=$(printf 'brewberry:%s' "$1" | sha256sum)
+   printf '%s-%s-4%s-8%s-%s' "${h:0:8}" "${h:8:4}" "${h:13:3}" "${h:17:3}" "${h:20:12}"
+}
+write_profile() { # <id> (keyfile on stdin): root only, as NetworkManager requires
+   (umask 077; cat > "$NM_PROFILES/$1.nmconnection.tmp")
+   mv "$NM_PROFILES/$1.nmconnection.tmp" "$NM_PROFILES/$1.nmconnection"
+}
+
+render_client() { # <json of a network> <priority> <autoconnect true|false>
+   local ssid password hidden id
+   ssid=$(jq -r .ssid <<< "$1"); password=$(jq -r .password <<< "$1"); hidden=$(jq -r .hidden <<< "$1")
+   id=$(wifi_id "$ssid")
+   {
+      printf '[connection]\nid=%s\nuuid=%s\ntype=wifi\nautoconnect=%s\nautoconnect-priority=%s\n\n' \
+         "$id" "$(uuid_of "$id")" "$3" "$2"
+      printf '[wifi]\nmode=infrastructure\nssid=%s\nhidden=%s\n\n' "$(ssid_bytes "$ssid")" "$hidden"
+      if [ -n "$password" ]; then
+         printf '[wifi-security]\nkey-mgmt=wpa-psk\npsk=%s\n\n' "$(keyfile_escape "$password")"
+      fi
+      printf '[ipv4]\nmethod=auto\n\n[ipv6]\nmethod=auto\n'
+   } | write_profile "$id"
+   echo "$id"
+}
+
+render_hotspot() {
+   local password
+   password=$(jq -r '.hotspot.password' <<< "$WIFI_JSON")
+   {
+      printf '[connection]\nid=%s\nuuid=%s\ntype=wifi\nautoconnect=false\n\n' "$HOTSPOT_ID" "$(uuid_of "$HOTSPOT_ID")"
+      printf '[wifi]\nmode=ap\nband=bg\nssid=%s\n\n' "$(ssid_bytes "$(wifi_hotspot_ssid)")"
+      if [ -n "$password" ]; then
+         printf '[wifi-security]\nkey-mgmt=wpa-psk\nproto=rsn\npairwise=ccmp\ngroup=ccmp\npsk=%s\n\n' \
+            "$(keyfile_escape "$password")"
+      fi
+      # The captive portal (dnsmasq-shared.d) and the redirect on port 80
+      # point at this address. No IPv6: nothing but this address on the hotspot.
+      printf '[ipv4]\nmethod=shared\naddress1=%s/24\n\n[ipv6]\nmethod=disabled\n' "$HOTSPOT_ADDRESS"
+   } | write_profile "$HOTSPOT_ID"
+}
+
+# Renders the profiles and the country when the settings, the marks or the
+# host name changed; a network that is new (or changed) while the hotspot is
+# up is tried soon (pending).
+apply() { # <now>
+   local keys failed client hot country net i=0 ids id f
+   keys=$(while IFS= read -r net; do
+         [ -n "$net" ] || continue
+         wifi_entry_key "$(jq -r .ssid <<< "$net")" "$(jq -r .password <<< "$net")"
+         echo
+      done <<< "$(jq -c '.networks[]' <<< "$WIFI_JSON")" | jq -R -s -c 'split("\n") | map(select(. != ""))')
+   # Marks end when their entry changes or goes.
+   failed=$(jq -c --argjson keys "$keys" 'with_entries(select(.value.key as $k | $keys | index($k)))' <<< "$(st '.failed')")
+   st_set --argjson f "$failed" '.failed = $f'
+   if [ "$(jq --argjson old "$(st '.keys')" '. - $old | length' <<< "$keys")" != 0 ]; then
+      st_set '.pending = true'
+   fi
+   st_set --argjson k "$keys" '.keys = $k'
+
+   client=$(printf '%s\n%s\n' "$(jq -c .networks <<< "$WIFI_JSON")" "$failed" | sha256sum | cut -c1-16)
+   hot=$(printf '%s\n%s\n' "$(jq -r .hotspot.password <<< "$WIFI_JSON")" "$(wifi_hotspot_ssid)" | sha256sum | cut -c1-16)
+   if [ "$client" != "$(st '.applied.client // ""')" ] || [ "$hot" != "$(st '.applied.hotspot // ""')" ] ||
+      [ ! -e "$NM_PROFILES/$HOTSPOT_ID.nmconnection" ]; then
+      install -d -m 0755 "$NM_PROFILES"
+      ids=" $HOTSPOT_ID "
+      render_hotspot
+      while IFS= read -r net; do
+         [ -n "$net" ] || continue
+         f=true
+         jq -e --argjson failed "$failed" '$failed[.ssid] != null' <<< "$net" > /dev/null && f=false
+         id=$(render_client "$net" $((100 - i)) "$f")
+         ids+="$id "
+         i=$((i + 1))
+      done <<< "$(jq -c '.networks[]' <<< "$WIFI_JSON")"
+      for f in "$NM_PROFILES"/brewberry-wifi-*.nmconnection; do
+         [ -e "$f" ] || continue
+         id=${f##*/}; id=${id%.nmconnection}
+         [[ $ids == *" $id "* ]] || rm -f "$f"
+      done
+      nmcli connection reload || log "nmcli connection reload failed"
+      st_set --arg c "$client" --arg h "$hot" '.applied.client = $c | .applied.hotspot = $h'
+      log "applied wifi.json: $i network(s), hotspot '$(wifi_hotspot_ssid)' $(hotspot_open && echo open || echo 'with a password')"
+   fi
+   country=$(jq -r '.country // ""' <<< "$WIFI_JSON")
+   if [ -n "$country" ] && [ "$country" != "$(st '.applied.country // ""')" ]; then
+      if iw reg set "$country"; then
+         st_set --arg c "$country" '.applied.country = $c'
+         log "Wi-Fi country: $country"
+      else
+         log "could not set the Wi-Fi country $country"
+      fi
+   fi
+}
+
+# --- the firewall rule for the open hotspot --------------------------------
+firewall_on() {
+   local ports
+   ports=$(printf '%s\n' 8080 "$(app_port)" | sort -un | paste -sd, | sed 's/,/, /g')
+   nft -f - <<EOF || return 1
+table inet $FW_TABLE
+delete table inet $FW_TABLE
+table inet $FW_TABLE {
+   chain input {
+      type filter hook input priority filter - 10; policy accept;
+      iifname "$DEV" tcp dport { $ports } reject with tcp reset
+   }
+}
+EOF
+   st_set '.firewall = true'
+}
+firewall_off() {
+   [ "$(st '.firewall')" = true ] || return 0
+   nft delete table inet "$FW_TABLE" 2> /dev/null || true
+   st_set '.firewall = false'
+}
+
+# --- hotspot and attempts ---------------------------------------------------
+hotspot_up() { # <now>
+   local out ssid
+   [ "$1" -ge "$(st '.hotspotRetryAt')" ] || return 0
+   ssid=$(wifi_hotspot_ssid)
+   if hotspot_open && ! firewall_on; then
+      log "could not load the firewall rule that keeps the app off an open hotspot; no hotspot"
+      st_set --argjson t "$(($1 + 30))" '.hotspotRetryAt = $t'
+      return 0
+   fi
+   if out=$(nmcli --wait 30 connection up id "$HOTSPOT_ID" ifname "$DEV" 2>&1); then
+      if hotspot_open; then
+         log "hotspot '$ssid' is up, open: the app is blocked on it"
+      else
+         firewall_off
+         log "hotspot '$ssid' is up, with a password"
+      fi
+      set_mode hotspot
+      st_set --argjson t "$(now)" --arg h "$(st '.applied.hotspot')" '.lastTry = $t | .hotspotStarted = $h'
+   else
+      log "could not start the hotspot '$ssid': $out"
+      firewall_off
+      st_set --argjson t "$(($1 + 30))" '.hotspotRetryAt = $t'
+   fi
+}
+
+hotspot_down() { # <why>
+   log "hotspot down: $1"
+   nmcli --wait 15 connection down id "$HOTSPOT_ID" > /dev/null 2>&1 || true
+   firewall_off
+}
+
+scan_save() {
+   local nets
+   if nets=$(wifi_scan_live "$DEV"); then
+      jq -n -c --argjson n "$nets" --argjson t "$(now)" '{time: $t, networks: $n}' | write_atomic "$WIFI_SCAN"
+   fi
+}
+
+# One attempt at each usable network in range (hidden ones always); the
+# hotspot comes back when none connects.
+attempt() { # <now>
+   local net ssid id out visible="" tried=0 message=""
+   if [ "$(st '.pending')" = true ]; then
+      pause 5 # the browser that added the network gets its answer first
+   fi
+   st_set --argjson t "$1" '.pending = false | .lastTry = $t'
+   hotspot_down "trying the home networks"
+   set_mode waiting
+   nmcli device wifi rescan ifname "$DEV" > /dev/null 2>&1 || true
+   pause 3
+   scan_save
+   [ -f "$WIFI_SCAN" ] && visible=$(jq -r '.networks[].ssid' "$WIFI_SCAN")
+   while IFS= read -r net; do
+      [ -n "$net" ] || continue
+      ssid=$(jq -r .ssid <<< "$net")
+      if [ "$(jq -r .hidden <<< "$net")" != true ] && ! grep -qxF -- "$ssid" <<< "$visible"; then
+         message+="'$ssid' is not in range. "
+         continue
+      fi
+      tried=1
+      id=$(wifi_id "$ssid")
+      if out=$(nmcli --wait "$ATTEMPT_TIMEOUT" connection up id "$id" ifname "$DEV" 2>&1); then
+         log "connected to '$ssid'"
+         record "$(now)" connected "$ssid" "connected"
+         set_mode home "$ssid"
+         st_set --argjson t "$(now)" '.since = $t'
+         return 0
+      fi
+      out=$(tr '\n' ' ' <<< "$out" | sed 's/ *$//')
+      if [[ $out == *"Secrets were required"* ]]; then
+         log "'$ssid' refused the password; not tried again until it changes"
+         st_set --arg s "$ssid" --arg k "$(wifi_entry_key "$ssid" "$(jq -r .password <<< "$net")")" \
+            --argjson t "$(now)" '.failed[$s] = {key: $k, reason: "wrong password", time: $t}'
+         message+="'$ssid': wrong password. "
+      else
+         log "could not connect to '$ssid': $out"
+         message+="'$ssid': could not connect ($out). "
+      fi
+   done <<< "$(usable_networks)"
+   [ "$tried" = 1 ] || log "no configured network in range"
+   record "$(now)" failed "" "${message% }"
+   hotspot_up "$(now)"
+}
+
+# --- one round ------------------------------------------------------------------
+tick() {
+   local t clients
+   t=$(now)
+   load_state "$t"
+   wifi_read
+   [ -z "$WIFI_ERROR" ] || [ "$WIFI_ERROR" = "$(st '.fileError // ""')" ] || log "$WIFI_ERROR; using no networks and an open hotspot"
+   st_set --arg e "$WIFI_ERROR" '.fileError = (if $e == "" then null else $e end)'
+   DEV=$(wifi_device)
+   if [ -z "$DEV" ]; then
+      set_mode no-wifi
+      save_state "$t"
+      return 0
+   fi
+   apply "$t"
+   wifi_device_state "$DEV"
+   if ethernet_connected; then
+      [ "$DEV_CON" != "$HOTSPOT_ID" ] || hotspot_down "Ethernet is connected"
+      firewall_off
+      set_mode ethernet
+      st_set --argjson t "$t" '.since = $t | .pending = false'
+   elif [ "$DEV_CON" = "$HOTSPOT_ID" ]; then
+      set_mode hotspot
+      if [ "$(st '.hotspotStarted')" != "$(st '.applied.hotspot')" ]; then
+         # Name or password changed: start it again with the new profile.
+         pause 5
+         hotspot_down "its settings changed"
+         st_set '.hotspotRetryAt = 0'
+         hotspot_up "$(now)"
+      elif hotspot_open && [ "$(st '.firewall')" != true ] && ! firewall_on; then
+         hotspot_down "the firewall rule for the open hotspot could not be loaded"
+         set_mode waiting
+      elif ! hotspot_open; then
+         firewall_off
+      fi
+      if [ "$(st '.mode')" = hotspot ] && [ -n "$(usable_networks)" ]; then
+         clients=$(wifi_clients "$DEV")
+         if [ "$(st '.pending')" = true ] ||
+            { [ $((t - $(st '.lastTry'))) -ge "$RETRY_EVERY" ] && [ "${clients:-0}" = 0 ]; }; then
+            attempt "$t"
+         fi
+      fi
+   elif [ "$DEV_STATE" = 100 ] && [ -n "$DEV_CON" ]; then
+      firewall_off
+      set_mode home "$(wifi_connection_ssid "$DEV_CON")"
+      st_set --argjson t "$t" '.since = $t | .pending = false'
+   else
+      firewall_off
+      set_mode waiting
+      # NetworkManager connects to a new network by itself.
+      st_set '.pending = false'
+      if [ -z "$(usable_networks)" ]; then
+         hotspot_up "$t"
+      elif [ "$DEV_STATE" -ge 40 ] && [ "$DEV_STATE" -lt 100 ]; then
+         : # connecting: let NetworkManager finish
+      elif [ $((t - $(st '.since'))) -ge "$HOTSPOT_AFTER" ]; then
+         log "no home network for $HOTSPOT_AFTER s"
+         hotspot_up "$t"
+      fi
+   fi
+   save_state "$(now)"
+}
+
+cmd_run() {
+   local t
+   t=$(now)
+   # A new start counts the time without a home network from now.
+   load_state "$t"
+   st_set --argjson t "$t" '.since = $t | .hotspotRetryAt = 0'
+   save_state "$t"
+   nmcli radio wifi on 2> /dev/null || log "could not switch the Wi-Fi radio on"
+   log "started (hotspot after $HOTSPOT_AFTER s without a home network, retries every $RETRY_EVERY s)"
+   while :; do
+      tick || log "round failed; trying again"
+      pause "$TICK"
+   done
+}
+
+# --- first boot: Imager's Wi-Fi --------------------------------------------------
+cmd_migrate() {
+   local files=() imported merged count f
+   for f in "$R"/etc/netplan/*.yaml; do
+      [ -f "$f" ] && files+=("$f")
+   done
+   [ ${#files[@]} -gt 0 ] || { log "no netplan files: nothing to move"; return 0; }
+   imported=$(python3 -I - "${files[@]}" <<'PY'
+import json, sys, yaml
+nets, country = [], None
+for path in sys.argv[1:]:
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f) or {}
+    wifis = (doc.get("network") or {}).get("wifis") if isinstance(doc, dict) else None
+    for dev in (wifis or {}).values():
+        if not isinstance(dev, dict):
+            continue  # Imager also writes "renderer" under wifis
+        if not country and isinstance(dev.get("regulatory-domain"), str):
+            country = dev["regulatory-domain"].upper()
+        for ssid, ap in (dev.get("access-points") or {}).items():
+            ap = ap if isinstance(ap, dict) else {}
+            password = ap.get("password") or (ap.get("auth") or {}).get("password") or ""
+            nets.append({"ssid": str(ssid), "password": str(password), "hidden": bool(ap.get("hidden", False))})
+print(json.dumps({"country": country, "networks": nets}))
+PY
+   ) || die "could not read the netplan files"
+   count=$(jq '.networks | length' <<< "$imported")
+   [ "$count" -gt 0 ] || [ "$(jq -r '.country // ""' <<< "$imported")" != "" ] || { log "no Wi-Fi in netplan: nothing to move"; return 0; }
+   wifi_lock
+   wifi_read
+   [ -z "$WIFI_ERROR" ] || die "$WIFI_ERROR; Imager's Wi-Fi stays in netplan"
+   # Entries the file has already win; an entry wifi.json can't hold (such
+   # as a password that is too long) is left out.
+   merged=$(jq -c --argjson in "$imported" '
+      def ssid_ok: utf8bytelength >= 1 and utf8bytelength <= 32 and (explode | any(. < 32 or . == 127) | not);
+      def key_ok: . == "" or test("^[ -~]{8,63}$") or test("^[0-9A-Fa-f]{64}$");
+      .country //= (if ($in.country // "") | test("^[A-Z]{2}$") then $in.country else null end)
+      | reduce ($in.networks[] | select((.ssid | ssid_ok) and (.password | key_ok))) as $n (.;
+           if any(.networks[]; .ssid == $n.ssid) then . else .networks += [$n] end)' <<< "$WIFI_JSON")
+   [ "$(jq '[.networks[] | select((.ssid | utf8bytelength) > 32 or (.password | length) > 64)] | length' <<< "$imported")" = 0 ] ||
+      log "a network from Imager can't be kept (name over 32 bytes or password over 64 characters); add it again"
+   wifi_write "$merged"
+   log "moved $count network(s) and the country from Imager's settings into wifi.json"
+   # Then netplan keeps everything but the Wi-Fi.
+   python3 -I - "${files[@]}" <<'PY' || die "could not remove the Wi-Fi from netplan"
+import os, sys, yaml
+for path in sys.argv[1:]:
+    with open(path, encoding="utf-8") as f:
+        doc = yaml.safe_load(f) or {}
+    net = doc.get("network") if isinstance(doc, dict) else None
+    if not isinstance(net, dict) or "wifis" not in net:
+        continue
+    del net["wifis"]
+    if not set(net) - {"version", "renderer"}:
+        os.remove(path)
+        continue
+    tmp = path + ".tmp"
+    fd = os.open(tmp, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    with os.fdopen(fd, "w", encoding="utf-8") as f:
+        yaml.safe_dump(doc, f, default_flow_style=False)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp, path)
+PY
+   log "Imager's Wi-Fi is no longer in netplan"
+}
+
+[ -n "$R" ] || [ "$(id -u)" = 0 ] || die "run as root"
+case ${1:-} in
+   run) cmd_run ;;
+   tick) tick ;;
+   migrate) cmd_migrate ;;
+   *) sed -n '2,8s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+esac

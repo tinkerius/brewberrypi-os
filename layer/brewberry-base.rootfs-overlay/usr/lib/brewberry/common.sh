@@ -48,14 +48,15 @@ engine_state() {
    curl -fsS -m 2 "http://127.0.0.1:$port/healthz" 2> /dev/null | jq -r '.engine // empty' 2> /dev/null || true
 }
 
-# confirm <what the action does>: the same protocol for every action that
-# restarts the app or reboots. A loaded or running brew is a warning, never a
-# refusal (ADR-0002). With --yes: go ahead. On a terminal: ask for 'yes'.
-# Otherwise: print the prompt ({"confirm": ...} with --json) and exit
-# NEED_CONFIRM without changing anything.
+# confirm <what the action does> [--no-brew]: the same protocol for every
+# action that restarts the app or reboots. A loaded or running brew is a
+# warning, never a refusal (ADR-0002); --no-brew leaves it out, for actions
+# that don't touch the app (brewberry-wifi forget). With --yes: go ahead. On
+# a terminal: ask for 'yes'. Otherwise: print the prompt ({"confirm": ...}
+# with --json) and exit NEED_CONFIRM without changing anything.
 confirm() {
-   local prompt=$1 engine answer
-   engine=$(engine_state)
+   local prompt=$1 engine="" answer
+   [ "${2:-}" = --no-brew ] || engine=$(engine_state)
    if [ -n "$engine" ] && [ "$engine" != NoProcess ]; then
       prompt="A brew is loaded or running (engine: $engine). This ends it. $prompt"
    fi

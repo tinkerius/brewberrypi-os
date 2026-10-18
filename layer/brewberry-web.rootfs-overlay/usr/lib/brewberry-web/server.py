@@ -60,7 +60,7 @@ def helper(request, timeout=900):
 def public_catalogue():
     with open(CATALOGUE, encoding="utf-8") as f:
         commands = json.load(f)["commands"]
-    keep = ("id", "title", "screen", "kind", "args", "confirm", "job", "reboots", "upload", "download", "stdin", "webOnly")
+    keep = ("id", "title", "screen", "kind", "args", "confirm", "job", "reboots", "upload", "download", "stdin", "stdinOptional", "webOnly")
     return [{k: c[k] for k in keep if k in c} for c in commands]
 
 

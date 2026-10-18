@@ -1,0 +1,16 @@
+# Wi-Fi of BrewberryPi OS (ADR-0004, OS11): the home networks from
+# /data/config/wifi.json, and the setup hotspot <hostname> when none is
+# reachable. Without /data it still runs (no networks, open hotspot), so the
+# Pi can be reached to fix things. Logs: brewberry-system logs wifi.
+[Unit]
+Description=BrewberryPi OS Wi-Fi: home networks and the setup hotspot
+After=NetworkManager.service data.mount brewberry-datalayout.service brewberry-wifi-migrate.service
+Wants=NetworkManager.service
+
+[Service]
+ExecStart=/usr/local/sbin/brewberry-wifi-manager run
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

@@ -291,3 +291,46 @@ By hand, from another machine on the LAN:
    `hardware.heating.pin` in `config.json` through the share, then `sudo systemctl kill -s KILL
    brewberrypi`. The heater relay goes off, and `brewberry-system logs outputs-off` shows the
    running app's pins first, then the new config's.
+
+## OS11: Wi-Fi setup through the hotspot
+
+On a Pi 3 B (2.4 GHz only), a Pi 4 and a Pi 5, after OS9. Needs a phone (iOS and Android), a
+Windows or macOS laptop, and a router you can switch off.
+
+1. **No customisation:** flash with Imager without **Customise** (or *Use custom*), no Ethernet.
+   After the first boot's reboot, a Wi-Fi network `brewberrypi` (open) appears within about two
+   minutes.
+2. **Captive portal:** join it from iOS, Android, Windows and macOS. Each opens the device web
+   interface's Wi-Fi page by itself (Android: *Sign in to network*). Log in with `pi`.
+3. Over the hotspot (SSH needs a user and key from Imager; otherwise copy the script to a stick
+   and run it on the console):
+
+   ```sh
+   ssh <user>@10.42.0.1 'sudo sh -s -- hotspot' < tests/hardware/os11-check.sh
+   ```
+
+   From the laptop on the hotspot: `curl -m 5 http://10.42.0.1:8080/healthz` is refused, and
+   `smb://10.42.0.1/config` opens with `brewberry`/`pi`.
+4. **Wrong password:** add the home network with a wrong password. The hotspot closes, comes back
+   within a minute, and the Wi-Fi page shows *wrong password*; the Pi doesn't try it again.
+5. **Right password:** add it again with the right one (and the country). The hotspot closes, the
+   Pi joins the network: `http://brewberrypi.local:8081/` and `http://brewberrypi.local/` open from
+   the home network. Then run:
+
+   ```sh
+   ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os11-check.sh
+   ```
+
+6. **Router off and on, during a "heating" stub brew** (OS3 relay board or LEDs): switch the
+   router off. After 90 s the hotspot appears; the relays stay as the stub drives them. Switch the
+   router on: within about 3 minutes (nobody on the hotspot) the Pi is back on the home network,
+   and the brew ran on throughout (`brewberry-update status`, `brewberry-system logs app`).
+7. **A phone on the hotspot holds it:** with the router back on, keep a phone joined to the
+   hotspot: the Pi stays on it. Disconnect the phone: the Pi goes home within about 3 minutes.
+8. **Hotspot password:** set one on the Wi-Fi page. The hotspot restarts with WPA2 (join it again);
+   `http://10.42.0.1:8080/` now opens the app, and `hotspot` mode of the check says *no firewall
+   rule*. Clear it again: the app is blocked again.
+9. **Imager's Wi-Fi:** flash with Wi-Fi in Imager's customisation. After the first boot,
+   `/data/config/wifi.json` holds the network and the country (mode `0600`), and `/etc/netplan`
+   has no `wifis:` (`run` checks it).
+10. **Ethernet:** with a cable connected and no Wi-Fi reachable, no hotspot appears.

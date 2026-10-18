@@ -1,0 +1,11 @@
+# Port 80 (ADR-0004, OS11): on the setup hotspot every request lands here and
+# is redirected to the device web interface's Wi-Fi page (captive portal);
+# elsewhere http://<hostname>.local/ goes to port 8081.
+[Unit]
+Description=BrewberryPi OS: redirect from port 80 to the device web interface
+
+[Socket]
+ListenStream=80
+
+[Install]
+WantedBy=sockets.target

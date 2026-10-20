@@ -258,6 +258,17 @@ class WebTest(unittest.TestCase):
         status, data = self.api("GET", "/api/jobs")
         self.assertIn(info["id"], [j["id"] for j in data["jobs"]])
 
+    def test_download_is_a_job_remove_runs_at_once(self):
+        status, data = self.api("POST", "/api/run/update.download", {"args": {"version": "1.4.0"}})
+        self.assertEqual(status, 202)
+        info = self.wait_job(data["job"])
+        self.assertEqual((info["state"], info["cmd"]), ("done", "update.download"))
+        self.assertIn("brewberry-update download 1.4.0\n", self.log())
+        status, data = self.api("POST", "/api/run/update.remove", {"args": {"version": "1.4.0"}})
+        self.assertEqual(status, 200)
+        self.assertIn("brewberry-update remove 1.4.0\n", self.log())
+        self.assertEqual(self.api("POST", "/api/run/update.remove", {"args": {"version": "active"}})[0], 400)
+
     def test_bad_version_refused_before_the_cli(self):
         before = self.log()
         status, data = self.api("POST", "/api/run/update.install", {"args": {"version": "1.2.3; reboot"}, "yes": True})

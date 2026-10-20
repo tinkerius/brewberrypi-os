@@ -3,13 +3,19 @@
 #
 #   brewberry-update login [--username <user> --password-stdin]
 #                                    store the registry token (/data/secrets/auth.json)
-#   brewberry-update list            available versions (also written to /data/update/tags.json)
+#   brewberry-update list            the registry's versions (also written to
+#                                    /data/update/tags.json) and the ones on the Pi
 #   brewberry-update status          active and previous image, last result
+#   brewberry-update download <version>
+#                                    pull a version from the registry onto the Pi,
+#                                    signature checked by policy.json; nothing switches
+#   brewberry-update remove <version>
+#                                    delete a downloaded version (never the active or
+#                                    the previous one)
 #   brewberry-update install <version> [--from-dir <dir>]
-#                                    pull from the registry, or from a 'dir:' export
-#                                    (USB, via brewberry-usb), signature checked by
-#                                    policy.json; switch, watch for 60 s, roll back
-#                                    on failure
+#                                    switch to a downloaded version, or to one from a
+#                                    'dir:' export (USB, via brewberry-usb, signature
+#                                    checked); watch for 60 s, roll back on failure
 #   brewberry-update rollback        switch back to the previous image
 #   brewberry-update demo on|off     run the app with a simulated kettle
 #                                    (--dummymode, never touches GPIO) or normally;
@@ -21,8 +27,10 @@
 # otherwise print what they would do and exit 10). They warn when a brew is
 # loaded or running, because restarting the app ends it (ADR-0002).
 #
-# Images: localhost/brewberrypi:active runs; :previous is the one before and is
-# never garbage-collected. Nothing else is kept. Never 'podman image prune -a'.
+# Images: localhost/brewberrypi:active runs; :previous is the one before; both
+# are never garbage-collected. Downloaded versions are kept as
+# localhost/brewberrypi:<version> until removed. Nothing else is kept. Never
+# 'podman image prune -a'.
 set -euo pipefail
 
 PROG=brewberry-update
@@ -33,8 +41,9 @@ PROG=brewberry-update
 # BREWBERRY_UPDATE_REPO is for the hardware test only (tests/hardware/os4-check.sh),
 # together with a temporary policy entry that a reboot removes.
 REPO=${BREWBERRY_UPDATE_REPO:-ghcr.io/tinkerius/brewberrypi}
-ACTIVE=localhost/brewberrypi:active
-PREVIOUS=localhost/brewberrypi:previous
+LOCAL=localhost/brewberrypi
+ACTIVE=$LOCAL:active
+PREVIOUS=$LOCAL:previous
 SERVICE=brewberrypi.service
 CONTRACT=1
 # The version label of the contract stub the OS image preloads: no app installed yet.
@@ -55,6 +64,31 @@ export REGISTRY_AUTH_FILE=$ROOT/data/secrets/auth.json
 
 image_id() { podman image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
 label() { podman image inspect -f "{{index .Labels \"$2\"}}" "$1" 2>/dev/null || true; }
+version_of() { label "$1" org.opencontainers.image.version; }
+
+# The versions downloaded onto the Pi (localhost/brewberrypi:<version>), one per line.
+downloads() {
+   podman images --noheading --format '{{.Tag}}' "$LOCAL" 2> /dev/null | grep -E "$VERSION_RE" | sort -u || true
+}
+
+# The image of a version that is on the Pi: its download, or the active or
+# previous image when it is that version (installed before downloads were kept,
+# or from a USB stick). Empty when the version isn't on the Pi.
+local_image() { # <version>
+   local id ref
+   id=$(image_id "$LOCAL:$1")
+   for ref in "$ACTIVE" "$PREVIOUS"; do
+      [ -z "$id" ] && [ "$(version_of "$ref")" = "$1" ] && id=$(image_id "$ref")
+   done
+   echo "$id"
+}
+
+# Megabytes an image takes on /data.
+image_mb() { echo $(( $(podman image inspect -f '{{.Size}}' "$1" 2> /dev/null || echo 0) / 1000000 )); }
+
+check_version() { # <version>
+   [[ $1 =~ $VERSION_RE ]] || die "not an app version (1.2.3 or 1.2.3-alpha.N/-beta.N/-rc.N): $1"
+}
 
 state() { # <phase> <message> [version]
    jq -n --arg phase "$1" --arg message "$2" --arg version "${3:-}" \
@@ -101,13 +135,14 @@ config_error() {
    esac
 }
 
-# Remove every image that is neither active nor previous (and dangling layers).
+# Remove every image that is neither active, previous nor downloaded (and
+# dangling layers).
 gc() {
-   local keep_a keep_p id
-   keep_a=$(image_id "$ACTIVE")
-   keep_p=$(image_id "$PREVIOUS")
+   local keep id v
+   keep=" $(image_id "$ACTIVE") $(image_id "$PREVIOUS") "
+   for v in $(downloads); do keep+="$(image_id "$LOCAL:$v") "; done
    for id in $(podman images -q --no-trunc | sed 's/^sha256://' | sort -u); do
-      [ "$id" = "$keep_a" ] || [ "$id" = "$keep_p" ] && continue
+      [[ $keep == *" $id "* ]] && continue
       podman rmi -f -i "$id" > /dev/null || log "could not remove image $id"
    done
    podman image prune -f > /dev/null || true
@@ -128,21 +163,108 @@ cmd_login() { # [--username <user> --password-stdin]
    sync -f "$(dirname "$REGISTRY_AUTH_FILE")"
 }
 
+# jq: newest first in SemVer order (a pre-release sorts before its release:
+# 1.2.0-alpha.2 < 1.2.0-beta.1 < 1.2.0).
+# shellcheck disable=SC2016  # jq program
+SEMVER_DESC='def semver_desc: sort_by(capture("^(?<v>[0-9.]+)(-(?<k>[a-z]+)\\.(?<n>[0-9]+))?$")
+   | (.v | split(".") | map(tonumber)) + [if .k then 0 else 1 end, .k // "", (.n // "0" | tonumber)])
+   | reverse;'
+
+# The registry's versions and the ones on the Pi. Without a token or a
+# network, it still lists the Pi's own versions and says why the registry is
+# missing (registryError).
 cmd_list() {
+   local tags='[]' err="" out v id active previous on_pi='[]'
+   if [ ! -s "$REGISTRY_AUTH_FILE" ]; then
+      err="no registry token; run: brewberry-update login"
+   elif out=$(skopeo --command-timeout 60s list-tags "docker://$REPO" 2>&1); then
+      # Version tags only; signature tags (sha256-...) and anything else are left out.
+      tags=$(jq -c --arg re "$VERSION_RE" "$SEMVER_DESC"' .Tags | map(select(test($re))) | semver_desc' <<< "$out")
+      jq -n --argjson tags "$tags" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg active "$(version_of "$ACTIVE")" \
+         '{time: $time, active: $active, tags: $tags}' | write_atomic "$UPDATE_DIR/tags.json"
+   else
+      err="the registry did not answer: $(tail -n 1 <<< "$out")"
+   fi
+   active=$(version_of "$ACTIVE")
+   previous=$(version_of "$PREVIOUS")
+   for v in $( { downloads; echo "$active"; echo "$previous"; } | grep -E "$VERSION_RE" | sort -u); do
+      id=$(local_image "$v")
+      [ -n "$id" ] || continue
+      on_pi=$(jq -c --arg v "$v" --argjson mb "$(image_mb "$id")" --arg a "$active" --arg p "$previous" \
+         --argjson dl "$([ -n "$(image_id "$LOCAL:$v")" ] && echo true || echo false)" \
+         '. + [{version: $v, mb: $mb, active: ($v == $a), previous: ($v == $p), downloaded: $dl}]' <<< "$on_pi")
+   done
+   out=$(jq -n -c --argjson tags "$tags" --argjson local "$on_pi" --arg err "$err" --arg active "$active" \
+      --arg previous "$previous" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SEMVER_DESC"'
+      def ornull: if . == "" then null else . end;
+      {time: $time, active: ($active | ornull), previous: ($previous | ornull), tags: $tags,
+       local: ([$local[].version] | semver_desc | map(. as $v | $local[] | select(.version == $v))),
+       registryError: ($err | ornull)}')
+   if [ "$JSON" = 1 ]; then
+      jq . <<< "$out"
+      return 0
+   fi
+   [ -z "$err" ] || log "$err; showing the versions on the Pi only"
+   jq -r "$SEMVER_DESC"'
+      . as $o | (.tags + [.local[].version] | unique | semver_desc)[] | . as $v
+      | ([$o.local[] | select(.version == $v)] | first) as $l
+      | if $l then "\($v)  " + ([if $l.active then "active" else empty end, if $l.previous then "previous" else empty end,
+           "on the Pi (\($l.mb) MB)"] | join(", "))
+        else $v end' <<< "$out"
+}
+
+cmd_download() { # <version>
+   local version=$1 id mb
+   check_version "$version"
    need_auth
-   local tags
-   # Version tags only, newest first in SemVer order (a pre-release sorts before
-   # its release: 1.2.0-alpha.2 < 1.2.0-beta.1 < 1.2.0); signature tags
-   # (sha256-...) and anything else are left out.
-   tags=$(skopeo list-tags "docker://$REPO" | jq -c --arg re "$VERSION_RE" '
-      .Tags | map(select(test($re)))
-      | sort_by(capture("^(?<v>[0-9.]+)(-(?<k>[a-z]+)\\.(?<n>[0-9]+))?$")
-         | (.v | split(".") | map(tonumber)) + [if .k then 0 else 1 end, .k // "", (.n // "0" | tonumber)])
-      | reverse')
-   jq -n --argjson tags "$tags" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
-      --arg active "$(label "$ACTIVE" org.opencontainers.image.version)" \
-      '{time: $time, active: $active, tags: $tags}' | write_atomic "$UPDATE_DIR/tags.json"
-   if [ "$JSON" = 1 ]; then jq . "$UPDATE_DIR/tags.json"; else echo "$tags" | jq -r '.[]'; fi
+   lock
+   if [ -n "$(image_id "$LOCAL:$version")" ]; then
+      log "$version is already downloaded"
+      return 0
+   fi
+   id=$(local_image "$version")
+   if [ -n "$id" ]; then
+      podman tag "$id" "$LOCAL:$version"
+      log "$version is already on the Pi (active or previous); kept as a download too"
+      return 0
+   fi
+   state downloading "downloading $version from $REPO (signature checked)" "$version"
+   if ! id=$(podman pull -q "$REPO:$version"); then
+      state failed "download failed or the signature was rejected; nothing changed" "$version"
+      exit 1
+   fi
+   id=$(image_id "$id")
+   podman untag "$id" "$REPO:$version" || true
+   if [ "$(label "$id" org.brewberrypi.runtime-contract)" != "$CONTRACT" ]; then
+      gc
+      state failed "$version does not implement runtime contract $CONTRACT; not kept" "$version"
+      exit 1
+   fi
+   if [ "$(version_of "$id")" != "$version" ]; then
+      gc
+      state failed "the image says it is version '$(version_of "$id")', not $version; not kept" "$version"
+      exit 1
+   fi
+   podman tag "$id" "$LOCAL:$version"
+   mb=$(image_mb "$id")
+   state downloaded "$version is downloaded ($mb MB); install it to switch to it" "$version"
+}
+
+cmd_remove() { # <version>
+   local version=$1 id
+   check_version "$version"
+   lock
+   id=$(image_id "$LOCAL:$version")
+   if [ "$(version_of "$ACTIVE")" = "$version" ] || { [ -n "$id" ] && [ "$id" = "$(image_id "$ACTIVE")" ]; }; then
+      die "$version is the active version; it stays on the Pi"
+   fi
+   if [ "$(version_of "$PREVIOUS")" = "$version" ] || { [ -n "$id" ] && [ "$id" = "$(image_id "$PREVIOUS")" ]; }; then
+      die "$version is the previous version, kept to roll back to; it stays on the Pi"
+   fi
+   [ -n "$id" ] || die "$version is not downloaded"
+   podman untag "$id" "$LOCAL:$version" || die "could not remove $version"
+   gc
+   log "removed $version"
 }
 
 cmd_status() {
@@ -212,25 +334,27 @@ cmd_restart() {
 }
 
 cmd_install() { # <version> [dir: export]
-   local version=$1 from_dir=${2:-} source new old prev_before rc
-   [[ $version =~ $VERSION_RE ]] || die "not an app version (1.2.3 or 1.2.3-alpha.N/-beta.N/-rc.N): $version"
+   local version=$1 from_dir=${2:-} new old prev_before rc
+   check_version "$version"
    if [ -n "$from_dir" ]; then
       [ -f "$from_dir/manifest.json" ] || die "no image in $from_dir"
-      source=dir:$from_dir
    else
-      need_auth
-      source=$REPO:$version
+      [ -n "$(local_image "$version")" ] || die "$version is not on the Pi; download it first: brewberry-update download $version"
    fi
    confirm "This installs $version and restarts the app; if it fails within ${SOAK_S} s, the previous version comes back."
    lock
 
-   state pulling "pulling $source" "$version"
-   if ! new=$(podman pull -q "$source"); then
-      state failed "pull failed or the signature was rejected; nothing changed" "$version"
-      exit 1
+   if [ -n "$from_dir" ]; then
+      state pulling "pulling dir:$from_dir" "$version"
+      if ! new=$(podman pull -q "dir:$from_dir"); then
+         state failed "pull failed or the signature was rejected; nothing changed" "$version"
+         exit 1
+      fi
+      new=$(image_id "$new")
+   else
+      new=$(local_image "$version")
+      [ -n "$new" ] || die "$version is no longer on the Pi"
    fi
-   new=$(image_id "$new")
-   [ -n "$from_dir" ] || podman untag "$new" "$source" || true
    old=$(image_id "$ACTIVE")
 
    if [ "$new" = "$old" ]; then
@@ -276,6 +400,7 @@ cmd_install() { # <version> [dir: export]
          systemctl reset-failed "$SERVICE" 2>/dev/null || true
          systemctl restart "$SERVICE" || true
          state rolled-back "$version failed to start or crashed within ${SOAK_S}s; rejected, back to the previous version" "$version"
+         [ -z "$(image_id "$LOCAL:$version")" ] || log "$version stays downloaded; remove it with: brewberry-update remove $version"
          exit 1
          ;;
    esac
@@ -314,6 +439,8 @@ case ${1:-} in
    login) shift; cmd_login "$@" ;;
    list) cmd_list ;;
    status) cmd_status ;;
+   download) [ $# -eq 2 ] || die "usage: brewberry-update download <version>"; cmd_download "$2" ;;
+   remove) [ $# -eq 2 ] || die "usage: brewberry-update remove <version>"; cmd_remove "$2" ;;
    install)
       if [ $# -eq 2 ]; then cmd_install "$2"
       elif [ $# -eq 4 ] && [ "$3" = --from-dir ]; then cmd_install "$2" "$4"
@@ -325,5 +452,5 @@ case ${1:-} in
          *) die "usage: brewberry-update demo on|off" ;;
       esac ;;
    restart) cmd_restart ;;
-   *) sed -n '2,25s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+   *) sed -n '2,30s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

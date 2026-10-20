@@ -393,7 +393,8 @@ mode:
 ## 6. App versions
 
 The Pi runs one app version, the *active* one, and keeps the one before it, the *previous* one,
-to roll back to. App versions come from the private registry `ghcr.io/tinkerius/brewberrypi` and
+to roll back to. Other versions are **downloaded** onto the Pi first and then **installed**;
+downloads stay until you remove them. App versions come from the private registry `ghcr.io/tinkerius/brewberrypi` and
 must be signed with the app's key. Unsigned or wrongly signed images are refused.
 
 Pick versions in the device web interface under **App versions**, or with the commands below over
@@ -421,34 +422,51 @@ yet, with these steps. The placeholder never switches the outputs. Its `/healthz
 The token is stored in `/data/secrets/auth.json`, readable by root only. The app container never
 sees it. When the token expires, create a new one and run `login` again.
 
-### List, install, roll back
+### List, download, install, roll back
 
 ```sh
-sudo brewberry-update list             # available versions, newest first
-sudo brewberry-update install 1.2.3    # install and switch to 1.2.3
+sudo brewberry-update list             # the registry's versions, newest first; the Pi's are marked
+sudo brewberry-update download 1.2.3   # download 1.2.3 onto the Pi (nothing switches yet)
+sudo brewberry-update install 1.2.3    # switch to the downloaded 1.2.3
+sudo brewberry-update remove 1.2.2     # delete a downloaded version again
 sudo brewberry-update status           # active and previous version, result of the last action
 sudo brewberry-update rollback         # switch back to the previous version
 sudo brewberry-update restart          # restart the app, for example after a config change
 ```
 
-In the device web interface: **App versions → Check the registry**, then **Install** next to a
-version; **Roll back** and **Restart the app** are on the same page.
+In the device web interface, **App versions** lists every version: the registry's and the ones on
+the Pi, marked *on the Pi* with their size (and *active* or *previous*). Next to each:
+
+- **Download** for a version that is only in the registry. A spinner shows while it downloads;
+  that can take a few minutes on a Pi 3. The app keeps running.
+- **Install** for a version on the Pi.
+- **Remove** for a downloaded version that is neither active nor previous. The active and the
+  previous version are always kept.
+
+**Check the registry** loads the list again. Without internet or a registry token the page still
+lists the versions on the Pi, so you can switch between them offline. **Roll back** and **Restart
+the app** are on the same page.
+
+Downloads take space on `/data` (about 250 MB each; the page shows what is free). Remove the ones
+you no longer need.
 
 Versions are releases like `1.2.3` or pre-releases like `1.2.3-alpha.1` (also `-beta.N`, `-rc.N`).
 A pre-release has not been tested on hardware yet. It is listed before its release: `1.2.3-alpha.2`,
 `1.2.3-beta.1` and `1.2.3-rc.1` are all older than `1.2.3`.
 
+A download doesn't touch the app: it fetches the version, checks its signature, checks that it is
+made for this OS (the runtime contract) and really is the version you asked for, and keeps it on
+the Pi. If a check fails, nothing is kept.
+
 Installing, rolling back and restarting restart the app, which **ends a running brew**. They ask
 first, and say so when a brew is loaded or running. What `install` does:
 
-1. It downloads the version and checks its signature. If the signature check fails, nothing
-   changes.
-2. It checks that the version is made for this OS (the runtime contract) and really is the
-   version you asked for.
+1. It refuses a version that isn't on the Pi: download it first.
+2. It checks again that the version is made for this OS.
 3. It switches to it. The version that was active becomes the previous one.
 4. It waits until the app reports ready, then watches it for **60 seconds**.
 5. If the app fails to start or crashes in that time, it switches back automatically and reports
-   `rolled-back`.
+   `rolled-back`. The failed version stays downloaded; remove it if you don't want to try again.
 6. If the app refuses its configuration, the new version stays installed and the status reports
    `config-error`. Fix the configuration and restart the app.
 
@@ -623,6 +641,7 @@ on the network.
 3. Otherwise the version itself is broken. Install a working version, or roll back:
 
    ```sh
+   sudo brewberry-update download 1.2.2   # if it isn't on the Pi yet
    sudo brewberry-update install 1.2.2
    ```
 
@@ -692,8 +711,10 @@ All commands run as root (`sudo`). The device web interface offers each of them
 | Command | What it does |
 |---|---|
 | `brewberry-update login` | Store the registry token (`--username <user> --password-stdin` without a prompt) |
-| `brewberry-update list` | Available app versions (releases and pre-releases), newest first |
-| `brewberry-update install <version>` | Install and switch to a version; rolls back if it fails |
+| `brewberry-update list` | Available app versions (releases and pre-releases), newest first, and the ones on the Pi |
+| `brewberry-update download <version>` | Download a version onto the Pi (signature checked); nothing switches |
+| `brewberry-update remove <version>` | Delete a downloaded version (never the active or previous one) |
+| `brewberry-update install <version>` | Switch to a downloaded version; rolls back if it fails |
 | `brewberry-update rollback` | Switch back to the previous version |
 | `brewberry-update status` | Active and previous version, last result, safe mode, demo mode |
 | `brewberry-update demo on\|off` | Run the app with a simulated kettle (no GPIO), or normally |

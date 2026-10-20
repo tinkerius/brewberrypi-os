@@ -11,6 +11,18 @@
       "argv": ["brewberry-update", "list"], "kind": "query", "timeout": 120
     },
     {
+      "id": "update.download", "title": "Download", "screen": "versions",
+      "argv": ["brewberry-update", "download", "{version}"],
+      "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },
+      "kind": "action", "job": true
+    },
+    {
+      "id": "update.remove", "title": "Remove the download", "screen": "versions",
+      "argv": ["brewberry-update", "remove", "{version}"],
+      "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },
+      "kind": "action", "timeout": 120
+    },
+    {
       "id": "update.install", "title": "Install", "screen": "versions",
       "argv": ["brewberry-update", "install", "{version}"],
       "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },

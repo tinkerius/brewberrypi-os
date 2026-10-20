@@ -154,7 +154,7 @@ Every command of the user manual's command reference, plus the ones its other se
 | Screen | Catalogue ids → CLI | Notes |
 |---|---|---|
 | Overview | `update.status`, `system.info` + `maint.status` (one card, *OS*), `wifi.status` | `system.info` is new (§5.4): replaces `cat /etc/brewberry-release` and adds hostname, addresses, uptime, `/data` usage |
-| App versions | `update.list`, `update.install <version>`, `update.rollback`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi` |
+| App versions | `update.list`, `update.download <version>`, `update.install <version>`, `update.remove <version>`, `update.rollback`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi`. The list marks the versions on the Pi; a row offers Download (only in the registry), Install (on the Pi) or Remove (on the Pi, neither active nor previous), with a spinner while a download or install runs (ADR-0001, amended 2026-10-20) |
 | Registry | `update.login` | gets non-interactive input (§5.4) |
 | Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
 | USB stick | `usb.list`, `usb.install <version>`, `usb.import-config` | existing |

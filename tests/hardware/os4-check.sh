@@ -51,10 +51,15 @@ run() {
    before=$(version active)
    echo "active before: $before"
 
-   check "0.5.0 (signed with another key) is rejected" sh -c "! BREWBERRY_UPDATE_REPO=$REPO brewberry-update install 0.5.0 --yes"
-   check "0.4.0 (unsigned) is rejected" sh -c "! BREWBERRY_UPDATE_REPO=$REPO brewberry-update install 0.4.0 --yes"
+   check "0.5.0 (signed with another key) is rejected" sh -c "! BREWBERRY_UPDATE_REPO=$REPO brewberry-update download 0.5.0"
+   check "0.4.0 (unsigned) is rejected" sh -c "! BREWBERRY_UPDATE_REPO=$REPO brewberry-update download 0.4.0"
    check "active unchanged after the rejections" is_version active "$before"
+   check "nothing kept of the rejected versions" sh -c "! podman image exists localhost/brewberrypi:0.5.0 && ! podman image exists localhost/brewberrypi:0.4.0"
+   check "install of a version not downloaded is refused" sh -c "! BREWBERRY_UPDATE_REPO=$REPO brewberry-update install 0.2.0 --yes"
 
+   BREWBERRY_UPDATE_REPO=$REPO brewberry-update download 0.2.0 >/dev/null 2>&1
+   BREWBERRY_UPDATE_REPO=$REPO brewberry-update download 0.3.0 >/dev/null 2>&1
+   check "0.2.0 and 0.3.0 are downloaded" sh -c "podman image exists localhost/brewberrypi:0.2.0 && podman image exists localhost/brewberrypi:0.3.0"
    update install 0.2.0 >/dev/null 2>&1
    check "0.2.0 (signed, healthy) is installed and active" is_version active 0.2.0
    check "the version before is previous" is_version previous "$before"
@@ -62,7 +67,10 @@ run() {
    update install 0.3.0 >/dev/null 2>&1
    check "0.3.0 (crashes on start) is rolled back: 0.2.0 active" is_version active 0.2.0
    check "previous survived rollback and garbage collection" is_version previous "$before"
-   check "the rejected 0.3.0 image is gone" sh -c "! podman images --format '{{.Labels}}' | grep -q 'version:0.3.0'"
+   check "the rejected 0.3.0 stays downloaded" podman image exists localhost/brewberrypi:0.3.0
+   brewberry-update remove 0.3.0 >/dev/null 2>&1
+   check "removing 0.3.0 deletes its image" sh -c "! podman images --format '{{.Labels}}' | grep -q 'version:0.3.0'"
+   check "the active version can't be removed" sh -c "! brewberry-update remove 0.2.0"
 
    echo "safe mode: making every start crash (stub.json), waiting for systemd to give up twice..."
    printf '{"start": "crash"}\n' > /data/config/stub.json && sync -f /data

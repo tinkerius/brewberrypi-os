@@ -181,6 +181,7 @@ Needs an app release (≥ 1.0 for the milestone) from `tinkerius/brewberrypi`, a
 
    ```sh
    sudo brewberry-update login             # classic PAT with read:packages
+   sudo brewberry-update download <version>
    sudo brewberry-update install <version> # must end with the new version active
    sudo brewberry-update status
    ```

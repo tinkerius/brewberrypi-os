@@ -143,6 +143,13 @@ Unit `/etc/containers/systemd/brewberrypi.container`:
    6. Soak for 60 s.
    7. On failure, re-tag back, mark the new image `rejected` and restart.
    8. Delete images that are neither `active` nor `previous`. Never `prune -a`.
+
+   *Amended 2026-10-20 (product owner):* pulling and switching are two steps. `brewberry-update
+   download <version>` pulls (step 2, with the same signature, contract and version checks) and
+   keeps the image as `localhost/brewberrypi:<version>`; `install` switches only to a version on
+   the Pi (steps 3–7) and no longer pulls from the registry (a USB `dir:` export still installs in
+   one step). Step 8 keeps the downloads too; `brewberry-update remove <version>` deletes one,
+   never `active` or `previous`. A rejected version stays downloaded until removed.
 4. **Available versions:** the root side runs `skopeo list-tags` and writes `/data/update/tags.json` for the UI. Signature tags (`sha256-…`) are filtered out and the rest sorted by semantic version.
 5. **Safe mode:** `brewberrypi-safemode.service` runs only when systemd gives up (start limit hit). Once, it swaps to `previous` and starts again. Otherwise the app stays down, with outputs already off.
 6. **Offline:** a USB stick carrying the `dir:` format (`skopeo copy --all … dir:`) keeps the signatures, so `podman pull dir:/media/usb/…` is verified like a registry pull.

@@ -2,6 +2,7 @@
 
 - **Status:** Accepted (2026-10-17, implemented in OS11, not yet tested on hardware)
 - **Note (2026-10-23):** `wifi.json` moved to `/data/config/os/`, and the USB import is gone ([ADR-0005](0005-config-folders-and-no-usb.md)); `brewberry-config` imports and exports only the app's folder.
+- **Note (2026-10-23):** off the setup hotspot, port 80 now goes to the app ([ADR-0006](0006-app-on-port-80.md)); the redirect to port 8081 is the captive portal only.
 - **Date:** 2026-10-17
 - **Deciders:** Benedikt Hauptmann (product owner); proposal by Claude Code
 

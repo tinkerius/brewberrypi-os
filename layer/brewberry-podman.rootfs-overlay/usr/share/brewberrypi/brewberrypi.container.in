@@ -58,6 +58,8 @@ WatchdogSec=20
 # change while it runs (import, file share), and the reset must still switch
 # off the pins the app drives.
 ExecStartPre=+/usr/local/sbin/brewberrypi-outputs-off --record
+# Port 80 forwarded to the app's port of that config (ADR-0006); never fails.
+ExecStartPre=-+/usr/local/sbin/brewberrypi-port80
 # Runs on every exit path (clean stop, crash, kill -9, watchdog, failed start),
 # before Quadlet's own cleanup: removes the container, then drives the recorded
 # outputs and every output from /data/config/app/config.json to its off level

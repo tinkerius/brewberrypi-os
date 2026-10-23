@@ -702,7 +702,11 @@ document.addEventListener("click", e => {
 for (const b of $$("#tabs button")) b.addEventListener("click", () => { location.hash = b.dataset.screen; });
 window.addEventListener("hashchange", () => show(current()));
 $("#job-close").addEventListener("click", () => { clearInterval(jobTimer); $("#job").classList.add("hidden"); });
-$("#applink").addEventListener("click", e => { e.preventDefault(); location.href = `http://${location.hostname}:8080/`; });
+// The app is on port 80 (brewberrypi-port80, ADR-0006), except on the setup hotspot, where port 80 is the captive portal.
+$("#applink").addEventListener("click", e => {
+  e.preventDefault();
+  location.href = location.hostname === "10.42.0.1" ? "http://10.42.0.1:8080/" : `http://${location.hostname}/`;
+});
 
 // --- login -----------------------------------------------------------------
 function showLogin() {

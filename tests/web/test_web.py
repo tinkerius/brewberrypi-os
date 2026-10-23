@@ -38,7 +38,7 @@ case "$(basename "$0") $1" in
       if [ $yes = 0 ]; then echo '{"confirm": "This installs '"$2"' and restarts the app."}'; exit 10; fi
       echo "working on $2"; sleep "${FAKE_SLEEP:-0}"; echo "done" ;;
    "brewberry-update login") cat > "$FAKE/token"; echo "Login Succeeded!" >&2 ;;
-   "brewberry-config show") echo '{"config": {}, "files": ["config.json"], "recipes": [], "builtinRecipes": true}' ;;
+   "brewberry-config show") echo '{"config": {}, "files": ["config.json"], "recipes": null}' ;;
    "brewberry-config import") (cd "$2" 2>/dev/null && find . -type f | sort || echo "file:$(basename "$2")") >> "$FAKE/imported"; echo "imported" >&2 ;;
    "brewberry-config export") printf 'TARDATA' ;;
    "brewberry-system logs") echo '{"name": "'"$2"'", "lines": ["one"]}' ;;
@@ -108,7 +108,7 @@ class WebTest(unittest.TestCase):
         bindir = os.path.join(t, "bin")
         os.makedirs(cls.fake)
         os.makedirs(bindir)
-        for name in ("brewberry-update", "brewberry-usb", "brewberry-config", "brewberry-system", "brewberry-maint", "brewberry-wifi"):
+        for name in ("brewberry-update", "brewberry-config", "brewberry-system", "brewberry-maint", "brewberry-wifi"):
             cls._script(os.path.join(bindir, name), FAKE_CLI)
         cls._script(os.path.join(bindir, "systemd-run"), FAKE_SYSTEMD_RUN)
         cls._script(os.path.join(bindir, "systemctl"), FAKE_SYSTEMCTL)

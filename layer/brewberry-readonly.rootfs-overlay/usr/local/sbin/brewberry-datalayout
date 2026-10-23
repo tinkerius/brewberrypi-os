@@ -1,43 +1,39 @@
 #!/bin/sh
-# Create the /data layout and the seed config (ADR-0001). Runs on every boot;
-# only creates what is missing, so a healthy /data is not written to.
+# Create the /data layout (ADR-0001). Runs on every boot; only creates what is
+# missing, so a healthy /data is not written to.
 set -eu
 
-# BREWBERRY_DATA_ROOT is for tests only (tests/unit/datalayout.sh).
+# BREWBERRY_DATA_ROOT and BREWBERRY_CONFIG_OWNER are for tests only
+# (tests/unit/datalayout.sh).
 D=${BREWBERRY_DATA_ROOT:-/data}
+# The share's user and the group the app container gets (GroupAdd=): both
+# may change everything in config/app and config/os (ADR-0003).
+OWNER=${BREWBERRY_CONFIG_OWNER:-brewberry:brewberry-config}
 
 mountpoint -q "$D" || { echo "$D is not mounted" >&2; exit 1; }
 
 created=0
-ensure_dir() { # <mode> <path>
+ensure_dir() { # <mode> <path> [owner]
    if [ ! -d "$2" ]; then
-      install -d -m "$1" "$2"
+      install -d -m "$1" ${3:+-o "${3%%:*}" -g "${3#*:}"} "$2"
       echo "created $2"
       created=1
    fi
 }
 
-ensure_dir 0755 "$D/config"              # config.json and recipes/, ro in the app
+# config is the file share's root (\\<hostname>.local\config). It belongs to
+# root, so nobody can rename or delete its two folders over the share:
+#   app  the app's own folder, mounted read-write at /config (runtime contract
+#        2): the app writes config.json with its defaults and creates recipes/
+#        with its shipped recipes when they are missing. Nothing seeds them.
+#   os   the OS's files: wifi.json, backups.
+# Set-group-ID: files created in them belong to the group, whoever writes.
+ensure_dir 0755 "$D/config"
+ensure_dir 2775 "$D/config/app" "$OWNER"
+ensure_dir 2775 "$D/config/os" "$OWNER"
 ensure_dir 0755 "$D/containers/storage"  # Podman graphroot (OS2)
 ensure_dir 0755 "$D/tmp"                 # Podman pull staging (OS2)
 ensure_dir 0755 "$D/update"              # update requests, state, tags.json (OS4)
 ensure_dir 0700 "$D/secrets"             # registry auth.json (OS4)
-
-# The app is started with --config /config/config.json and exits with code 2
-# (configuration error, not restarted) if the file is missing. An empty object
-# means the app's built-in defaults: the specification's config.example.json
-# with the built-in recipe catalogue, and the default pins (heater BCM 23,
-# pump BCM 22, buzzer BCM 10) that config.txt and the outputs-off reset use.
-# Do not create $D/config/recipes: an empty folder would mean no recipes at all,
-# while a missing one means the app's built-in catalogue (app RCP-001).
-CONFIG=$D/config/config.json
-if [ ! -e "$CONFIG" ]; then
-   printf '{}\n' > "$CONFIG.tmp"
-   chmod 0644 "$CONFIG.tmp"
-   sync "$CONFIG.tmp"
-   mv "$CONFIG.tmp" "$CONFIG"
-   echo "created $CONFIG (built-in defaults)"
-   created=1
-fi
 
 [ "$created" -eq 0 ] || sync -f "$D"

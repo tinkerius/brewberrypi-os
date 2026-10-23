@@ -35,10 +35,6 @@ case "$1 ${2:-}" in
          *) l=$(echo "$4" | sed 's/.*Labels "\([^"]*\)".*/\1/'); sed -n "s/^$l=//p" "$FAKE/labels/$id" ;;
       esac ;;
    "pull -q")
-      if [ "${3#dir:}" != "$3" ]; then
-         [ -f "${3#dir:}/fake-id" ] || { echo "rejected by policy" >&2; exit 125; }
-         id=$(cat "${3#dir:}/fake-id"); touch "$FAKE/images/$id"; echo "$id"; exit 0
-      fi
       tag=${3##*:}
       [ -f "$FAKE/registry/$tag" ] || { echo "rejected by policy" >&2; exit 125; }
       id=$(cat "$FAKE/registry/$tag"); touch "$FAKE/images/$id"
@@ -118,18 +114,18 @@ fixture() {
       echo "$behave" > "$FAKE/behave/$id"
       [ "$v" = 1.0.0 ] || echo "$id" > "$FAKE/registry/$v"
    done <<'END'
-1.0.0 id100 ok 1
-1.1.0 id110 ok 1
-1.2.0 id120 crash 1
-1.3.0 id130 crashlater 1
-1.5.0 id150 config 1
-1.6.0 id160 ok 2
-1.7.0 id170 ok 1
-1.8.0 id180 ok 1 1.8.1
-1.9.0-alpha.2 id192 ok 1
-1.9.0-alpha.10 id193 ok 1
-1.9.0-rc.1 id194 ok 1
-1.9.0 id190 ok 1
+1.0.0 id100 ok 2
+1.1.0 id110 ok 2
+1.2.0 id120 crash 2
+1.3.0 id130 crashlater 2
+1.5.0 id150 config 2
+1.6.0 id160 ok 1
+1.7.0 id170 ok 2
+1.8.0 id180 ok 2 1.8.1
+1.9.0-alpha.2 id192 ok 2
+1.9.0-alpha.10 id193 ok 2
+1.9.0-rc.1 id194 ok 2
+1.9.0 id190 ok 2
 END
    touch "$FAKE/images/id100"
    echo id100 > "$FAKE/tags/localhost_brewberrypi_active"
@@ -203,15 +199,6 @@ expect "configuration error: image kept, not rolled back" "$RC $(tag_of active) 
 
 fixture; run "$UPDATE" download 1.8.0
 expect "download: version label differs from the tag, not kept" "$RC $(tag_of active) $(images) $(phase)" "1 id100 id100 failed"
-
-fixture; mkdir -p "$T/stick/1.1.0"; echo '{}' > "$T/stick/1.1.0/manifest.json"; echo id110 > "$T/stick/1.1.0/fake-id"
-rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
-run "$UPDATE" --yes install 1.1.0 --from-dir "$T/stick/1.1.0"
-expect "install from a dir: export (no download, no registry token needed)" "$RC $(tag_of active) $(tag_of previous) $(phase)" "0 id110 id100 done"
-
-fixture; mkdir -p "$T/stick/1.2.0"; echo '{}' > "$T/stick/1.2.0/manifest.json"
-run "$UPDATE" --yes install 1.2.0 --from-dir "$T/stick/1.2.0"
-expect "dir: export rejected by policy: nothing changed" "$RC $(tag_of active) $(phase)" "1 id100 failed"
 
 fixture; run "$UPDATE" download latest
 expect "non-release tag refused before pulling" "$RC $(tag_of active) $(grep -c . "$FAKE/log")" "1 id100 0"
@@ -301,7 +288,7 @@ expect "invalid version: refused before asking" "$RC $(grep -c confirm "$T/out" 
 fixture; inst 1.1.0; echo NoProcess > "$FAKE/engine"
 expect "status --json" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .previous.version, .service, .engine, .last.phase, .demo, .safemode]')" \
    '["1.1.0","1.0.0","active","NoProcess","done",false,null]'
-fixture; printf 'org.opencontainers.image.version=placeholder\norg.brewberrypi.runtime-contract=1\n' > "$FAKE/labels/id100"
+fixture; printf 'org.opencontainers.image.version=placeholder\norg.brewberrypi.runtime-contract=2\n' > "$FAKE/labels/id100"
 expect "status: the preloaded placeholder is no app" "$("$UPDATE" status 2>/dev/null | head -n 1 | grep -c 'placeholder (no app installed)')" 1
 expect "status --json: the placeholder is marked" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .active.placeholder]')" '["placeholder",true]'
 inst 1.1.0

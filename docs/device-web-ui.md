@@ -24,7 +24,7 @@ How to use it: [user manual](user-manual.md#4-logging-in). How to add a command:
 
 ## 1. Goal and requirements
 
-Today the Pi is managed over SSH with root commands (`brewberry-update`, `brewberry-usb`,
+Today the Pi is managed over SSH with root commands (`brewberry-update`,
 `brewberry-maint` and a few plain Linux commands in the [user manual](user-manual.md)). The device
 web interface offers **the same functions in a browser**, next to the app's own web UI.
 
@@ -66,7 +66,7 @@ flowchart LR
   subgraph Pi[BrewberryPi OS]
     W["brewberry-web.service<br/>Python stdlib HTTP server<br/>user brewberry-web, no privileges"]
     H["brewberry-webcmd@.service<br/>root helper, one per request<br/>validates against the catalogue"]
-    C["CLIs: brewberry-update, -usb,<br/>-maint, -config, -system"]
+    C["CLIs: brewberry-update,<br/>-maint, -config, -system"]
     J["brewberry-job-*.service<br/>transient units (systemd-run)"]
     APP["brewberrypi.service<br/>app container (unchanged)"]
     D[("/data: update/, config/,<br/>secrets/")]
@@ -157,7 +157,6 @@ Every command of the user manual's command reference, plus the ones its other se
 | App versions | `update.list`, `update.download <version>`, `update.install <version>`, `update.remove <version>`, `update.rollback`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi`. The list marks the versions on the Pi; a row offers Download (only in the registry), Install (on the Pi) or Remove (on the Pi, neither active nor previous), with a spinner while a download or install runs (ADR-0001, amended 2026-10-20) |
 | Registry | `update.login` | gets non-interactive input (§5.4) |
 | Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
-| USB stick | `usb.list`, `usb.install <version>`, `usb.import-config` | existing |
 | OS update | `maint.on`, `maint.off`, `maint.upgrade` | `upgrade` is new (§5.4): replaces `apt update && apt full-upgrade`; only in maintenance mode |
 | Wi-Fi | `wifi.status`, `wifi.scan`, `wifi.add <ssid>`, `wifi.forget <ssid>`, `wifi.country <code>`, `wifi.hotspot-password` | OS11 (§14); `wifi.status` is on the overview too |
 | Logs | `system.logs <app\|safemode\|firstload\|outputs-off\|web\|share\|wifi>` | new (§5.4): replaces the manual's `journalctl` lines |
@@ -201,7 +200,7 @@ Every action marked `confirm` in the catalogue follows one protocol, in the CLI:
 
 1. Validate the arguments (a bad version fails before any question).
 2. Build the prompt. `engine_state` reads `GET http://127.0.0.1:<server.port>/healthz`, with
-   `server.port` from `/data/config/config.json` (default 8080) and a 2 s timeout:
+   `server.port` from `/data/config/app/config.json` (default 8080) and a 2 s timeout:
    - engine not `NoProcess`: "**A brew is loaded or running (engine: Running). This ends it.**"
      followed by what the action does;
    - engine `NoProcess`, or the app is down or not answering: only what the action does, for
@@ -215,14 +214,14 @@ Every action marked `confirm` in the catalogue follows one protocol, in the CLI:
 The web interface calls the command without `--yes`, shows the returned prompt in a dialog, and on
 **Confirm** calls it again with `--yes`. It is a warning, never a refusal, on both sides.
 
-This applies to `update install|rollback|demo|restart`, `usb install` (through `update install`)
-and `maint on|off|upgrade`. A config import restarts nothing (the app reads its configuration at
-start), so it doesn't ask; it ends with the hint to restart the app. `brewberry-wifi forget` asks
+This applies to `update install|rollback|demo|restart` and `maint on|off|upgrade`. A config import restarts nothing (the app reads `config.json` at start
+and its recipes whenever they change), so it doesn't ask; after a new `config.json` it ends with
+the hint to restart the app. `brewberry-wifi forget` asks
 only for the network the Pi is connected to, and without the brew warning (`confirm --no-brew`):
 it drops the browser's connection, not the app. A confirmed action that is not a job gets `--yes`
 from the helper the same way.
 
-**Behaviour change:** `brewberry-update install`, `rollback`, `demo` and `brewberry-usb install`
+**Behaviour change:** `brewberry-update install`, `rollback` and `demo`
 now ask for confirmation, as `brewberry-maint` already does. Scripts and
 `tests/hardware/os4-check.sh` pass `--yes`.
 
@@ -232,9 +231,9 @@ now ask for confirmation, as `brewberry-maint` already does. Scripts and
 |---|---|---|
 | `brewberry-update restart` | `systemctl reset-failed brewberrypi; systemctl restart brewberrypi` | Restarts the app; reports a configuration error (exit 2/3) like `install` does |
 | `brewberry-update login --username <u> --password-stdin` | interactive `login` (still works) | Non-interactive form for the web interface; the token is read from stdin and never appears in an argument list or log |
-| `brewberry-config show` | `cat /data/config/config.json` | `config.json` and the recipe ids (`--json`) |
-| `brewberry-config import <source>` | the SSH steps in "Configuration → Over SSH" | A folder (`*.json`, `recipes/`), one `.json` file or an export `.tar.gz` (only plain files, no absolute or `..` paths): the checks, backup and atomic writes `brewberry-usb import-config` had, which now calls it |
-| `brewberry-config export` | `scp -r …:/data/config` | Writes a `.tar.gz` of `/data/config` (without `backup/`) to stdout |
+| `brewberry-config show` | `cat /data/config/app/config.json` | `config.json` and the recipe ids (`--json`) |
+| `brewberry-config import <source>` | the SSH steps in "Configuration → Over SSH" | A folder (`*.json`, `recipes/`), one `.json` file or an export `.tar.gz` (only plain files, no absolute or `..` paths): the checks, backup (in `/data/config/os/backup`) and atomic writes; recipes are replaced file by file inside `recipes/`, which the app watches (ADR-0005) |
+| `brewberry-config export` | `scp -r …:/data/config/app` | Writes a `.tar.gz` of `/data/config/app` to stdout |
 | `brewberry-maint upgrade` | `apt update && apt full-upgrade` | Refuses unless in maintenance mode; runs non-interactively (`-y`, keeps changed config files); logs to the job |
 | `brewberry-system info` | `cat /etc/brewberry-release` | OS release, hostname, addresses, uptime, `/data` usage |
 | `brewberry-system logs <name> [--lines N]` | the `journalctl -u … -b` lines in "Troubleshooting" | Current boot's journal of `app`, `safemode`, `firstload`, `outputs-off` or `web` |
@@ -338,7 +337,7 @@ the browser, and the app's look (indigo/slate, cards). English, like the app.
   app's UI (`http://<host>:<server.port>/`).
 - **Banner** for the default password (§7.4) and for a running job.
 - **Screens** as tabs, matching §4: Overview, Wi-Fi, App versions (with Registry), Configuration,
-  USB stick, OS update, Logs, Account.
+  OS update, Logs, Account. (The USB stick screen was removed with ADR-0005.)
 - Buttons carry the catalogue id (`data-cmd="update.install"`), which the parity test reads.
 - Confirmation dialog shows the CLI's prompt text verbatim (§5.3); the brew warning appears in bold.
 - The OS update screen repeats the manual's warning: the power must stay connected from
@@ -383,7 +382,7 @@ watchdogs, signature policy and `/data`-only writes.
     as a subprocess on a free port, fake CLIs and a fake `systemd-run` on `PATH`, a fake shadow
     file. Covers login and sessions, `401` without a session, `Origin`/`Host` checks, rejection of
     unknown ids and bad arguments, the `409` → confirm → `202` flow, jobs and uploads.
-  - Shell tests (`tests/unit/update.sh`, `usb.sh`, `maint.sh`, new `config.sh`, `system.sh`): `--json`
+  - Shell tests (`tests/unit/update.sh`, `maint.sh`, new `config.sh`, `system.sh`): `--json`
     output, `--yes`, exit code 10, the brew warning with a fake `curl`.
   - `tests/unit/parity.sh` (§10).
 - **Hardware:** `tests/hardware/os9-check.sh`:

@@ -53,8 +53,8 @@ export PATH=$T/bin:$PATH
 DEFAULT_HASH='$y$j9T$default$pi-hash'
 fixture() { # fresh device: password still 'pi', no passdb yet
    rm -rf "$R" "$FAKE"
-   mkdir -p "$R/etc" "$R/data/config/recipes" "$R/data/secrets" "$R/usr/share/brewberry" "$FAKE"
-   echo '{}' > "$R/data/config/config.json"
+   mkdir -p "$R/etc" "$R/data/config/app/recipes" "$R/data/config/os" "$R/data/secrets" "$R/usr/share/brewberry" "$FAKE"
+   echo '{}' > "$R/data/config/app/config.json"
    echo "$DEFAULT_HASH" > "$R/usr/share/brewberry/default-password.hash"
    account "$DEFAULT_HASH"
    : > "$LOG"
@@ -108,12 +108,12 @@ expect "start: a password of an old account hash is removed" "$RC $(smbpw) $(rec
 grep -q "Set it again in the device web interface" "$T/out" && hint=yes || hint=no
 expect "start: says how to give the share a password" "$hint" yes
 
-# Files written as root (an import, the seed config) are given to brewberry.
+# Files written as root (an import, brewberry-wifi) or the app are given to brewberry.
 if [ "$(id -u)" = 0 ]; then
-   fixture; chown -R 65534:65534 "$R/data/config"; touch -d '2026-01-01' "$R/data/config/config.json"
+   fixture; chown -R 65534:65534 "$R/data/config"; touch -d '2026-01-01' "$R/data/config/app/config.json"
    BREWBERRY_SHARE_USER=root BREWBERRY_SHARE_GROUP=root "$SYNC" start > /dev/null 2>&1
-   expect "start: wrong owners in /data/config are fixed" \
-      "$(find "$R/data/config" ! -user root | wc -l) $(stat -c %y "$R/data/config/config.json" | cut -c1-10)" "0 2026-01-01"
+   expect "start: wrong owners below /data/config are fixed, the share's root keeps its owner" \
+      "$(find "$R/data/config" -mindepth 1 ! -user root | wc -l) $(stat -c %u "$R/data/config") $(stat -c %y "$R/data/config/app/config.json" | cut -c1-10)" "0 65534 2026-01-01"
 else
    echo "skip  start: owners (needs root)"
 fi

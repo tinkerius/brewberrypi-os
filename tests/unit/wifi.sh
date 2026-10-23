@@ -21,7 +21,7 @@ BREWBERRY_WIFI_OWNER="$(id -un):$(id -gn)"
 export BREWBERRY_WIFI_OWNER
 export LOG=$T/log FAKE=$T/fake
 R=$BREWBERRY_WIFI_ROOT
-CFG=$R/data/config/wifi.json
+CFG=$R/data/config/os/wifi.json
 PROFILES=$R/run/NetworkManager/system-connections
 
 mkdir -p "$T/bin"
@@ -83,8 +83,8 @@ expect() { # <description> <got> <want>
 run() { RC=0; "$@" > "$T/out" 2> "$T/err" || RC=$?; }
 fixture() {
    rm -rf "$R" "$FAKE"
-   mkdir -p "$R/data/config" "$R/etc/netplan" "$FAKE"
-   echo '{}' > "$R/data/config/config.json"
+   mkdir -p "$R/data/config/app" "$R/data/config/os" "$R/etc/netplan" "$FAKE"
+   echo '{}' > "$R/data/config/app/config.json"
    echo 1000 > "$T/clock"
    echo "" > "$FAKE/active"; echo 30 > "$FAKE/state"; echo unavailable > "$FAKE/eth"; echo 0 > "$FAKE/clients"
    printf '%s\n' 'Home:72:WPA2' 'Nachbar\:WLAN:40:WPA1 WPA2' 'Cafe:30:--' > "$FAKE/scan"
@@ -148,7 +148,7 @@ echo '{"networks": [{"ssid": "x"' > "$CFG"
 expect "status: an unusable wifi.json is reported" "$(jq -r .fileError "$T/out")" "wifi.json is not valid JSON"
 add Home 'brew secret'
 expect "add: an unusable wifi.json is backed up, new settings start empty" \
-   "$(jq -c '[.networks[] | .ssid]' "$CFG") $(cat "$R"/data/config/backup/*/wifi.json) $(grep -c 'moved to' "$T/err")" \
+   "$(jq -c '[.networks[] | .ssid]' "$CFG") $(cat "$R"/data/config/os/backup/*/wifi.json) $(grep -c 'moved to' "$T/err")" \
    '["Home"] {"networks": [{"ssid": "x" 1'
 
 # --- brewberry-wifi-manager: no networks -----------------------------------------
@@ -169,7 +169,7 @@ at 1005
 expect "a round later: still up, nothing started twice" "$(logged 'nmcli up brewberry-hotspot')" 1
 
 fixture
-echo '{"server": {"port": 9000}}' > "$R/data/config/config.json"
+echo '{"server": {"port": 9000}}' > "$R/data/config/app/config.json"
 tick
 expect "firewall: the app's own port too" "$(logged 'tcp dport { 8080, 9000 }')" 1
 fixture

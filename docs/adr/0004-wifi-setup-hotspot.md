@@ -1,6 +1,7 @@
 # ADR-0004: Wi-Fi setup through a fallback hotspot
 
 - **Status:** Accepted (2026-10-17, implemented in OS11, not yet tested on hardware)
+- **Note (2026-10-23):** `wifi.json` moved to `/data/config/os/`, and the USB import is gone ([ADR-0005](0005-config-folders-and-no-usb.md)); `brewberry-config` imports and exports only the app's folder.
 - **Date:** 2026-10-17
 - **Deciders:** Benedikt Hauptmann (product owner); proposal by Claude Code
 
@@ -67,7 +68,7 @@ Facts this ADR relies on:
    own web server, login and storage, outside the CLI ⇄ web parity of ADR-0002, and writes its
    state to `/etc`. Rejected.
 4. **A fallback hotspot managed by a small `brewberry-wifi` service on top of NetworkManager**, its
-   settings in `/data/config/wifi.json`, set up in the device web interface. Uses what the image
+   settings in `/data/config/os/wifi.json`, set up in the device web interface. Uses what the image
    has, keeps one implementation (the CLI) and one login.
 5. **Hotspot access:** fully open including the app (anyone in Wi-Fi range can start the heater),
    a fixed documented hotspot password (no better: the password is public), or **open for setup
@@ -77,7 +78,7 @@ Facts this ADR relies on:
 
 We choose **option 4** with option 5's last variant, in a new layer `brewberry-wifi`:
 
-- **Settings:** `/data/config/wifi.json`, owned by `brewberry` like the other files in the share,
+- **Settings:** `/data/config/os/wifi.json`, owned by `brewberry` like the other files in the share,
   written atomically by the CLI, and also editable in the share or imported with
   `brewberry-config import` / `brewberry-usb import-config`:
 

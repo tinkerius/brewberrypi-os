@@ -12,10 +12,9 @@
 #   brewberry-update remove <version>
 #                                    delete a downloaded version (never the active or
 #                                    the previous one)
-#   brewberry-update install <version> [--from-dir <dir>]
-#                                    switch to a downloaded version, or to one from a
-#                                    'dir:' export (USB, via brewberry-usb, signature
-#                                    checked); watch for 60 s, roll back on failure
+#   brewberry-update install <version>
+#                                    switch to a downloaded version; watch for 60 s,
+#                                    roll back on failure
 #   brewberry-update rollback        switch back to the previous image
 #   brewberry-update demo on|off     run the app with a simulated kettle
 #                                    (--dummymode, never touches GPIO) or normally;
@@ -45,14 +44,14 @@ LOCAL=localhost/brewberrypi
 ACTIVE=$LOCAL:active
 PREVIOUS=$LOCAL:previous
 SERVICE=brewberrypi.service
-CONTRACT=1
+CONTRACT=2
 # The version label of the contract stub the OS image preloads: no app installed yet.
 PLACEHOLDER=placeholder
 # App versions (runtime contract §1): 1.2.3, or a pre-release 1.2.3-alpha.N, -beta.N, -rc.N.
 VERSION_RE='^[0-9]+\.[0-9]+\.[0-9]+(-(alpha|beta|rc)\.[0-9]+)?$'
 # BREWBERRY_SOAK_S is for tests too.
 ROOT=${BREWBERRY_UPDATE_ROOT:-}
-APP_CONFIG=$ROOT/data/config/config.json
+APP_CONFIG=$ROOT/data/config/app/config.json
 SOAK_S=${BREWBERRY_SOAK_S:-60}
 UPDATE_DIR=$ROOT/data/update
 STATE=$UPDATE_DIR/state.json
@@ -72,8 +71,8 @@ downloads() {
 }
 
 # The image of a version that is on the Pi: its download, or the active or
-# previous image when it is that version (installed before downloads were kept,
-# or from a USB stick). Empty when the version isn't on the Pi.
+# previous image when it is that version (installed before downloads were
+# kept). Empty when the version isn't on the Pi.
 local_image() { # <version>
    local id ref
    id=$(image_id "$LOCAL:$1")
@@ -328,33 +327,20 @@ cmd_restart() {
       return 0
    fi
    if config_error; then
-      die "the app refuses its configuration (exit code $(systemctl show -p ExecMainStatus --value "$SERVICE")); fix /data/config"
+      die "the app refuses its configuration (exit code $(systemctl show -p ExecMainStatus --value "$SERVICE")); fix /data/config/app"
    fi
    die "the app did not start; see: journalctl -u $SERVICE -b"
 }
 
-cmd_install() { # <version> [dir: export]
-   local version=$1 from_dir=${2:-} new old prev_before rc
+cmd_install() { # <version>
+   local version=$1 new old prev_before rc
    check_version "$version"
-   if [ -n "$from_dir" ]; then
-      [ -f "$from_dir/manifest.json" ] || die "no image in $from_dir"
-   else
-      [ -n "$(local_image "$version")" ] || die "$version is not on the Pi; download it first: brewberry-update download $version"
-   fi
+   [ -n "$(local_image "$version")" ] || die "$version is not on the Pi; download it first: brewberry-update download $version"
    confirm "This installs $version and restarts the app; if it fails within ${SOAK_S} s, the previous version comes back."
    lock
 
-   if [ -n "$from_dir" ]; then
-      state pulling "pulling dir:$from_dir" "$version"
-      if ! new=$(podman pull -q "dir:$from_dir"); then
-         state failed "pull failed or the signature was rejected; nothing changed" "$version"
-         exit 1
-      fi
-      new=$(image_id "$new")
-   else
-      new=$(local_image "$version")
-      [ -n "$new" ] || die "$version is no longer on the Pi"
-   fi
+   new=$(local_image "$version")
+   [ -n "$new" ] || die "$version is no longer on the Pi"
    old=$(image_id "$ACTIVE")
 
    if [ "$new" = "$old" ]; then
@@ -387,7 +373,7 @@ cmd_install() { # <version> [dir: export]
          ;;
       2)
          gc
-         state config-error "$version refuses the configuration (exit code $(systemctl show -p ExecMainStatus --value "$SERVICE")); fix /data/config, the image is kept" "$version"
+         state config-error "$version refuses the configuration (exit code $(systemctl show -p ExecMainStatus --value "$SERVICE")); fix /data/config/app, the image is kept" "$version"
          exit 1
          ;;
       *)
@@ -441,10 +427,7 @@ case ${1:-} in
    status) cmd_status ;;
    download) [ $# -eq 2 ] || die "usage: brewberry-update download <version>"; cmd_download "$2" ;;
    remove) [ $# -eq 2 ] || die "usage: brewberry-update remove <version>"; cmd_remove "$2" ;;
-   install)
-      if [ $# -eq 2 ]; then cmd_install "$2"
-      elif [ $# -eq 4 ] && [ "$3" = --from-dir ]; then cmd_install "$2" "$4"
-      else die "usage: brewberry-update install <version> [--from-dir <dir>]"; fi ;;
+   install) [ $# -eq 2 ] || die "usage: brewberry-update install <version>"; cmd_install "$2" ;;
    rollback) cmd_rollback ;;
    demo)
       case ${2:-} in

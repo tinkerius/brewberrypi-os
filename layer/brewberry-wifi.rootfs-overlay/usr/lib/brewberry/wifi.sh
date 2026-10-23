@@ -7,15 +7,15 @@
 # Source after common.sh, with R set to the root ("" on the device, a fake
 # root in tests/unit/wifi.sh).
 #
-# /data/config/wifi.json (in the file share; the CLI writes it 0600):
+# /data/config/os/wifi.json (in the file share; the CLI writes it 0600):
 #   {"country": "DE",
 #    "networks": [{"ssid": "Home", "password": "…", "hidden": false}],
 #    "hotspot": {"password": ""}}
 # A password is the passphrase (8-63 characters) or the 64-digit hex key, ""
 # for an open network or hotspot. The networks are tried in this order.
 
-WIFI_FILE=$R/data/config/wifi.json
-WIFI_BACKUP_DIR=$R/data/config/backup
+WIFI_FILE=$R/data/config/os/wifi.json
+WIFI_BACKUP_DIR=$R/data/config/os/backup
 WIFI_STATE_DIR=$R/run/brewberry-wifi    # root only: entry keys are hashes of passwords
 WIFI_STATE=$WIFI_STATE_DIR/state.json  # the service's state, read by the CLI
 WIFI_SCAN=$WIFI_STATE_DIR/scan.json    # the service's last scan (none while the hotspot is up)
@@ -23,8 +23,8 @@ WIFI_LOCK=$WIFI_STATE_DIR/lock         # read-modify-write of wifi.json
 NM_PROFILES=$R/run/NetworkManager/system-connections
 HOTSPOT_ID=brewberry-hotspot
 HOTSPOT_ADDRESS=10.42.0.1
-# BREWBERRY_WIFI_OWNER is for tests: the share's user owns the files in /data/config.
-WIFI_OWNER=${BREWBERRY_WIFI_OWNER:-brewberry:brewberry}
+# BREWBERRY_WIFI_OWNER is for tests: the share's user and group own the files in /data/config/os.
+WIFI_OWNER=${BREWBERRY_WIFI_OWNER:-brewberry:brewberry-config}
 WIFI_MAX_BYTES=65536
 WIFI_EMPTY='{"country":null,"networks":[],"hotspot":{"password":""}}'
 

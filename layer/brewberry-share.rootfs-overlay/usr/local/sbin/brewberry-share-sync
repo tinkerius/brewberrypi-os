@@ -3,7 +3,8 @@
 # by systemd and PAM, never by hand.
 #
 #   brewberry-share-sync start   before smbd starts: the files in /data/config
-#                                belong to brewberry, and the share's password
+#                                (below app and os) belong to brewberry and the
+#                                group brewberry-config, and the share's password
 #                                is the account's (or none, see below)
 #   brewberry-share-sync pam     PAM hook (pam_exec expose_authtok): the new
 #                                password of brewberry on stdin
@@ -27,7 +28,7 @@ PROG=brewberry-share-sync
 . "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
 R=${BREWBERRY_SHARE_ROOT:-}
 SHARE_USER=${BREWBERRY_SHARE_USER:-brewberry}
-SHARE_GROUP=${BREWBERRY_SHARE_GROUP:-$SHARE_USER}
+SHARE_GROUP=${BREWBERRY_SHARE_GROUP:-brewberry-config}
 CONFIG_DIR=$R/data/config
 PRIVATE=$R/data/secrets/samba       # smb.conf's private dir
 RECORD=$PRIVATE/account-hash
@@ -56,12 +57,13 @@ remove_share_password() {
    rm -f "$RECORD"
 }
 
-# Files written as root (brewberry-config import, the seed config.json) would
-# be read-only on the share. Only wrong owners are changed, so a healthy /data
-# is not written to; -h changes a link itself, never what it points to.
+# Files written as root (brewberry-wifi, an import) or by the app (its own
+# user) would be read-only on the share. Only wrong owners are changed, so a
+# healthy /data is not written to; -h changes a link itself, never what it
+# points to. /data/config itself stays root's, so app and os stay where they are.
 fix_owners() {
    [ -d "$CONFIG_DIR" ] || return 0
-   find "$CONFIG_DIR" \( ! -user "$SHARE_USER" -o ! -group "$SHARE_GROUP" \) \
+   find "$CONFIG_DIR" -mindepth 1 \( ! -user "$SHARE_USER" -o ! -group "$SHARE_GROUP" \) \
       -exec chown -h "$SHARE_USER:$SHARE_GROUP" {} +
 }
 

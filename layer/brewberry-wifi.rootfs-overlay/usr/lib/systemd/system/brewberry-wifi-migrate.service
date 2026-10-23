@@ -1,5 +1,5 @@
 # First boot only (ADR-0004, OS11): Imager's Wi-Fi, which cloud-init wrote to
-# netplan, moves into /data/config/wifi.json before the system is sealed, so
+# netplan, moves into /data/config/os/wifi.json before the system is sealed, so
 # wifi.json is the only place Wi-Fi is configured.
 [Unit]
 Description=BrewberryPi OS: move Imager's Wi-Fi settings into wifi.json

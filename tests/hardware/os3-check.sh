@@ -8,7 +8,7 @@
 #
 # Modes:
 #   status   host safety settings and the current output levels
-#   enable   allow the stub's heater test (/data/config/stub.json) and restart
+#   enable   allow the stub's heater test (/data/config/app/stub.json) and restart
 #   kill9    heater on, then kill -9 the app       -> heater must go off
 #   hang     heater on, then stop watchdog pings   -> killed within ~20 s, off
 #   pause    heater on, then freeze the container (podman pause; the app's
@@ -19,7 +19,7 @@
 set -u
 
 HEATER=23
-STUB_JSON=/data/config/stub.json
+STUB_JSON=/data/config/app/stub.json
 fail=0
 
 check() { # <description> <command...>

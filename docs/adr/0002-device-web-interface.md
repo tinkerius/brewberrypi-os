@@ -1,6 +1,7 @@
 # ADR-0002: Device web interface with CLI parity
 
 - **Status:** Accepted (2026-10-15, implemented in OS9)
+- **Note (2026-10-23):** the USB stick and `brewberry-usb` are removed by [ADR-0005](0005-config-folders-and-no-usb.md).
 - **Date:** 2026-10-15
 - **Deciders:** Benedikt Hauptmann (product owner); proposal by Claude Code
 

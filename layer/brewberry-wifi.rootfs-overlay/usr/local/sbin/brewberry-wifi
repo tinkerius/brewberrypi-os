@@ -11,7 +11,7 @@
 #                                    characters (an empty line: an open hotspot)
 #
 # Options: --json (status, scan), --yes (forget). The settings are in
-# /data/config/wifi.json (also in the file share); brewberry-wifi.service
+# /data/config/os/wifi.json (also in the file share); brewberry-wifi.service
 # applies changes within seconds. Without a home network the Pi opens the
 # hotspot <hostname>, with the device web interface at http://10.42.0.1:8081/.
 # An open hotspot keeps the app off it; with a password the app works over it.
@@ -26,7 +26,7 @@ PROG=brewberry-wifi
 R=${BREWBERRY_WIFI_ROOT:-}
 # shellcheck source=layer/brewberry-wifi.rootfs-overlay/usr/lib/brewberry/wifi.sh
 . "${BREWBERRY_WIFI_LIB:-/usr/lib/brewberry}/wifi.sh"
-APP_CONFIG=$R/data/config/config.json
+APP_CONFIG=$R/data/config/app/config.json
 
 service_state() { jq -c . "$WIFI_STATE" 2> /dev/null || echo '{}'; }
 

@@ -1,6 +1,7 @@
 # ADR-0003: File share of the app's configuration (SMB)
 
 - **Status:** Proposed (implemented in OS10, not yet tested on hardware)
+- **Note (2026-10-23):** the folder layout (`config.json`, `recipes/`, `wifi.json` at the top) is superseded by [ADR-0005](0005-config-folders-and-no-usb.md): folders `app` and `os`.
 - **Date:** 2026-10-17
 - **Deciders:** Benedikt Hauptmann (product owner); proposal by Claude Code
 

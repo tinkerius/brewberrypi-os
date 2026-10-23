@@ -73,7 +73,7 @@ run() {
    check "the active version can't be removed" sh -c "! brewberry-update remove 0.2.0"
 
    echo "safe mode: making every start crash (stub.json), waiting for systemd to give up twice..."
-   printf '{"start": "crash"}\n' > /data/config/stub.json && sync -f /data
+   printf '{"start": "crash"}\n' > /data/config/app/stub.json && sync -f /data
    systemctl reset-failed brewberrypi.service; systemctl restart brewberrypi.service 2>/dev/null
    check "systemd gave up twice; safe mode then left the app down" wait_safemode_done "$start"
    switches=$(journalctl -q --since "$start" -t brewberrypi-safemode | grep -c 'switched to the previous image')
@@ -82,7 +82,7 @@ run() {
    check "the app stays down after the second failure" test "$(systemctl show -p ActiveState --value brewberrypi.service)" = failed
    check "outputs are off" sh -c 'pinctrl get 23 | grep -q "| hi"'
 
-   rm -f /data/config/stub.json && sync -f /data
+   rm -f /data/config/app/stub.json && sync -f /data
    systemctl reset-failed brewberrypi.service && systemctl start brewberrypi.service
    check "back up after removing the crash setting" systemctl is-active --quiet brewberrypi.service
    echo; brewberry-update status

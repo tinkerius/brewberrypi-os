@@ -20,7 +20,7 @@ check() { # <description> <command...>
 
 in_app() { podman exec brewberrypi "$@"; }
 
-config_seeded()       { test -f /data/config/config.json && jq -e 'type == "object"' /data/config/config.json; }
+config_folders()      { test "$(stat -c %a:%U /data/config)" = 755:root && test "$(stat -c %a:%G /data/config/app)" = 2775:brewberry-config && test "$(stat -c %a:%G /data/config/os)" = 2775:brewberry-config; }
 graphroot_on_data()   { test "$(podman info --format '{{.Store.GraphRoot}}')" = /data/containers/storage; }
 active_tag_exists()   { podman image exists localhost/brewberrypi:active; }
 service_active()      { systemctl is-active --quiet brewberrypi.service; }
@@ -30,7 +30,9 @@ sees_gpiochips()      { in_app sh -c 'ls /dev/gpiochip*'; }
 # shellcheck disable=SC2016  # expanded inside the container
 gpiochip_rw()         { in_app sh -c 'for c in /dev/gpiochip*; do test -r "$c" && test -w "$c" || exit 1; done'; }
 rootfs_read_only()    { ! in_app sh -c 'touch /probe' ; }
-config_read_only()    { ! in_app sh -c 'touch /config/probe'; }
+has_config_group()    { in_app id -G | tr ' ' '\n' | grep -qx "$(getent group brewberry-config | cut -d: -f3)"; }
+config_writable()     { in_app sh -c 'touch /config/.probe && rm /config/.probe'; }
+no_os_folder()        { ! in_app sh -c 'ls /config/../data /config/wifi.json' && ! podman inspect brewberrypi --format '{{range .Mounts}}{{.Source}} {{end}}' | grep -q '/data/config/os'; }
 healthz_ok()          { in_app python3 -c 'import urllib.request as u; assert b"\"ok\"" in u.urlopen("http://127.0.0.1:8080/healthz").read()'; }
 
 # systemctl restart must block until READY=1. The stub waits 2 s before READY.
@@ -42,7 +44,7 @@ restart_waits_ready() {
    [ "$ms" -ge 2000 ] && systemctl is-active --quiet brewberrypi.service
 }
 
-check "/data/config/config.json exists (seeded {})"   config_seeded
+check "/data/config (root, 0755) has app and os (2775, brewberry-config)" config_folders
 check "Podman graphroot is /data/containers/storage"  graphroot_on_data
 check "localhost/brewberrypi:active exists"            active_tag_exists
 check "brewberrypi.service is active"                  service_active
@@ -51,7 +53,9 @@ check "app has the host gpio group"                    has_gpio_group
 check "app sees /dev/gpiochip*"                        sees_gpiochips
 check "app can open every gpiochip read-write"         gpiochip_rw
 check "container root is read-only"                    rootfs_read_only
-check "/config is read-only"                           config_read_only
+check "app has the brewberry-config group"            has_config_group
+check "/config (the app folder) is writable"           config_writable
+check "/data/config/os is not in the container"        no_os_folder
 check "GET /healthz answers ok"                        healthz_ok
 check "systemctl restart waits for READY (>= 2 s)"     restart_waits_ready
 echo

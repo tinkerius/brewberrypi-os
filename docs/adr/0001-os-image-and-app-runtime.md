@@ -1,6 +1,7 @@
 # ADR-0001: BrewberryPi OS — Image, Read-only Root, App Runtime and Updates
 
 - **Status:** Accepted
+- **Note (2026-10-23):** the read-only `/config` mount and the USB stick are superseded by [ADR-0005](0005-config-folders-and-no-usb.md).
 - **Date:** 2026-10-09
 - **Deciders:** Benedikt Hauptmann (product owner); proposal and research by Claude Code
 
@@ -115,7 +116,7 @@ Unit `/etc/containers/systemd/brewberrypi.container`:
   - `OnFailure=brewberrypi-safemode.service`.
 - **`ExecStopPost=+/usr/local/sbin/brewberrypi-outputs-off`:**
   1. It force-removes the container, which releases the lines.
-  2. It drives every output configured in `/data/config/config.json` to its off level with `pinctrl`.
+  2. It drives every output configured in `/data/config/app/config.json` to its off level with `pinctrl`.
 
 ### Host-side safety
 

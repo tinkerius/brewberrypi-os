@@ -98,7 +98,6 @@ td button + button { margin-left: 6px; }
       <button data-screen="wifi">Wi-Fi</button>
       <button data-screen="versions">App versions</button>
       <button data-screen="config">Configuration</button>
-      <button data-screen="usb">USB stick</button>
       <button data-screen="os">OS update</button>
       <button data-screen="logs">Logs</button>
       <button data-screen="account">Account</button>
@@ -212,8 +211,8 @@ td button + button { margin-left: 6px; }
       <div class="card">
         <h2>Import</h2>
         <p class="muted">Upload <code>config.json</code> (or other .json files), recipe files, or a <code>.tar.gz</code> downloaded above.
-          Every file is checked first; nothing changes if one is invalid. Replaced files are backed up on the Pi.
-          The app reads its configuration at start: restart it afterwards.</p>
+          Every file is checked first; nothing changes if one is invalid. Replaced files are backed up on the Pi (<code>os/backup</code>).
+          New recipes show up in the app within a few seconds; <code>config.json</code> it reads at start: restart it afterwards.</p>
         <input type="file" id="cfg-files" multiple accept=".json,.tar.gz,.tgz,application/json,application/gzip">
         <label><input type="checkbox" id="cfg-recipes"> These .json files are recipes (they replace all recipes on the Pi)</label>
         <div class="row">
@@ -223,20 +222,11 @@ td button + button { margin-left: 6px; }
       </div>
       <div class="card">
         <h2>File share</h2>
-        <p class="muted">This folder (<code>config.json</code>, <code>recipes/</code> and the import backups) is shared on the network:
-          open <code id="share-win"></code> in Windows Explorer, or <code id="share-url"></code> in macOS Finder (Go, Connect to Server) or a Linux file manager.
-          Log in as <code>brewberry</code> with the password of this page. Nothing checks a file saved there: the app reads its configuration at start,
-          so restart it after changing files, and look at <em>Current configuration</em> if it doesn't start.</p>
-      </div>
-    </section>
-
-    <section data-view="usb" class="hidden">
-      <div class="card">
-        <h2>USB stick</h2>
-        <p class="muted">The Pi uses the first USB stick with a <code>brewberrypi/</code> folder and mounts it read-only only while a command runs.</p>
-        <div class="row"><button data-cmd="usb.list">Look at the stick</button>
-          <button class="secondary" data-cmd="usb.import-config">Import the stick's configuration</button></div>
-        <div id="usb-out"></div>
+        <p class="muted">The configuration is shared on the network: open <code id="share-win"></code> in Windows Explorer, or <code id="share-url"></code>
+          in macOS Finder (Go, Connect to Server) or a Linux file manager, and log in as <code>brewberry</code> with the password of this page.
+          It has two folders: <code>app</code> (the app's <code>config.json</code> and <code>recipes/</code>) and <code>os</code> (Wi-Fi settings and backups).
+          Nothing checks a file saved there. A recipe file saved in <code>app/recipes</code> shows up in the app within a few seconds;
+          <code>config.json</code> the app reads at start, so restart it after changing it, and look at <em>Current configuration</em> if it doesn't start.</p>
       </div>
     </section>
 
@@ -460,10 +450,9 @@ const views = {
     $("#share-url").textContent = `smb://${host}/config`;
     const c = await query("config.show");
     if (!c) return;
-    $("#cfg-summary").textContent = `Files: ${(c.files || []).join(", ") || "none"} · Recipes: ${c.builtinRecipes ? "the app's built-in catalogue" : ((c.recipes || []).join(", ") || "none")}`;
+    $("#cfg-summary").textContent = `Files: ${(c.files || []).join(", ") || "none yet"} · Recipes: ${c.recipes === null ? "none yet (the app creates them at its next start)" : (c.recipes.join(", ") || "none")}`;
     $("#cfg-json").textContent = JSON.stringify(c.config, null, 2);
   },
-  async usb() {},
   async os() {
     const m = await query("maint.status");
     if (m) showMaint($("#os-status"), m);
@@ -658,26 +647,6 @@ async function onCommand(el) {
         busy = { version, label: id === "update.download" ? "Downloading…" : "Installing…" };
         renderVersions();
         if (!(await action(id, { version }))) { busy = null; renderVersions(); }
-        break;
-      }
-      case "usb.list": {
-        const out = await query(id);
-        const box = $("#usb-out");
-        box.replaceChildren();
-        if (!out) break;
-        const t = document.createElement("table");
-        for (const v of out.versions || []) {
-          const tr = t.insertRow();
-          tr.insertCell().textContent = "App " + v;
-          const b = document.createElement("button");
-          b.textContent = "Install"; b.className = "secondary";
-          b.dataset.cmd = "usb.install"; b.dataset.argVersion = v;
-          tr.insertCell().append(b);
-        }
-        const p = document.createElement("p");
-        p.className = "muted";
-        p.textContent = `Config files: ${(out.config || []).join(", ") || "none"} · Recipes: ${(out.recipes || []).join(", ") || "none"}`;
-        box.append(t, p);
         break;
       }
       case "system.logs": {

@@ -1,21 +1,23 @@
 #!/bin/bash
-# The app's configuration in /data/config (ADR-0002, OS9). Run as root.
+# The app's configuration in /data/config/app (ADR-0002, OS9). Run as root.
 #
 #   brewberry-config show            config.json and the recipe files
 #   brewberry-config import <source> check, back up and replace config files:
 #                                    <source> is a folder (*.json, recipes/), one
 #                                    .json file, or a .tar.gz from 'export'
-#   brewberry-config export          /data/config as .tar.gz on stdout (no backups)
+#   brewberry-config export          /data/config/app as .tar.gz on stdout
 #
-# Options: --json (show). The app reads its configuration at start: after an
-# import, run 'brewberry-update restart'.
+# Options: --json (show). The app reads config.json at start: after importing
+# it, run 'brewberry-update restart'. Recipes it reads again by itself.
 #
-# A source folder looks like the USB stick's brewberrypi/config/:
+# The app owns the folder (runtime contract 2): it writes a missing config.json
+# with its defaults and creates a missing recipes/ with its shipped recipes.
+# A source folder looks like the app folder:
 #   *.json      config.json (and other top-level configuration files)
 #   recipes/    one file <id>.json per recipe (app RCP-001); replaces all
 #               recipes on the Pi. Without it the recipes stay as they are.
 # Every file is checked before anything is written; nothing changes if one is
-# invalid. Replaced files go to /data/config/backup/<time>/.
+# invalid. Replaced files go to /data/config/os/backup/<time>/.
 set -euo pipefail
 
 PROG=brewberry-config
@@ -24,7 +26,8 @@ PROG=brewberry-config
 . "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
 
 ROOT=${BREWBERRY_UPDATE_ROOT:-}
-CONFIG_DIR=$ROOT/data/config
+CONFIG_DIR=$ROOT/data/config/app
+BACKUP_DIR=$ROOT/data/config/os/backup
 APP_CONFIG=$CONFIG_DIR/config.json
 TMP_DIR=$ROOT/data/tmp
 MAX_CONFIG_BYTES=1048576
@@ -42,9 +45,9 @@ config_files() { # <dir>: top-level .json files
    find "$1" -mindepth 1 -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sort
 }
 
-recipe_files() { # <dir>: the app reads only <id>.json files directly in recipes/
+recipe_files() { # <dir>: the app reads only <id>.json files directly in recipes/, not hidden ones
    [ -d "$1/recipes" ] || return 0
-   find "$1/recipes" -mindepth 1 -maxdepth 1 -type f -name '*.json' -printf '%f\n' | sort
+   find "$1/recipes" -mindepth 1 -maxdepth 1 -type f -name '*.json' ! -name '.*' -printf '%f\n' | sort
 }
 
 # check_file <path> <name shown> <name pattern> <pattern description>
@@ -55,18 +58,20 @@ check_file() {
    jq empty "$1" 2> /dev/null || die "$2: not valid JSON; nothing imported"
 }
 
-# The folder's owner owns what is written into it: brewberry, so the file
-# share (ADR-0003) can change imported files too.
+# The folder's owner and group own what is written into it, group-writable:
+# the file share (ADR-0003) and the app (through the group) can change it.
 own() { chown -h --reference="$CONFIG_DIR" "$@"; }
 
-# install_file <source> <target>: copy via a temp file and rename, so a power cut leaves the old or the new file.
+# install_file <source> <target>: copy via a temp file and rename, so a power
+# cut leaves the old or the new file, and the app never reads half a file.
 install_file() {
-   rm -f "$2.tmp"
-   cp "$1" "$2.tmp"
-   chmod 0644 "$2.tmp"
-   own "$2.tmp"
-   sync "$2.tmp"
-   mv "$2.tmp" "$2"
+   local tmp=${2%/*}/.${2##*/}.tmp
+   rm -f "$tmp"
+   cp "$1" "$tmp"
+   chmod 0664 "$tmp"
+   own "$tmp"
+   sync "$tmp"
+   mv "$tmp" "$2"
 }
 
 # Sets DIR, the folder to import from: the source itself, or a work folder on
@@ -100,10 +105,11 @@ source_dir() { # <source>
 }
 
 # Validate every file first, then back up what is replaced and write the new
-# files atomically. A recipes/ folder in the source replaces the whole recipe
-# folder, so recipes deleted there are deleted on the Pi too.
+# files atomically. A recipes/ folder in the source replaces all recipes, so
+# recipes deleted there are deleted on the Pi too. The app watches recipes/
+# and may create it at any time, so the folder stays: files are replaced in it.
 cmd_import() { # <source>
-   local dir files recipes f backup new_recipes
+   local dir files recipes f backup old
    source_dir "$1"
    dir=$DIR
    files=$(config_files "$dir")
@@ -119,12 +125,11 @@ cmd_import() { # <source>
       check_file "$dir/recipes/$f" "recipes/$f" "$RECIPE_RE" "letters, digits, '_' and '-'"
    done
 
-   mkdir -p "$CONFIG_DIR"
-   backup=$CONFIG_DIR/backup/$(date -u +%Y%m%dT%H%M%SZ)
+   [ -d "$CONFIG_DIR" ] || die "${CONFIG_DIR#"$ROOT"} is missing; reboot to create it"
+   backup=$BACKUP_DIR/$(date -u +%Y%m%dT%H%M%SZ)
    if [ -n "$files" ] && compgen -G "$CONFIG_DIR/*.json" > /dev/null; then
       mkdir -p "$backup"
       cp -p "$CONFIG_DIR"/*.json "$backup/"
-      own "$CONFIG_DIR/backup" "$backup"
    fi
    for f in $files; do
       install_file "$dir/$f" "$CONFIG_DIR/$f"
@@ -132,29 +137,32 @@ cmd_import() { # <source>
    done
 
    if [ -n "$recipes" ]; then
-      # Stage the new folder next to the old one, then swap them with two
-      # renames; the old folder moves into the backup.
-      new_recipes=$CONFIG_DIR/.recipes.new
-      rm -rf "$new_recipes"
-      mkdir -m 0755 "$new_recipes"
-      own "$new_recipes"
-      for f in $recipes; do
-         install_file "$dir/recipes/$f" "$new_recipes/$f"
-      done
-      sync "$new_recipes"
       if [ -d "$CONFIG_DIR/recipes" ]; then
-         mkdir -p "$backup"
-         own "$CONFIG_DIR/backup" "$backup"
-         mv "$CONFIG_DIR/recipes" "$backup/recipes"
+         mkdir -p "$backup/recipes"
+         cp -p "$CONFIG_DIR/recipes"/*.json "$backup/recipes/" 2> /dev/null || true
+      elif mkdir -m 2775 "$CONFIG_DIR/recipes" 2> /dev/null; then
+         own "$CONFIG_DIR/recipes"
       fi
-      mv "$new_recipes" "$CONFIG_DIR/recipes"
+      [ -d "$CONFIG_DIR/recipes" ] || die "cannot create ${CONFIG_DIR#"$ROOT"}/recipes"
+      for f in $recipes; do
+         install_file "$dir/recipes/$f" "$CONFIG_DIR/recipes/$f"
+      done
+      for old in $(recipe_files "$CONFIG_DIR"); do
+         grep -qxF "$old" <<< "$recipes" || rm -f "$CONFIG_DIR/recipes/$old"
+      done
+      sync "$CONFIG_DIR/recipes"
       log "imported recipes: $(echo "$recipes" | sed 's/\.json$//' | paste -sd ' ')"
+   fi
+   if [ -d "$backup" ]; then
+      chown -hR --reference="${BACKUP_DIR%/*}" "$BACKUP_DIR" # the os folder's owner, like the share
+      sync "$backup"
    fi
    sync "$CONFIG_DIR"
    [ ! -d "$backup" ] || log "previous config saved in ${backup#"$ROOT"}"
 
    warn_boot_pins
-   log "the app reads its config at start: brewberry-update restart (this ends a running brew)"
+   [ -z "$recipes" ] || log "the app shows the new recipes within a few seconds"
+   [ -z "$files" ] || log "the app reads its config at start: brewberry-update restart (this ends a running brew)"
 }
 
 # config.txt sets the default pins to their off level at boot; other pins are
@@ -177,7 +185,7 @@ cmd_export() {
    [ ! -t 1 ] || die "the archive goes to stdout: brewberry-config export > config.tar.gz"
    local members=()
    mapfile -t members < <(cd "$CONFIG_DIR" && { config_files .; recipe_files . | sed 's|^|recipes/|'; })
-   [ ${#members[@]} -gt 0 ] || die "no configuration files in ${CONFIG_DIR#"$ROOT"}"
+   [ ${#members[@]} -gt 0 ] || die "no configuration files in ${CONFIG_DIR#"$ROOT"} (the app writes them at its first start)"
    tar -czf - -C "$CONFIG_DIR" --owner=0 --group=0 "${members[@]}"
 }
 
@@ -187,18 +195,22 @@ cmd_show() {
    if [ "$JSON" = 1 ]; then
       jq -n --argjson config "$config" \
          --arg files "$(config_files "$CONFIG_DIR")" --arg recipes "$(recipe_files "$CONFIG_DIR" | sed 's/\.json$//')" \
-         --arg builtin "$([ -d "$CONFIG_DIR/recipes" ] && echo no || echo yes)" \
+         --arg folder "$([ -d "$CONFIG_DIR/recipes" ] && echo yes || echo no)" \
          '{config: $config, files: ($files | split("\n") | map(select(. != ""))),
-           recipes: ($recipes | split("\n") | map(select(. != ""))), builtinRecipes: ($builtin == "yes")}'
+           recipes: (if $folder == "yes" then $recipes | split("\n") | map(select(. != "")) else null end)}'
       return
    fi
-   echo "config.json:"
-   jq . <<< "$config" | sed 's/^/  /'
+   if [ "$config" = null ]; then
+      echo "config.json: none yet (the app writes it with its defaults at its next start)"
+   else
+      echo "config.json:"
+      jq . <<< "$config" | sed 's/^/  /'
+   fi
    echo "files: $(config_files "$CONFIG_DIR" | paste -sd ' ')"
    if [ -d "$CONFIG_DIR/recipes" ]; then
       echo "recipes: $(recipe_files "$CONFIG_DIR" | sed 's/\.json$//' | paste -sd ' ')"
    else
-      echo "recipes: the app's built-in catalogue"
+      echo "recipes: none yet (the app creates recipes/ with its shipped recipes at its next start)"
    fi
 }
 
@@ -209,5 +221,5 @@ case ${1:-} in
    show) cmd_show ;;
    import) [ $# -eq 2 ] || die "usage: brewberry-config import <folder|file.json|archive.tar.gz>"; cmd_import "$2" ;;
    export) cmd_export ;;
-   *) sed -n '2,11s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
+   *) sed -n '2,12s/^# \{0,1\}//p' "$0" >&2; exit 2 ;;
 esac

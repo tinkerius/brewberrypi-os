@@ -4,6 +4,7 @@
 # X-Env-Layer-Desc: App runtime (ADR-0001, OS2): rootful Podman with its
 #  storage and pull staging on /data, the Quadlet unit brewberrypi.container
 #  running localhost/brewberrypi:active, GPIO device access for the gpio group,
+#  write access to /data/config/app for the brewberry-config group,
 #  and brewberry-firstload, which imports the app image preloaded in the OS
 #  image and tags it active.
 # X-Env-Layer-Version: 1.0.0
@@ -26,6 +27,8 @@ mmdebstrap:
     - crun
     - conmon
     - netavark
+    # groupadd for the brewberry-config group
+    - passwd
   customize-hooks:
     - |-
       set -eu
@@ -35,14 +38,19 @@ mmdebstrap:
       chmod -R u=rwX,go=rX "$1/usr/share/brewberrypi/preload"
     - |-
       set -eu
-      # Quadlet needs the numeric gpio GID; it is assigned during the build.
+      # The group of the app's folder /data/config/app (brewberry-datalayout):
+      # the app container and the share's user (brewberry-share) are in it.
+      chroot "$1" getent group brewberry-config > /dev/null || chroot "$1" groupadd --system brewberry-config
+      # Quadlet needs the numeric GIDs; they are assigned during the build.
       gid=$(awk -F: '$1 == "gpio" { print $3 }' "$1/etc/group")
       [ -n "$gid" ] || { echo "brewberry-podman: no gpio group in the image" >&2; exit 1; }
+      config_gid=$(awk -F: '$1 == "brewberry-config" { print $3 }' "$1/etc/group")
+      [ -n "$config_gid" ] || { echo "brewberry-podman: no brewberry-config group in the image" >&2; exit 1; }
       tmpl="$1/usr/share/brewberrypi/brewberrypi.container.in"
       mkdir -p "$1/etc/containers/systemd"
-      awk -v gid="$gid" '
+      awk -v gid="$gid" -v config_gid="$config_gid" '
          /@GPIO_DEVICES@/ { for (n = 0; n < 32; n++) printf "AddDevice=-/dev/gpiochip%d\n", n; next }
-         { gsub(/@GPIO_GID@/, gid); print }
+         { gsub(/@GPIO_GID@/, gid); gsub(/@CONFIG_GID@/, config_gid); print }
       ' "$tmpl" > "$1/etc/containers/systemd/brewberrypi.container"
       rm "$tmpl"
       # Fail the build if Quadlet (the image's own Podman) cannot convert it.

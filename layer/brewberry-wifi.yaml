@@ -2,7 +2,7 @@
 # X-Env-Layer-Name: brewberry-wifi
 # X-Env-Layer-Category: app
 # X-Env-Layer-Desc: Wi-Fi setup without flashing settings (ADR-0004, OS11):
-#  the home networks from /data/config/wifi.json, and without one the setup
+#  the home networks from /data/config/os/wifi.json, and without one the setup
 #  hotspot <hostname> (open, or with a password) at 10.42.0.1, whose captive
 #  portal opens the device web interface's Wi-Fi page. An open hotspot keeps
 #  the app off it (nftables). brewberry-wifi is the operator command;

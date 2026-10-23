@@ -42,7 +42,7 @@ git push origin v0.1.0-alpha.1
      Actions → Variables), and make sure CI can read the app's package: the secret
      `BREWBERRY_GHCR_TOKEN` (classic PAT, `read:packages`), or this repository under the
      package's *Manage Actions access*. The build refuses an app image that isn't signed with the
-     pinned key or whose labels don't say contract 1 and that version.
+     pinned key or whose labels don't say contract 2 and that version.
 3. Decide whether to build an SSH key in (`BREWBERRY_SSH_PUBKEY`). For a public release, leave it
    empty: users add their own key in Imager's customisation.
 4. Check that `keys/app-cosign.pub` still equals the app repository's `deploy/signing/cosign.pub`.
@@ -90,7 +90,7 @@ boards** (a Pi 3 or 4, and a Pi 5), using the draft's images:
 
 - every release: OS1 `status`, OS2, **OS3 (safety)** and OS7 (Imager customisation);
 - when the release changes that area: the OS1 power-cut cycles (layout, mounts, first boot),
-  OS4 (updates, rollback, safe mode), OS5 (USB) and OS6 (maintenance mode);
+  OS4 (updates, rollback, safe mode), OS6 (maintenance mode) and OS12 (configuration folders);
 - with an app preloaded: OS8.
 
 Never test OS3 with the heater connected; use LEDs or the relay board on its own.

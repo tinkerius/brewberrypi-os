@@ -13,7 +13,7 @@
 #    change while the app runs (brewberry-config import, the file share of
 #    ADR-0003); these are the pins the app actually drives, so they go first
 #    and keep their off level.
-# 3. The outputs in /data/config/config.json (hardware.heating, .pump,
+# 3. The outputs in /data/config/app/config.json (hardware.heating, .pump,
 #    .buzzer: pin, activeLow). Missing keys, a missing file or an unreadable
 #    file mean the app's built-in defaults: heating 23 and pump 22 active-low,
 #    buzzer 10 active-high. Those are also the boot-time pins in config.txt.
@@ -29,7 +29,7 @@ set -u
 
 # BREWBERRYPI_OUTPUTS_CONFIG and BREWBERRYPI_OUTPUTS_STARTED are for tests
 # only; systemd never sets them.
-CONFIG=${BREWBERRYPI_OUTPUTS_CONFIG:-/data/config/config.json}
+CONFIG=${BREWBERRYPI_OUTPUTS_CONFIG:-/data/config/app/config.json}
 STARTED=${BREWBERRYPI_OUTPUTS_STARTED:-/run/brewberrypi/outputs-started}
 rc=0
 

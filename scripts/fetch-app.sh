@@ -18,7 +18,7 @@ set -euo pipefail
 # shellcheck source=scripts/common.sh
 . "$(dirname "$0")/common.sh"
 
-CONTRACT=1
+CONTRACT=2
 
 usage() { echo "usage: fetch-app.sh <version> <dest dir> [--repo <registry/repo>] [--key <cosign.pub>] [--insecure]" >&2; exit 2; }
 [ $# -ge 2 ] || usage
@@ -52,12 +52,12 @@ skopeo copy --quiet --override-os linux --override-arch arm64 --registries.d "$T
 
 fail() { echo "fetch-app: $*; not using $REPO:$VERSION" >&2; rm -rf "$DEST"; exit 1; }
 
-# The device's signature rule for 'dir:' images (the USB rule), for this
+# The device's signature rule for registry images, as a 'dir:' rule for this
 # path, repository and key.
 jq --arg path "$(dirname "$DEST")" --arg repo "$REPO" --arg key "$(realpath "$KEY")" '
    {default: [{type: "reject"}],
-    transports: {dir: {($path): [.transports.dir["/media/brewberry-usb"][0]
-       | .keyPath = $key | .signedIdentity.dockerRepository = $repo]}}}
+    transports: {dir: {($path): [.transports.docker["ghcr.io/tinkerius/brewberrypi"][0]
+       | .keyPath = $key | .signedIdentity = {type: "exactRepository", dockerRepository: $repo}]}}}
 ' "$OVERLAY/etc/containers/policy.json" > "$T/policy.json"
 skopeo copy --quiet --policy "$T/policy.json" "dir:$DEST" "dir:$T/verify" > /dev/null 2>&1 ||
    fail "the signature does not verify against the pinned key"

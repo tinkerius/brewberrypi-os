@@ -4,8 +4,8 @@
 # device's policy.json and registries.d (registry host and key path rewritten
 # to the test setup). A correctly signed image must be accepted; unsigned,
 # wrongly signed and other-repository images must be rejected, from the
-# registry, from a USB 'dir:' export (tampered exports too) and as the
-# build-time preload (scripts/fetch-app.sh).
+# registry and as the build-time preload (scripts/fetch-app.sh). A 'dir:'
+# export is accepted only from the preload folder.
 #
 # Usage: tests/integration/signing.sh   (needs podman, skopeo, jq and cosign v2
 #        on PATH, and network access to mirror.gcr.io, Google's Docker Hub mirror, which has no
@@ -62,17 +62,15 @@ push_app() { # <tag> <signing key prefix|-> <contract label> <version label>
          "${ref%:*}@$digest" > /dev/null 2>&1
    fi
 }
-push_app 2.0.0 good 1 2.0.0
-push_app 2.0.1 - 1 2.0.1
-push_app 2.0.2 other 1 2.0.2
-push_app 2.0.3 good 2 2.0.3
-push_app 2.0.4 good 1 9.9.9
+push_app 2.0.0 good 2 2.0.0
+push_app 2.0.1 - 2 2.0.1
+push_app 2.0.2 other 2 2.0.2
+push_app 2.0.3 good 1 2.0.3
+push_app 2.0.4 good 2 9.9.9
 
 # The device's files, pointed at the test registry and key.
-mkdir "$T/stick"
 sed -e "s|ghcr.io/tinkerius/brewberrypi|$REG/tinkerius/brewberrypi|" \
     -e "s|/usr/share/brewberrypi/keys/app-cosign.pub|$T/good.pub|" \
-    -e "s|/media/brewberry-usb|$T/stick|" \
     "$OVERLAY/etc/containers/policy.json" > "$T/policy.json"
 mkdir "$T/registries.d"
 sed "s|ghcr.io/tinkerius/brewberrypi|$REG/tinkerius/brewberrypi|" \
@@ -92,42 +90,17 @@ expect "unsigned: rejected" reject tinkerius/brewberrypi:1.0.1
 expect "signed with another key: rejected" reject tinkerius/brewberrypi:1.0.2
 expect "other repository, even if signed: rejected" reject tinkerius/elsewhere:1.0.0
 
-# USB: 'dir:' exports as scripts/usb-export.sh writes them (skopeo copy --all).
-export_dir() { # <repo:tag> <name>
-   skopeo copy --quiet --all --registries.d "$T/registries.d" --src-tls-verify=false \
-      "docker://$REG/$1" "dir:$T/stick/$2"
-}
-expect_dir() { # <description> <accept|reject> <dir>
-   local got=reject
-   if skopeo copy --quiet --policy "$T/policy.json" "dir:$3" "dir:$T/out-$RANDOM" > /dev/null 2>&1; then
-      got=accept
-   fi
-   if [ "$got" = "$2" ]; then echo "ok    $1"; else echo "FAIL  $1: $got, want $2"; failures=1; fi
-}
-# registries.d for the elsewhere repository too, so its signature is copied.
-sed "s|$REG/tinkerius/brewberrypi|$REG/tinkerius/elsewhere|" "$T/registries.d/brewberrypi.yaml" \
-   > "$T/registries.d/elsewhere.yaml"
-export_dir tinkerius/brewberrypi:1.0.0 good
-export_dir tinkerius/brewberrypi:1.0.2 otherkey
-export_dir tinkerius/elsewhere:1.0.0 elsewhere
-cp -r "$T/stick/good" "$T/stick/tampered"
-layer=$(jq -r '.layers[0].digest' "$T/stick/tampered/manifest.json" | cut -d: -f2)
-printf 'X' | dd of="$T/stick/tampered/$layer" bs=1 seek=100 conv=notrunc 2> /dev/null
-cp -r "$T/stick/good" "$T/stick/unsigned"
-rm "$T/stick/unsigned"/signature-*
-mkdir "$T/elsewhere-path" && cp -r "$T/stick/good" "$T/elsewhere-path/good"
-
-# The rejections below must come from the key or identity, not a missing signature.
-for d in good otherkey elsewhere; do
-   if compgen -G "$T/stick/$d/signature-*" > /dev/null; then echo "ok    USB export '$d' carries its signature"
-   else echo "FAIL  USB export '$d' has no signature"; failures=1; fi
-done
-expect_dir "USB export signed with the pinned key: accepted" accept "$T/stick/good"
-expect_dir "USB export with a changed layer: rejected" reject "$T/stick/tampered"
-expect_dir "USB export without its signature: rejected" reject "$T/stick/unsigned"
-expect_dir "USB export signed with another key: rejected" reject "$T/stick/otherkey"
-expect_dir "USB export of another repository: rejected" reject "$T/stick/elsewhere"
-expect_dir "signed export outside the USB mount path: rejected" reject "$T/elsewhere-path/good"
+# 'dir:' exports (as podman save or skopeo write them): only the preload folder
+# of the image is accepted, even with a valid signature.
+skopeo copy --quiet --all --registries.d "$T/registries.d" --src-tls-verify=false \
+   "docker://$REG/tinkerius/brewberrypi:1.0.0" "dir:$T/export"
+if compgen -G "$T/export/signature-*" > /dev/null; then echo "ok    the 'dir:' export carries its signature"
+else echo "FAIL  the 'dir:' export has no signature"; failures=1; fi
+if skopeo copy --quiet --policy "$T/policy.json" "dir:$T/export" "dir:$T/out-export" > /dev/null 2>&1; then
+   echo "FAIL  signed 'dir:' export outside the preload folder: accepted"; failures=1
+else
+   echo "ok    signed 'dir:' export outside the preload folder: rejected"
+fi
 
 # Build-time preload (OS8): only a signed arm64 release with the right labels.
 expect_fetch() { # <description> <accept | words of the expected refusal> <x.y.z>
@@ -147,7 +120,7 @@ expect_fetch() { # <description> <accept | words of the expected refusal> <x.y.z
 expect_fetch "preload: signed arm64 release: accepted" accept 2.0.0
 expect_fetch "preload: unsigned: rejected" "signature does not verify" 2.0.1
 expect_fetch "preload: signed with another key: rejected" "signature does not verify" 2.0.2
-expect_fetch "preload: other runtime contract: rejected" "runtime contract label is '2'" 2.0.3
+expect_fetch "preload: other runtime contract: rejected" "runtime contract label is '1'" 2.0.3
 expect_fetch "preload: version label differs from the tag: rejected" "version label is '9.9.9'" 2.0.4
 expect_fetch "preload: not arm64: rejected" "not arm64" 1.0.0
 exit "$failures"

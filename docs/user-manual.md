@@ -18,17 +18,16 @@ the operating system around the app.
 4. [Logging in](#4-logging-in)
 5. [Configuration](#5-configuration)
 6. [App versions](#6-app-versions)
-7. [Offline updates and config from a USB stick](#7-offline-updates-and-config-from-a-usb-stick)
-8. [OS updates](#8-os-updates)
-9. [Troubleshooting](#9-troubleshooting)
-10. [Command reference](#10-command-reference)
+7. [OS updates](#7-os-updates)
+8. [Troubleshooting](#8-troubleshooting)
+9. [Command reference](#9-command-reference)
 
 ## 1. How it works
 
 BrewberryPi OS is built to behave like a games console:
 
 - **Pulling the plug is safe** at any time, except during the [first boot](#first-boot) and
-  [maintenance mode](#8-os-updates). After a restart the app starts idle, and a brew starts over.
+  [maintenance mode](#7-os-updates). After a restart the app starts idle, and a brew starts over.
 - **The system is read-only.** Only the data partition, `/data`, keeps changes. Anything you
   change anywhere else is gone after the next reboot.
 - **The app runs as a container.** It is signed, and the Pi only runs versions signed with the
@@ -37,11 +36,12 @@ BrewberryPi OS is built to behave like a games console:
 - **The relays end up off** every time the app stops, whether it exits, crashes, hangs or the
   power is cut.
 - **Two web pages:** the app's own UI for brewing on port 8080, and the **device web interface**
-  on port 8081 for everything around it: app versions, configuration, USB stick, OS updates,
+  on port 8081 for everything around it: app versions, configuration, Wi-Fi, OS updates,
   logs. The device web interface runs exactly the commands described here, with the same checks
   and warnings ([Logging in](#4-logging-in)).
-- **A file share** of the app's configuration folder, `\\<hostname>.local\config`: open,
-  download and change `config.json` and the recipes from Windows, macOS or Linux
+- **A file share** of the configuration, `\\<hostname>.local\config`: open, download and
+  change `config.json`, the recipes and the Wi-Fi settings from Windows, macOS or Linux; a new
+  recipe shows up in the app within seconds
   ([In the file share](#in-the-file-share)).
 - **Wi-Fi without flashing settings:** when the Pi can't reach a Wi-Fi network, it opens its own,
   `brewberrypi`. Join it with a phone or laptop, and the device web interface opens: choose your
@@ -51,7 +51,7 @@ What is kept where:
 
 | Kept across reboots (`/data`) | Lost at every reboot |
 |---|---|
-| App configuration and recipes, Wi-Fi settings (`/data/config`) | Logs (`journalctl`) |
+| App configuration and recipes (`/data/config/app`), Wi-Fi settings (`/data/config/os`) | Logs (`journalctl`) |
 | The installed app versions (active and previous) | Files in home directories |
 | The registry token and changed passwords (`/data/secrets`) | Changes to system files or packages |
 | Update state and the version list (`/data/update`) | |
@@ -160,9 +160,8 @@ Good to know:
   never touches the app or the outputs.
 - A network that refused the password isn't tried again until you add it again with the right one
   (or the Pi restarts).
-- The settings are the file `/data/config/wifi.json`: they survive reboots and are part of a
-  [configuration backup](#backing-up-the-configuration). You can edit it in the
-  [file share](#in-the-file-share) or bring it on a [USB stick](#from-a-usb-stick) too. It holds
+- The settings are the file `/data/config/os/wifi.json`: they survive reboots, and you can edit
+  or copy it in the [file share](#in-the-file-share) (folder `os`). It holds
   the Wi-Fi passwords in plain text, so anyone with the device password can read them.
 
   ```json
@@ -201,8 +200,8 @@ Until you do, every page reminds you. The password is also the Linux password of
 wherever you change it: under *Account*, or with `passwd`.
 
 The pages: **Overview** (app, OS and Wi-Fi state), **Wi-Fi**, **App versions**, **Configuration**,
-**USB stick**, **OS update**, **Logs** and **Account**. Each button runs the command of the same
-name from this manual ([Command reference](#10-command-reference)) on the Pi, with the same checks.
+**OS update**, **Logs** and **Account**. Each button runs the command of the same
+name from this manual ([Command reference](#9-command-reference)) on the Pi, with the same checks.
 Actions that restart the app or reboot the Pi ask first, and warn when a brew is loaded or running.
 Long actions (an install, an OS update) keep running when you close the page; open it again to see
 how they ended.
@@ -243,10 +242,18 @@ To change a password: `passwd` (your own) or `sudo passwd brewberry`. The change
 
 ## 5. Configuration
 
-The app reads its configuration from `/data/config`: `config.json` plus the folder `recipes/`, with
-one file `<id>.json` per recipe (for example `recipes/ZORA.json`). Without a `recipes/` folder the
-app uses its built-in recipes. The app's documentation describes both formats. The OS itself reads only the output pins from it, to switch
-them off after the app stops ([Output pins](#output-pins)):
+The configuration lives in `/data/config`, in two folders:
+
+| Folder | Holds | Written by |
+|---|---|---|
+| `app` | the app's `config.json` and its recipes, `recipes/<id>.json` (for example `recipes/ZORA.json`) | the app, and you |
+| `os` | the [Wi-Fi settings](#wi-fi) `wifi.json`, and `backup/` with the files that imports replaced | the OS, and you |
+
+The app owns its folder: at its first start it writes `config.json` with every setting at its
+default, and creates `recipes/` with its shipped recipes. Recipes you delete there stay deleted;
+delete the whole `recipes/` folder to get the shipped ones back. The app's documentation describes
+both formats. The OS itself reads only the output pins from `config.json`, to switch them off after
+the app stops ([Output pins](#output-pins)):
 
 ```json
 {
@@ -260,20 +267,21 @@ them off after the app stops ([Output pins](#output-pins)):
 
 If the file or a key is missing, the defaults above apply. Pin numbers are BCM (GPIO) numbers.
 
-The app can't write its own configuration: inside the container `/data/config` is read-only.
-Change it in the device web interface, from a USB stick, or over SSH. All three check every file
-first, back up what they replace in `/data/config/backup/<date>/`, and write atomically, so a
-power cut leaves the old or the new file. Or change the files directly in the
-[file share](#in-the-file-share), like on a network drive: quicker, but without these checks.
+Change the files in the [file share](#in-the-file-share), like on a network drive, or import them
+in the device web interface or over SSH. An import checks every file first, backs up what it
+replaces in `/data/config/os/backup/<date>/`, and writes atomically, so a power cut leaves the old
+or the new file. The file share is quicker, but nothing checks what you save.
 
-Whichever way you choose, the app reads its configuration only at start: restart it afterwards
-(**Restart the app**, or `sudo brewberry-update restart`; this ends a running brew).
+- **Recipes** take effect by themselves: the app shows a new, changed or deleted recipe within a
+  few seconds in every open browser. A loaded brew keeps the recipe it was loaded with.
+- **`config.json`** the app reads only at start: restart it afterwards (**Restart the app**, or
+  `sudo brewberry-update restart`; this ends a running brew).
 
 ### In the device web interface
 
 **Configuration** shows `config.json` and the recipes. To change them, upload `config.json`, recipe
-files (tick *These .json files are recipes*), or a `.tar.gz` downloaded with **Download**. Then
-**Restart the app**: it reads its configuration only at start.
+files (tick *These .json files are recipes*: they replace **all** recipes on the Pi), or a
+`.tar.gz` downloaded with **Download**. After a new `config.json`, **Restart the app**.
 
 ### In the file share
 
@@ -289,20 +297,21 @@ password of the device web interface (`pi` until you change it):
 Use your hostname instead of `brewberrypi`, or the Pi's IP address. The **Configuration** page
 shows the address too. The share is always on.
 
-In the share you see `config.json`, `recipes/` (if there is one), `wifi.json` (the
-[Wi-Fi settings](#wi-fi)) and `backup/` with the files that imports replaced. Open, copy, change and delete files as on any network drive, then restart the
-app. Keep in mind:
+In the share you see the folders `app` and `os`. Open, copy, change and delete files in them as on
+any network drive; the two folders themselves can't be renamed or deleted, and nothing can be put
+next to them. To add a recipe, save it as `app/recipes/<id>.json`: the file name is the recipe id
+(letters, digits, `_` and `-`). Keep in mind:
 
-- **Nothing is checked** when you save. If a file isn't valid, the app refuses to start (exit code
-  2 or 3, [The app is down](#the-app-is-down-or-in-safe-mode)): fix the file and restart it. `sudo
-  brewberry-config show` shows what the app will read. The imports above check first and keep a
-  backup; for bigger changes, take a [backup](#backing-up-the-configuration) first.
-- **Creating `recipes/`** replaces the app's built-in recipes with the ones in it, as an import
-  does.
+- **Nothing is checked** when you save. An invalid recipe file is skipped, and the app's log names
+  the file and the problem (`sudo brewberry-system logs app`). An invalid `config.json` makes the
+  app refuse to start at its next start (exit code 2,
+  [The app is down](#the-app-is-down-or-in-safe-mode)): fix the file and restart it. `sudo
+  brewberry-config show` shows what the app will read. For bigger changes, take a
+  [backup](#backing-up-the-configuration) first.
 - **Changing an output pin** (`hardware.*.pin`) while the app runs is safe: when it stops, the OS
   switches off the pins it was started with as well as the new ones. Nothing warns you about the
   boot-time pins, as the imports do: see [Output pins](#output-pins).
-- **`wifi.json`** takes effect within seconds. If the Pi can't read it, it uses no networks and
+- **`os/wifi.json`** takes effect within seconds. If the Pi can't read it, it uses no networks and
   opens its open hotspot; the Wi-Fi page says what is wrong.
 - Wait a few seconds after saving before you pull the plug; a file being written at that moment
   may be lost.
@@ -312,42 +321,21 @@ The share speaks SMB 3 only, signs every request, and encrypts when the computer
 current Windows, macOS and Linux versions do). There is no guest access: anyone with the password
 can change the configuration, so [change the default password](#4-logging-in).
 
-### From a USB stick
-
-This is the safest way: every file is checked first, and the old configuration is backed up.
-
-1. On your computer, copy the files to the folder `brewberrypi/config/` on a USB stick:
-   `brewberrypi/config/config.json`, and the recipes as `brewberrypi/config/recipes/<id>.json`.
-   Both are optional. A `recipes/` folder on the stick replaces **all** recipes on the Pi, so it
-   must hold every recipe you want to keep; without one, the recipes on the Pi stay as they are.
-2. Plug the stick into the Pi and run:
-
-   ```sh
-   sudo brewberry-usb list               # shows what's on the stick
-   sudo brewberry-usb import-config
-   ```
-
-   If any file isn't valid JSON, or a recipe file name isn't a recipe id (letters, digits, `_`
-   and `-`), nothing is imported. The previous files and recipes are saved in
-   `/data/config/backup/<date>/`.
-3. The app reads its configuration only at start. Restart it (this ends a running brew):
-
-   ```sh
-   sudo brewberry-update restart
-   ```
-
 ### Over SSH
 
-Copy the file to the Pi and import it. `brewberry-config import` takes a folder (`*.json` plus an
-optional `recipes/`, like the stick's `brewberrypi/config/`), one `.json` file, or a `.tar.gz`
-from `brewberry-config export`:
+Log in as `brewberry` and edit the files in `/data/config/app` and `/data/config/os` directly
+(the same as in the file share), or copy files to the Pi and import them. `brewberry-config import`
+takes a folder (`*.json` plus an optional `recipes/`, laid out like the `app` folder), one `.json`
+file, or a `.tar.gz` from `brewberry-config export`. A `recipes/` folder replaces **all** recipes
+on the Pi, so it must hold every recipe you want to keep; without one, the recipes stay as they
+are. If any file isn't valid JSON, or a recipe file name isn't a recipe id, nothing is imported.
 
 ```sh
-scp config.json <user>@brewberrypi.local:                # on your computer
+scp config.json brewberry@brewberrypi.local:             # on your computer
 
 sudo brewberry-config import config.json                 # on the Pi
 sudo brewberry-config show                               # what the app will read
-sudo brewberry-update restart
+sudo brewberry-update restart                            # after a new config.json
 ```
 
 ### Backing up the configuration
@@ -358,8 +346,8 @@ Download it under **Configuration → Download**, or over SSH:
 ssh <user>@brewberrypi.local sudo brewberry-config export > brewberrypi-config.tar.gz
 ```
 
-The archive holds `config.json`, other top-level `.json` files and `recipes/`, without the
-backups. To restore it on a reflashed Pi, upload it under **Configuration**, or copy it over and
+The archive holds the `app` folder: `config.json`, other top-level `.json` files and `recipes/`.
+Back up `os/wifi.json` from the file share if you need it. To restore it on a reflashed Pi, upload it under **Configuration**, or copy it over and
 run `sudo brewberry-config import brewberrypi-config.tar.gz`.
 
 ### Output pins
@@ -372,8 +360,8 @@ The OS switches the outputs off at two moments:
 - **At power-on**, before Linux starts: the firmware switches the **default** pins off (BCM 23
   and 22 driven high, BCM 10 driven low). These are set in `/boot/firmware/config.txt`.
 
-If `config.json` moves an output to another pin, `brewberry-usb import-config` and `brewberry-config
-import` warn about it (a change in the file share doesn't).
+If `config.json` moves an output to another pin, `brewberry-config import` warns about it (a change
+in the file share doesn't).
 Then change the `gpio=` lines in `config.txt` to match; otherwise the new pin is only switched off
 after the app stops, not at power-on. The boot partition is read-only, so do this in maintenance
 mode:
@@ -500,50 +488,7 @@ with all outputs off. `brewberry-update status` shows `safe mode:` when this hap
 
 A configuration error never makes the Pi switch versions, because the version isn't to blame.
 
-## 7. Offline updates and config from a USB stick
-
-For a Pi without internet access, prepare a stick on a computer that has access.
-
-### Prepare the stick
-
-You need a checkout of this repository, `skopeo` and `jq`, and a registry login
-(`skopeo login ghcr.io`, with the same kind of token as above):
-
-```sh
-scripts/usb-export.sh 1.2.3 /media/stick                 # writes brewberrypi/images/1.2.3, signature included
-mkdir -p /media/stick/brewberrypi/config                 # optional: configuration
-cp config.json /media/stick/brewberrypi/config/
-cp -r recipes /media/stick/brewberrypi/config/           # optional: recipes, one <id>.json each
-```
-
-The script checks the export against the Pi's signature rules, so a stick the Pi would refuse is
-noticed now. The stick then looks like this:
-
-```
-brewberrypi/
-├── images/
-│   └── 1.2.3/            one folder per version
-└── config/
-    ├── config.json       optional
-    └── recipes/          optional, replaces all recipes on the Pi
-        └── ZORA.json     one file per recipe
-```
-
-### Use it on the Pi
-
-Plug the stick in, then in the device web interface open **USB stick → Look at the stick**: it lists
-the versions with an **Install** button each, and **Import the stick's configuration**. Or over SSH:
-
-```sh
-sudo brewberry-usb list                # versions and config files on the stick
-sudo brewberry-usb install 1.2.3       # same checks, switch and rollback as an online install
-sudo brewberry-usb import-config       # see Configuration
-```
-
-The Pi uses the first USB stick that has a `brewberrypi/` folder. It mounts the stick read-only
-only while the command runs, so you can pull it out afterwards.
-
-## 8. OS updates
+## 7. OS updates
 
 App versions and the operating system are updated separately. OS updates (Raspberry Pi OS
 packages, kernel, firmware) need **maintenance mode**, because the system is read-only otherwise.
@@ -575,7 +520,7 @@ because an update removed the BrewberryPi block from `/boot/firmware/config.txt`
 Alternatively, flash a newer BrewberryPi OS release. That erases `/data`, so back up the
 configuration first, and run `brewberry-update login` again afterwards.
 
-## 9. Troubleshooting
+## 8. Troubleshooting
 
 Logs are kept in memory and **lost at reboot**, so read them before you restart the Pi: in the
 device web interface under **Logs**, or over SSH:
@@ -631,8 +576,10 @@ on the network.
 
 1. Look at `sudo brewberry-update status` and `sudo brewberry-system logs app` (or the
    **Overview** and **Logs** pages).
-2. If the app exited with code 2 or 3, it refused its configuration. Fix `/data/config`
-   ([Configuration](#5-configuration)), then restart it (**App versions → Restart the app**):
+2. If the app exited with code 2, it refused its `config.json`; with code 3, it couldn't create
+   or read `recipes/`. Fix `/data/config/app` ([Configuration](#5-configuration)): the log names
+   the file and the problem. Deleting `config.json` gives you the defaults again at the next
+   start. Then restart it (**App versions → Restart the app**):
 
    ```sh
    sudo brewberry-update restart
@@ -686,11 +633,11 @@ changed on the Pi. Use a released version from `brewberry-update list`.
 ### A change I made is gone after a reboot
 
 Everything outside `/data` is reset at every boot. Configuration belongs in `/data/config`, and
-changes to the system need [maintenance mode](#8-os-updates).
+changes to the system need [maintenance mode](#7-os-updates).
 
 ### `apt` refuses to install anything
 
-That's intended while the system is sealed. Use [maintenance mode](#8-os-updates).
+That's intended while the system is sealed. Use [maintenance mode](#7-os-updates).
 
 ### An output stays on after the app stopped
 
@@ -702,7 +649,7 @@ logs which outputs it switched off and whether that failed:
 sudo brewberry-system logs outputs-off
 ```
 
-## 10. Command reference
+## 9. Command reference
 
 All commands run as root (`sudo`). The device web interface offers each of them
 (`tests/unit/parity.sh` keeps this table, the commands and the web interface in step). Queries take
@@ -719,12 +666,9 @@ All commands run as root (`sudo`). The device web interface offers each of them
 | `brewberry-update status` | Active and previous version, last result, safe mode, demo mode |
 | `brewberry-update demo on\|off` | Run the app with a simulated kettle (no GPIO), or normally |
 | `brewberry-update restart` | Restart the app (ends a running brew), also after a configuration error |
-| `brewberry-usb list` | Versions and config files on a USB stick |
-| `brewberry-usb install <version>` | Install a version from a USB stick |
-| `brewberry-usb import-config` | Copy `brewberrypi/config/*.json` and `recipes/` from a stick to `/data/config` |
 | `brewberry-config show` | The configuration the app reads, and its recipes |
 | `brewberry-config import <source>` | Check, back up and replace config files from a folder, a `.json` file or an export |
-| `brewberry-config export` | `/data/config` as `.tar.gz` on stdout (a backup) |
+| `brewberry-config export` | `/data/config/app` as `.tar.gz` on stdout (a backup) |
 | `brewberry-maint status` | Sealed (normal) or in maintenance mode |
 | `brewberry-maint on` | Make the system writable for OS updates (reboots) |
 | `brewberry-maint upgrade` | In maintenance mode: `apt update` and `apt full-upgrade` |

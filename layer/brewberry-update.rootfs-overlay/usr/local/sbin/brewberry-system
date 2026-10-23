@@ -14,7 +14,7 @@ PROG=brewberry-system
 # shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
 . "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
 R=${BREWBERRY_SYSTEM_ROOT:-}
-APP_CONFIG=$R/data/config/config.json
+APP_CONFIG=$R/data/config/app/config.json
 
 release() { # <key> from /etc/brewberry-release
    sed -n "s/^$1=//p" "$R/etc/brewberry-release" 2> /dev/null | head -n 1

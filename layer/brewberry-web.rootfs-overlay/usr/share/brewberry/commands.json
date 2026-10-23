@@ -48,20 +48,6 @@
       "kind": "action", "timeout": 60
     },
     {
-      "id": "usb.list", "title": "USB stick contents", "screen": "usb",
-      "argv": ["brewberry-usb", "list"], "kind": "query", "timeout": 60
-    },
-    {
-      "id": "usb.install", "title": "Install from the stick", "screen": "usb",
-      "argv": ["brewberry-usb", "install", "{version}"],
-      "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },
-      "kind": "action", "confirm": true, "job": true
-    },
-    {
-      "id": "usb.import-config", "title": "Import the stick's configuration", "screen": "usb",
-      "argv": ["brewberry-usb", "import-config"], "kind": "action", "timeout": 60
-    },
-    {
       "id": "config.show", "title": "Configuration", "screen": "config",
       "argv": ["brewberry-config", "show"], "kind": "query"
     },

@@ -43,7 +43,7 @@ Pick the device, the BrewberryPi OS entry and the SD card, then **Customise**.
 | Hostname | The device is then `<hostname>.local` (mDNS). Default: `brewberrypi`. |
 | User | A new name (with the SSH key, and a password for the console). Not `brewberry`: the image's built-in account exists already, and cloud-init doesn't set an existing account's password from Imager. The account gets the image's default groups (`sudo`, `gpio`, …). |
 | SSH | **Allow public-key authentication only** with your key (**ADD SSH KEY**, or paste `~/.ssh/id_ed25519.pub`), or **Use password authentication** to log in with the user's password. The image follows the choice; without one, password logins are off. Root can't log in over SSH. |
-| Wi-Fi | Optional: SSID, password and country. On the first boot they move into `/data/config/wifi.json`. Without them, connect Ethernet or use the setup hotspot. |
+| Wi-Fi | Optional: SSID, password and country. On the first boot they move into `/data/config/os/wifi.json`. Without them, connect Ethernet or use the setup hotspot. |
 | Time zone, keyboard | Applied as usual. |
 
 Imager shows no interface options (SPI, I2C, 1-Wire, serial): the image's safety block in
@@ -62,8 +62,8 @@ partition: the seal step writes what cloud-init and the first-boot services did.
 
 Wi-Fi is changed later in the device web interface or with `brewberry-wifi`. To change the
 hostname or the user, reflash the card. Reflashing also erases
-`/data`: copy `/data/config` to a stick's `brewberrypi/config/` first, and bring it back with
-`brewberry-usb import-config`.
+`/data`: download the configuration first (device web interface, **Configuration → Download**,
+and `os/wifi.json` from the file share), and import it again afterwards.
 
 ## How it works
 
@@ -81,7 +81,7 @@ hostname or the user, reflash the card. Reflashing also erases
   which sshd reads before the image's `90-brewberry.conf` (passwords off, root off).
 - `brewberry-wifi-migrate.service` (layer `brewberry-wifi`) runs after cloud-init's network stage
   on the first boot only: it moves the Wi-Fi networks and the country from cloud-init's netplan
-  files into `/data/config/wifi.json` and removes them from netplan, so `wifi.json` is the only
+  files into `/data/config/os/wifi.json` and removes them from netplan, so `wifi.json` is the only
   place Wi-Fi is configured (ADR-0004).
 - `brewberry-seal` creates `/etc/cloud/cloud-init.disabled` before sealing, so cloud-init never
   runs again: not on sealed boots, and not in maintenance mode.

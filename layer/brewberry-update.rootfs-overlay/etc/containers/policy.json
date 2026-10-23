@@ -11,14 +11,7 @@
       ]
     },
     "dir": {
-      "/usr/share/brewberrypi/preload": [{ "type": "insecureAcceptAnything" }],
-      "/media/brewberry-usb": [
-        {
-          "type": "sigstoreSigned",
-          "keyPath": "/usr/share/brewberrypi/keys/app-cosign.pub",
-          "signedIdentity": { "type": "exactRepository", "dockerRepository": "ghcr.io/tinkerius/brewberrypi" }
-        }
-      ]
+      "/usr/share/brewberrypi/preload": [{ "type": "insecureAcceptAnything" }]
     }
   }
 }

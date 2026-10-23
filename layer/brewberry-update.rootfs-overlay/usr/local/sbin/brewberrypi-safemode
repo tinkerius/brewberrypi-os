@@ -21,7 +21,7 @@ image_id() { podman image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
 
 status=$(systemctl show -p ExecMainStatus --value "$SERVICE")
 case $status in
-   2 | 3) log "configuration error (exit code $status): fix /data/config; the app stays down"; exit 0 ;;
+   2 | 3) log "configuration error (exit code $status): fix /data/config/app; the app stays down"; exit 0 ;;
 esac
 
 exec 9> "$ROOT/run/brewberry-update.lock"

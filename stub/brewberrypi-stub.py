@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""BrewberryPi contract stub (runtime contract version 1).
+"""BrewberryPi contract stub (runtime contract version 2).
 
 Stands in for the real app image (tinkerius/brewberrypi) until it is released, so the OS side of
 the contract can be tested: READY=1, WATCHDOG=1 every BREWBERRYPI_WATCHDOG_MS, STOPPING=1, and
@@ -247,9 +247,9 @@ sudo brewberry-update login
 sudo brewberry-update list
 # install one of them
 sudo brewberry-update install 1.2.3</code></pre>
-<p>Without internet, install from a USB stick instead: <code>sudo brewberry-usb list</code> and
-<code>sudo brewberry-usb install 1.2.3</code>. Every version must be signed by the app's
-developers, or the Pi refuses it. When the app runs, this page is replaced by its web UI.</p>
+<p>Every version must be signed by the app's developers, or the Pi refuses it. When the app runs,
+this page is replaced by its web UI, and the app writes its <code>config.json</code> and recipes into
+the file share's <code>app</code> folder.</p>
 <p>More in the <a href="{manual}#6-app-versions">user manual</a>.</p>
 </section>
 
@@ -276,10 +276,10 @@ def config_summary() -> str:
         with open(State.config_path, encoding="utf-8") as f:
             config = json.load(f)
     except FileNotFoundError:
-        return "no config.json"
+        return "no config.json yet (the app writes it at its first start)"
     except (OSError, ValueError):
         return "config.json can't be read"
-    return "built-in defaults" if config == {} else "config.json from /data/config"
+    return "built-in defaults" if config == {} else "config.json from /data/config/app"
 
 
 def landing_page() -> str:

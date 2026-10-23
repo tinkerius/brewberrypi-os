@@ -8,8 +8,8 @@ These checks run on a real Raspberry Pi. They are the "done when" checks of the 
 1. Flash the CI image (Imager → *Use custom*) and boot it on a Pi 3 or 4 with Ethernet.
 2. **First boot** takes a little longer, then the Pi **reboots once by itself**. During that boot:
    - `brewberry-growdata` grows the DATA partition to the end of the card;
-   - `brewberry-datalayout` creates the `/data` directories and seeds `/data/config/config.json`
-     with `{}` (the app's built-in defaults);
+   - `brewberry-datalayout` creates the `/data` directories, among them `/data/config/app` and
+     `/data/config/os` (nothing in them: the app writes its own `config.json` and `recipes/`);
    - SSH host keys and the machine-id are created;
    - `brewberry-seal` sets `/boot/firmware` read-only in `/etc/fstab`, adds
      `overlayroot=tmpfs:recurse=0` to `cmdline.txt`, and reboots.
@@ -65,7 +65,7 @@ ssh brewberry@brewberrypi.local 'sudo sh -s -- <mode>' < tests/hardware/os3-chec
 
 1. `status`: strict_gpiod, SPI off, 1-Wire, both watchdogs, the outputs-off hook and all outputs
    off. Every line must say `PASS`.
-2. `enable`: lets the stub switch the heater on (`/data/config/stub.json`, `"allowHeat": true`).
+2. `enable`: lets the stub switch the heater on (`/data/config/app/stub.json`, `"allowHeat": true`).
    The stub refuses this by default because it listens on the network without authentication.
 3. `kill9`, `hang`, `pause` and `rm`: each switches the heater on, then kills the app with
    `kill -9`, stops its watchdog pings, freezes the whole container (`podman pause`, as in the
@@ -125,34 +125,6 @@ another key.
 
    The arguments end in `--dummymode`, and the stub's page shows "Demo mode: on". After a
    reboot it is still on; `sudo brewberry-update demo off` removes `--dummymode` again.
-
-## OS5: USB offline update and config import
-
-Uses the test repository, key and versions from OS4. The stick needs any filesystem the Pi can
-read (FAT32, exFAT or ext4).
-
-1. On your machine, with the stick mounted (here at `/media/stick`):
-
-   ```sh
-   scripts/usb-export.sh 0.2.0 /media/stick --repo ghcr.io/tinkerius/brewberrypi-os-test --key work/test-signing/test.pub
-   tests/hardware/os5-tamper.sh /media/stick          # adds a tampered copy as 9.9.9
-   mkdir -p /media/stick/brewberrypi/config
-   cp <your config.json> /media/stick/brewberrypi/config/
-   ```
-
-   `usb-export.sh` verifies the export against the device policy before it finishes.
-2. Unmount the stick and plug it into the Pi.
-3. Install the USB test rule (RAM only, a reboot removes it) and run the checks; every line must
-   say `PASS`:
-
-   ```sh
-   ssh brewberry@brewberrypi.local 'sudo sh -s -- setup ghcr.io/tinkerius/brewberrypi-os-test /tmp/test.pub' < tests/hardware/os5-check.sh
-   ssh brewberry@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os5-check.sh
-   ```
-
-   This covers the OS5 "done when": the signed export installs offline, the tampered one is
-   rejected. It also checks the config import and that the stick is unmounted afterwards.
-4. Reboot to remove the test rule.
 
 ## OS6: maintenance mode
 
@@ -256,7 +228,7 @@ By hand, in a browser on another machine (`http://brewberrypi.local:8081/`):
    shows until the password is changed.
 2. Every page loads; every button of the user manual's command reference works: **Check the
    registry** and **Install** (with a registry token), **Roll back**, **Demo mode on/off**,
-   **Restart the app**, the USB stick page with a prepared stick (OS5), **Download** and **Import**
+   **Restart the app**, **Download** and **Import**
    of the configuration, **Logs**, and the three **OS update** steps (OS6; the page reconnects after
    each reboot).
 3. `sudo passwd brewberry` over SSH, then a reboot: the new password logs in to the web interface.
@@ -274,7 +246,7 @@ ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os10-check.sh
 
 `run` checks that only smbd runs (port 445, no NetBIOS) and comes back after a `kill -9`, the
 share's settings (SMB 3, signing, no guests, one share), that its password belongs to the
-`brewberry` account, the PAM hook, the file owners in `/data/config`, and the outputs recorded
+`brewberry` account, the PAM hook, the file owners and modes in `/data/config`, and the outputs recorded
 when the app started. Run it again after a reboot.
 
 By hand, from another machine on the LAN:
@@ -282,8 +254,10 @@ By hand, from another machine on the LAN:
 1. **Windows:** Explorer, `\\brewberrypi.local\config`, user `brewberry`, password `pi` on a fresh
    image. **macOS:** Finder, Go, Connect to Server, `smb://brewberrypi.local/config`; the Pi also
    shows under Network. **Linux:** `smbclient //brewberrypi.local/config -U brewberry -c ls`.
-2. Copy a recipe into `recipes/`, edit `config.json` (change `server.port`, say), delete a recipe:
-   `sudo brewberry-config show` shows each change; `brewberry-update restart` makes the app use it.
+2. Copy a recipe into `app/recipes/`, edit `app/config.json` (change `server.port`, say), delete a
+   recipe: `sudo brewberry-config show` shows each change, the app's recipe list follows within
+   seconds, and `brewberry-update restart` makes the app use the new `config.json`. Renaming or
+   deleting `app` or `os`, or creating a file next to them, is refused.
    From macOS, check that no `._*` or `.DS_Store` files appear on the Pi.
 3. Change the password in the web interface (Account): the old one no longer opens the share, the
    new one does, also after a reboot. The same with `sudo passwd brewberry` over SSH.
@@ -332,6 +306,23 @@ Windows or macOS laptop, and a router you can switch off.
    `http://10.42.0.1:8080/` now opens the app, and `hotspot` mode of the check says *no firewall
    rule*. Clear it again: the app is blocked again.
 9. **Imager's Wi-Fi:** flash with Wi-Fi in Imager's customisation. After the first boot,
-   `/data/config/wifi.json` holds the network and the country (mode `0600`), and `/etc/netplan`
+   `/data/config/os/wifi.json` holds the network and the country (mode `0600`), and `/etc/netplan`
    has no `wifis:` (`run` checks it).
 10. **Ethernet:** with a cable connected and no Wi-Fi reachable, no hotspot appears.
+
+## OS12: configuration folders `app` and `os`
+
+On a fresh card with the real app (≥ 0.1.0-alpha.6, runtime contract 2) installed, after OS10:
+
+```sh
+ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os12-check.sh
+```
+
+`run` checks the folders (`/data/config` root-owned, `app` and `os` `2775` with the group
+`brewberry-config`), that the app wrote `app/config.json` and `app/recipes/` with the shipped recipes,
+that the container has the group and only the `app` folder, and that a recipe written into
+`app/recipes` as `brewberry` (like the share and SSH do) appears in the app's recipe list
+(`GET /api/recipes`) within 10 s and disappears again when deleted, without a restart.
+
+By hand: copy a recipe into `app/recipes` from Windows or macOS with a browser on the app open: the
+recipe list shows it within seconds. Then the heater-pin test of OS10 with `app/config.json`.

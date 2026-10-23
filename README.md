@@ -20,7 +20,7 @@ controller for a home-brewing mash kettle. It is built to behave like a games co
 ## Documentation
 
 **Setting up and running a BrewberryPi?** Read the [user manual](docs/user-manual.md):
-flashing, configuration, app versions, USB, OS updates and troubleshooting.
+flashing, configuration, app versions, OS updates and troubleshooting.
 
 | Document | Purpose |
 |---|---|
@@ -54,7 +54,6 @@ The image is built with [rpi-image-gen](https://github.com/raspberrypi/rpi-image
 | `tests/hardware/` | Checks that run on a real Pi (milestone "done when" checks) |
 | `tests/unit/` | Host-side unit tests, e.g. the outputs-off reset with a fake `pinctrl` |
 | `scripts/build.sh` | Builds `deploy/<image>-<version>.img.xz` plus a `.sha256` |
-| `scripts/usb-export.sh` | Puts a signed app version on a USB stick and verifies it against the device policy |
 | `scripts/build-stub.sh` | Builds the contract stub for arm64 (`podman save` in `dir:` format); `build.sh` calls it unless `BREWBERRY_PRELOAD` names another image |
 | `scripts/fetch-app.sh` | Fetches a signed app release (arm64) as the image's preload and verifies it; `build.sh` uses it when `BREWBERRY_APP_VERSION` is set |
 | `scripts/imager-manifest.py` | Raspberry Pi Imager manifest for the images (release URLs or local files) |
@@ -92,8 +91,8 @@ BREWBERRY_SSH_PUBKEY="$(cat ~/.ssh/id_ed25519.pub)" scripts/build.sh
 
 ### Flash, configure and run
 
-Flashing, first boot, configuration, app versions (`brewberry-update`), USB (`brewberry-usb`),
-OS updates (`brewberry-maint`) and troubleshooting are in the
+Flashing, first boot, configuration (`brewberry-config`, the file share), app versions
+(`brewberry-update`), OS updates (`brewberry-maint`) and troubleshooting are in the
 [user manual](docs/user-manual.md). For a quick test of a local build:
 
 1. Write an Imager manifest for it, then flash through it with Raspberry Pi Imager 2.x and set

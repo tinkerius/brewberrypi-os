@@ -1,6 +1,6 @@
 #!/bin/sh
 # shellcheck disable=SC2317  # the check functions are called indirectly by check()
-# OS10 hardware check (file share of /data/config, ADR-0003), run on the device as root:
+# OS10 hardware check (file share of /data/config, ADR-0003, ADR-0005), run on the device as root:
 #
 #   ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os10-check.sh
 #
@@ -27,9 +27,12 @@ comes_back() { # smbd is restarted after a crash
    sleep 8
    systemctl is-active --quiet smbd.service
 }
-owners_ok() { ! find /data/config \( ! -user brewberry -o ! -group brewberry \) | grep -q .; }
+# The app's own files belong to its UID 10001 until smbd's next start (ADR-0005).
+owners_ok() { ! find /data/config -mindepth 1 \( \( ! -user brewberry ! -user 10001 \) -o ! -group brewberry-config \) | grep -q .; }
+root_owned() { test "$(stat -c %U:%a /data/config)" = root:755; }
+# Every file is writable by the group, so app, share and SSH can change it;
 # wifi.json holds Wi-Fi passwords: brewberry-wifi writes it 0600 (ADR-0004).
-modes_ok() { ! find /data/config -type f ! -perm 0644 ! -name wifi.json | grep -q .; }
+modes_ok() { ! find /data/config -type f ! -perm -0060 ! -name wifi.json | grep -q .; }
 
 run() {
    check "smbd.service is enabled and active" sh -c 'systemctl is-enabled --quiet smbd.service && systemctl is-active --quiet smbd.service'
@@ -45,8 +48,9 @@ run() {
    check "/data/secrets/samba is 0700" test "$(stat -c %a /data/secrets/samba)" = 700
    check "the share has brewberry's password" password_in_step
    check "the PAM hook is in common-password" grep -q 'brewberry-share-sync pam' /etc/pam.d/common-password
-   check "/data/config belongs to brewberry" owners_ok
-   check "files in /data/config are 0644" modes_ok
+   check "/data/config itself belongs to root (app and os can't be renamed)" root_owned
+   check "files below /data/config belong to the group brewberry-config" owners_ok
+   check "files below /data/config are group-writable" modes_ok
    check "mDNS announces the share" test -f /etc/avahi/services/brewberry-share.service
    check "brewberrypi.service records its outputs at start" \
       sh -c 'systemctl show brewberrypi.service -p ExecStartPre | grep -q "brewberrypi-outputs-off --record"'

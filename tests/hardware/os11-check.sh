@@ -24,7 +24,7 @@ redirects() { # <host> <expected Location>
    test "$(curl -s -o /dev/null -w '%{redirect_url}' -H "Host: $1" http://127.0.0.1/)" = "$2"
 }
 profiles_private() { ! find /run/NetworkManager/system-connections -name 'brewberry-*' ! -perm 0600 | grep -q .; }
-wifi_json_ok() { [ ! -e /data/config/wifi.json ] || [ "$(stat -c %a /data/config/wifi.json)" = 600 ] || [ "$(stat -c %a /data/config/wifi.json)" = 644 ]; }
+wifi_json_ok() { [ ! -e /data/config/os/wifi.json ] || [ "$(stat -c %a /data/config/os/wifi.json)" = 600 ] || [ "$(stat -c %a /data/config/os/wifi.json)" = 644 ]; }
 
 run() {
    check "brewberry-wifi.service is enabled and active" sh -c 'systemctl is-enabled --quiet brewberry-wifi.service && systemctl is-active --quiet brewberry-wifi.service'

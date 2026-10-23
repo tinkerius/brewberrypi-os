@@ -6,7 +6,7 @@
 #   brewberry-wifi-manager migrate   first boot: Imager's Wi-Fi (cloud-init's netplan) into wifi.json
 #   brewberry-wifi-manager tick      one round of 'run' (tests/unit/wifi.sh)
 #
-# Every 5 s it renders /data/config/wifi.json into NetworkManager profiles in
+# Every 5 s it renders /data/config/os/wifi.json into NetworkManager profiles in
 # /run (when it changed) and decides between the home networks and the hotspot:
 #   - Ethernet connected: no hotspot.
 #   - No usable network: the hotspot at once.
@@ -32,7 +32,7 @@ PROG=brewberry-wifi-manager
 R=${BREWBERRY_WIFI_ROOT:-}
 # shellcheck source=layer/brewberry-wifi.rootfs-overlay/usr/lib/brewberry/wifi.sh
 . "${BREWBERRY_WIFI_LIB:-/usr/lib/brewberry}/wifi.sh"
-APP_CONFIG=$R/data/config/config.json
+APP_CONFIG=$R/data/config/app/config.json
 
 HOTSPOT_AFTER=${BREWBERRY_WIFI_HOTSPOT_AFTER:-90}
 RETRY_EVERY=${BREWBERRY_WIFI_RETRY_EVERY:-180}

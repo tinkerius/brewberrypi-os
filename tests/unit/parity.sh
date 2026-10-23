@@ -11,7 +11,7 @@ ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
 CATALOGUE=$ROOT_DIR/layer/brewberry-web.rootfs-overlay/usr/share/brewberry/commands.json
 PAGE=$ROOT_DIR/layer/brewberry-web.rootfs-overlay/usr/lib/brewberry-web/index.html
 MANUAL=$ROOT_DIR/docs/user-manual.md
-CLIS="brewberry-update brewberry-usb brewberry-config brewberry-system brewberry-maint brewberry-wifi"
+CLIS="brewberry-update brewberry-config brewberry-system brewberry-maint brewberry-wifi"
 
 failures=0
 same() { # <description> <set A> <set B>
@@ -42,7 +42,7 @@ cat_ids=$(jq -r '.commands[].id' "$CATALOGUE")
 web_only=$(jq -r '.commands[] | select(.webOnly) | .webOnly' "$CATALOGUE")
 page_ids=$(grep -oE 'data-cmd="[a-z.-]+"|dataset\.cmd = "[a-z.-]+"' "$PAGE" | grep -oE '"[a-z.-]+"' | tr -d '"')
 # shellcheck disable=SC2016  # literal backticks and awk fields
-manual_cmds=$(sed -n '/^## 10\. Command reference/,/^## /p' "$MANUAL" | grep -oE '^\| `[^`]+`' |
+manual_cmds=$(sed -n '/^## 9\. Command reference/,/^## /p' "$MANUAL" | grep -oE '^\| `[^`]+`' |
    sed -E 's/^\| `//; s/`$//' | awk '{ print ($1 ~ /^brewberry-/ ? $1 " " $2 : $1) }')
 
 same "CLI usage headers ⇄ catalogue" "$cli_cmds" "$cat_cmds"

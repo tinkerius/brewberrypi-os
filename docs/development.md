@@ -69,12 +69,12 @@ The layers, in the order the base config lists them:
 | `brewberry-base` | mDNS (avahi), `/etc/brewberry-release`, the CLIs' shared `/usr/lib/brewberry/common.sh` |
 | `brewberry-readonly` | `data.mount`, first-boot grow/layout/seal, volatile journal, `brewberry-maint`, apt guard while sealed |
 | `brewberry-safety` | `config.txt` safety block, `brewberrypi-outputs-off`, `RuntimeWatchdogSec` |
-| `brewberry-podman` | Podman on `/data`, the Quadlet unit `brewberrypi.container`, gpiochip udev rule, `brewberry-firstload` |
-| `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-usb`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode` |
+| `brewberry-podman` | Podman on `/data`, the group `brewberry-config`, the Quadlet unit `brewberrypi.container` (`/data/config/app` read-write at `/config`), gpiochip udev rule, `brewberry-firstload` |
+| `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode` |
 | `brewberry-imager` | cloud-init for Imager's `cloudinit-rpi` customisation; disabled after first boot |
 | `brewberry-web` | Device web interface on port 8081 (server, root helper, command catalogue), the account password `pi`, `brewberry-passwd` (passwords kept on `/data`) |
-| `brewberry-share` | Samba file share of `/data/config` (ADR-0003): `smb.conf` (always on), `brewberry-share-sync` (smbd's start check and the PAM hook that keeps the share's password in step with `brewberry`'s), mDNS `_smb._tcp` |
-| `brewberry-wifi` | Wi-Fi setup through a fallback hotspot (ADR-0004): `brewberry-wifi` (operator command), `brewberry-wifi-manager` (the service: profiles from `/data/config/wifi.json` in `/run/NetworkManager/system-connections/`, hotspot after 90 s, retries, the nftables rule that keeps the app off an open hotspot, the first boot's move of Imager's netplan Wi-Fi), the shared `/usr/lib/brewberry/wifi.sh`, dnsmasq's captive-portal answer and the port-80 redirect `portal.py` |
+| `brewberry-share` | Samba file share of `/data/config` with its folders `app` and `os` (ADR-0003, ADR-0005), `brewberry` in the group `brewberry-config`: `smb.conf` (always on), `brewberry-share-sync` (smbd's start check and the PAM hook that keeps the share's password in step with `brewberry`'s), mDNS `_smb._tcp` |
+| `brewberry-wifi` | Wi-Fi setup through a fallback hotspot (ADR-0004): `brewberry-wifi` (operator command), `brewberry-wifi-manager` (the service: profiles from `/data/config/os/wifi.json` in `/run/NetworkManager/system-connections/`, hotspot after 90 s, retries, the nftables rule that keeps the app off an open hotspot, the first boot's move of Imager's netplan Wi-Fi), the shared `/usr/lib/brewberry/wifi.sh`, dnsmasq's captive-portal answer and the port-80 redirect `portal.py` |
 
 ## 3. Build host setup
 
@@ -99,7 +99,7 @@ Also needed:
 | Tool | For |
 |---|---|
 | `podman` | `scripts/build-stub.sh` (builds the stub for linux/arm64) |
-| `skopeo`, `jq` | `scripts/fetch-app.sh`, `scripts/usb-export.sh`, the signing test |
+| `skopeo`, `jq` | `scripts/fetch-app.sh`, the signing test |
 | cosign **v2.x** | The signing test, `scripts/publish-test-stubs.sh` (CI pins v2.5.3) |
 | Raspberry Pi Imager 2.x | Flashing through the manifest |
 
@@ -155,7 +155,7 @@ Variables come from the layer metadata: `X-Env-VarPrefix: app` plus `X-Env-Var-p
 line.
 
 On the device, the first boot runs `brewberry-growdata`, `brewberry-datalayout` (creates `/data`,
-seeds `config.json` with `{}`), `brewberry-firstload` (imports the preload as
+and `/data/config` with the folders `app` and `os`; the app writes its own files into `app`), `brewberry-firstload` (imports the preload as
 `localhost/brewberrypi:active`), cloud-init (Imager's customisation) and finally `brewberry-seal`,
 which makes the system read-only and reboots once.
 
@@ -191,7 +191,7 @@ what you need explicitly.
 Every operator command exists four times, and `tests/unit/parity.sh` fails CI when they differ
 (ADR-0002, [device-web-ui.md](device-web-ui.md)):
 
-1. **The CLI** (`brewberry-update`, `-usb`, `-config`, `-system`, `-maint`, `-wifi`): the
+1. **The CLI** (`brewberry-update`, `-config`, `-system`, `-maint`, `-wifi`): the
    implementation. List the subcommand in the usage header at the top of the script. Source
    `/usr/lib/brewberry/common.sh`; give queries `--json` output, and call `confirm "<what it
    does>"` before anything that restarts the app or reboots (it adds the brew warning, handles
@@ -271,9 +271,9 @@ failing attempts), fake `iw`, `nft` and `hostname`, and a fake clock (`BREWBERRY
 file the manager's pauses advance): one `brewberry-wifi-manager tick` per simulated 5 s round.
 
 The signing test starts a local registry, signs test images with throwaway keys and checks that
-the device's real `policy.json` accepts only the right ones: from the registry, from a USB `dir:`
-export, and as the build-time preload. Run it after any change to `policy.json`, `registries.d`,
-the keys, `fetch-app.sh` or `usb-export.sh`.
+the device's real `policy.json` accepts only the right ones: from the registry and as the
+build-time preload, and no signed `dir:` export from anywhere else. Run it after any change to
+`policy.json`, `registries.d`, the keys or `fetch-app.sh`.
 
 Hardware checks are per milestone (`tests/hardware/osN-check.sh`, run over SSH with
 `sudo sh -s`). OS4 needs signed test images in a test repository, never the app's; see

@@ -4,7 +4,7 @@ BrewberryPi OS runs **sealed**: the root is a read-only overlay with a RAM upper
 boot partition is read-only. Changes outside `/data` vanish at the next reboot, and apt refuses to
 change packages. OS updates (Raspberry Pi OS / Debian packages, kernel, firmware) therefore go
 through **maintenance mode** (ADR-0001, OS6). App versions are not OS updates; they use
-`brewberry-update` or `brewberry-usb`.
+`brewberry-update`.
 
 > **Pulling the plug is not safe** from `brewberry-maint on` until `brewberry-maint off` has
 > rebooted: root and boot are writable during that window. Keep the power connected.
@@ -47,7 +47,7 @@ through **maintenance mode** (ADR-0001, OS6). App versions are not OS updates; t
 
 The same window is used for changes to the real root or the boot partition. One example is the
 `gpio=` boot-pin lines in `config.txt` after `config.json` moved an output to another pin
-(`brewberry-usb import-config` warns about that).
+(`brewberry-config import` warns about that).
 
 ## If something goes wrong
 
@@ -56,5 +56,5 @@ The same window is used for changes to the real root or the boot partition. One 
 - **Power cut during `off`:** the next boot finishes sealing by itself (`brewberry-seal.service`).
 - **Power cut during `apt`:** the root filesystem may need repair (fsck runs at boot). If the Pi
   does not boot, reflash it. Reflashing overwrites the whole card, **`/data` included** (config,
-  app images, registry token). Keep a copy of your config on a USB stick for
-  `brewberry-usb import-config`, and run `brewberry-update login` again afterwards.
+  app images, registry token). Keep a copy of your config (`brewberry-config export`) to
+  import afterwards, and run `brewberry-update login` again.

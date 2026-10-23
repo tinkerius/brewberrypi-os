@@ -2,14 +2,15 @@
 # X-Env-Layer-Name: brewberry-share
 # X-Env-Layer-Category: app
 # X-Env-Layer-Desc: File share of the app's configuration (ADR-0003, OS10):
-#  Samba shares /data/config as \\<hostname>.local\config (SMB 3, signed, no
-#  guests, no NetBIOS) for the user brewberry, with the same password as the
-#  device web interface. A PAM hook sets the share's password on every
-#  password change (passwd, chpasswd); smbd's start check gives it the default
-#  'pi' at first boot and keeps the folder's files owned by brewberry.
+#  Samba shares /data/config (its folders app and os) as
+#  \\<hostname>.local\config (SMB 3, signed, no guests, no NetBIOS) for the
+#  user brewberry, with the same password as the device web interface. A PAM
+#  hook sets the share's password on every password change (passwd,
+#  chpasswd); smbd's start check gives it the default 'pi' at first boot and
+#  keeps the folders' files owned by brewberry and the group brewberry-config.
 #  Always on; logs: brewberry-system logs share.
 # X-Env-Layer-Version: 1.0.0
-# X-Env-Layer-Requires: brewberry-web,brewberry-readonly
+# X-Env-Layer-Requires: brewberry-web,brewberry-readonly,brewberry-podman
 # METAEND
 ---
 mmdebstrap:
@@ -20,6 +21,11 @@ mmdebstrap:
     - samba-vfs-modules
     - libpam-runtime
   customize-hooks:
+    - |-
+      set -eu
+      # brewberry edits the app's folder over SSH too, like the app container
+      # (brewberry-podman created the group).
+      chroot "$1" usermod -aG brewberry-config brewberry
     - |-
       set -eu
       # brewberry-web has just given brewberry the default password 'pi'. Its

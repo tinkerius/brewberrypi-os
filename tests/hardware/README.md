@@ -326,3 +326,22 @@ that the container has the group and only the `app` folder, and that a recipe wr
 
 By hand: copy a recipe into `app/recipes` from Windows or macOS with a browser on the app open: the
 recipe list shows it within seconds. Then the heater-pin test of OS10 with `app/config.json`.
+
+## OS13: the app on port 80
+
+On any board with the app (or the stub) running:
+
+```sh
+ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os13-check.sh
+```
+
+`run` checks that the forward rule follows the app's port, covers only the Pi's own addresses and
+leaves the hotspot address alone, that `nftables.service` is off, and that the captive portal still
+listens on port 80. Then, from another machine:
+
+1. `http://brewberrypi.local/` opens the app (or the stub's page); `http://brewberrypi.local:8080/`
+   too; the app's *Device settings* link opens `http://brewberrypi.local:8081/`.
+2. Set `server.port` to `9000` in `app/config.json` and restart the app: `http://brewberrypi.local/`
+   still opens it, `:8080` no longer does. Set it back.
+3. On the setup hotspot (OS11), `http://10.42.0.1/` and any other name still open the Wi-Fi page.
+

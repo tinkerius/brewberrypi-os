@@ -69,7 +69,7 @@ The layers, in the order the base config lists them:
 | `brewberry-base` | mDNS (avahi), `/etc/brewberry-release`, the CLIs' shared `/usr/lib/brewberry/common.sh` |
 | `brewberry-readonly` | `data.mount`, first-boot grow/layout/seal, volatile journal, `brewberry-maint`, apt guard while sealed |
 | `brewberry-safety` | `config.txt` safety block, `brewberrypi-outputs-off`, `RuntimeWatchdogSec` |
-| `brewberry-podman` | Podman on `/data`, the group `brewberry-config`, the Quadlet unit `brewberrypi.container` (`/data/config/app` read-write at `/config`), gpiochip udev rule, `brewberry-firstload` |
+| `brewberry-podman` | Podman on `/data`, the group `brewberry-config`, the Quadlet unit `brewberrypi.container` (`/data/config/app` read-write at `/config`), `brewberrypi-port80` (port 80 forwarded to the app, ADR-0006), gpiochip udev rule, `brewberry-firstload` |
 | `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode` |
 | `brewberry-imager` | cloud-init for Imager's `cloudinit-rpi` customisation; disabled after first boot |
 | `brewberry-web` | Device web interface on port 8081 (server, root helper, command catalogue), the account password `pi`, `brewberry-passwd` (passwords kept on `/data`) |

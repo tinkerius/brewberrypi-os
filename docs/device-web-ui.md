@@ -34,7 +34,7 @@ Requirements (product owner, 2026-10-15):
 |---|---|
 | WEB-01 | The web interface offers every command that the user manual documents, with the same behaviour as the CLI. |
 | WEB-02 | CLI and web interface keep offering the same functions in future. A command that exists in only one of them is a defect. |
-| WEB-03 | It runs in parallel to the app's web UI: the app keeps port 8080, the device web interface listens on **port 8081** (`http://<hostname>.local:8081/`). |
+| WEB-03 | It runs in parallel to the app's web UI: the app keeps port 8080 (and port 80, ADR-0006), the device web interface listens on **port 8081** (`http://<hostname>.local:8081/`). |
 | WEB-04 | No anonymous access. The login page shows the fixed user name `brewberry`; only the password is entered. |
 | WEB-05 | The image has the system user `brewberry` with the default password `pi`, an administrator (passwordless `sudo`) like a user created by Raspberry Pi Imager. |
 | WEB-06 | The web interface can change the password. The CLI has no command for it: `passwd` is the Linux way. Both changes survive a reboot. |
@@ -412,7 +412,7 @@ over it.
   the hotspot, NetworkManager's dnsmasq resolves every name to `10.42.0.1`
   (`dnsmasq-shared.d/brewberry-portal.conf`), so the captive-portal checks of phones and computers
   get `302 http://10.42.0.1:8081/#wifi` and open the Wi-Fi screen. A request for the Pi's own name
-  or an IP address goes to the same host on port 8081 (`http://brewberrypi.local/` works).
+  or an IP address goes to the same host on port 8081. Off the hotspot, port 80 is forwarded to the app (ADR-0006).
 - **No change to the server's checks:** the page is opened by IP address, which the `Host` check
   already accepts, and the login stays as it is.
 - **The Wi-Fi screen** runs `wifi.status`, `wifi.scan` (while the hotspot is up the Wi-Fi can't

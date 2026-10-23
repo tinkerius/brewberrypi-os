@@ -35,8 +35,8 @@ BrewberryPi OS is built to behave like a games console:
   automatically.
 - **The relays end up off** every time the app stops, whether it exits, crashes, hangs or the
   power is cut.
-- **Two web pages:** the app's own UI for brewing on port 8080, and the **device web interface**
-  on port 8081 for everything around it: app versions, configuration, Wi-Fi, OS updates,
+- **Two web pages:** the app's own UI for brewing at `http://<hostname>.local/` (also on port
+  8080), and the **device web interface** on port 8081 for everything around it: app versions, configuration, Wi-Fi, OS updates,
   logs. The device web interface runs exactly the commands described here, with the same checks
   and warnings ([Logging in](#4-logging-in)).
 - **A file share** of the configuration, `\\<hostname>.local\config`: open, download and
@@ -144,7 +144,7 @@ To set up Wi-Fi, or to change it later:
    **Save and connect**.
 5. A few seconds later the hotspot closes and the Pi joins your network. Connect the phone back to
    your own Wi-Fi and open `http://brewberrypi.local:8081/`, or the app at
-   `http://brewberrypi.local:8080/`.
+   `http://brewberrypi.local/`.
 6. If the Pi can't join it, the hotspot comes back within about a minute. Join it again: the Wi-Fi
    page shows why (for example *wrong password*).
 
@@ -174,7 +174,8 @@ Good to know:
 
 - Wi-Fi from Imager ends up in this file on the first boot.
 - WPA2 and WPA2/WPA3 mixed networks work; WPA3-only networks don't.
-- `http://brewberrypi.local/` (without a port) leads to the device web interface too.
+- On the hotspot, `http://10.42.0.1/` (without a port) leads to the Wi-Fi page; on your network,
+  `http://brewberrypi.local/` opens the app.
 
 Over SSH:
 
@@ -192,7 +193,9 @@ sudo brewberry-wifi hotspot-password      # asks for it (empty: an open hotspot 
 ### In a browser: the device web interface
 
 Open `http://<hostname>.local:8081/`, for example `http://brewberrypi.local:8081/`. Log in as the
-user **`brewberry`** (shown on the page) with the password; the default is **`pi`**.
+user **`brewberry`** (shown on the page) with the password; the default is **`pi`**. The app's top bar links
+here too (*Device settings*); `http://brewberrypi.local/` without a port opens the app, not this
+page.
 
 **Change the default password** right away under **Account**: everyone on your network knows `pi`.
 Until you do, every page reminds you. The password is also the Linux password of the user
@@ -389,7 +392,7 @@ Pick versions in the device web interface under **App versions**, or with the co
 SSH. Both do exactly the same.
 
 Until an app version is installed, the Pi runs a placeholder (the *contract stub*) that comes with
-the image. `http://<hostname>.local:8080/` then shows a page saying that the app isn't installed
+the image. `http://<hostname>.local/` then shows a page saying that the app isn't installed
 yet, with these steps. The placeholder never switches the outputs. Its `/healthz` reports the version `placeholder`, and
 `brewberry-update status` (and the web interface) show *placeholder (no app installed)*.
 

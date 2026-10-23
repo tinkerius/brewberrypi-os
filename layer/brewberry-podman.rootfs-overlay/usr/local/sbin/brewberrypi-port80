@@ -1,0 +1,54 @@
+#!/bin/sh
+# Forward TCP port 80 to the app (ADR-0006, OS13), so http://<hostname>.local/
+# opens the brewing UI. Runs as ExecStartPre= of brewberrypi.service: the rule
+# follows server.port of the config the app starts with (8080 while there is
+# none). The app keeps its own port too.
+#
+#   brewberrypi-port80           load the rule
+#   brewberrypi-port80 --print   print it instead (tests)
+#
+# Only connections to the Pi's own addresses are forwarded, never traffic it
+# routes for others. Port 80 on the setup hotspot's address (10.42.0.1) stays
+# the captive portal (brewberry-portal, ADR-0004), and the hotspot has no IPv6.
+# The rule never touches the outputs. It never fails the app's start: without
+# it the app is still reachable on its own port.
+set -u
+
+# BREWBERRYPI_PORT80_CONFIG is for tests only (tests/unit/port80.sh).
+CONFIG=${BREWBERRYPI_PORT80_CONFIG:-/data/config/app/config.json}
+TABLE=brewberry-app
+HOTSPOT_ADDRESS=10.42.0.1
+
+log() { echo "brewberrypi-port80: $*"; }
+
+port=$(jq -r '.server.port // 8080' "$CONFIG" 2> /dev/null) || port=8080
+case $port in
+   '' | *[!0-9]*) port=8080 ;;
+esac
+{ [ "$port" -ge 1 ] && [ "$port" -le 65535 ]; } || port=8080
+
+if [ "$port" = 80 ]; then
+   rules="table inet $TABLE
+delete table inet $TABLE"
+else
+   rules="table inet $TABLE
+delete table inet $TABLE
+table inet $TABLE {
+   chain prerouting {
+      type nat hook prerouting priority dstnat; policy accept;
+      ip daddr $HOTSPOT_ADDRESS return
+      fib daddr type local tcp dport 80 redirect to :$port
+   }
+}"
+fi
+
+if [ "${1:-}" = --print ]; then
+   printf '%s\n' "$rules"
+   exit 0
+fi
+if printf '%s\n' "$rules" | nft -f -; then
+   [ "$port" = 80 ] || log "port 80 forwarded to the app's port $port"
+else
+   log "could not load the rule; the app is on port $port only"
+fi
+exit 0

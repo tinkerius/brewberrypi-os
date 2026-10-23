@@ -10,7 +10,8 @@ answers every request with a redirect and nothing else:
   request for any other host name goes to the Wi-Fi page at the address it
   arrived on, http://10.42.0.1:8081/#wifi, which makes them open it.
 - A request for the Pi's own name or an IP address goes to the same name on
-  port 8081, so http://brewberrypi.local/ works too.
+  port 8081. Elsewhere than on the hotspot, connections to port 80 go to the
+  app instead (brewberrypi-port80, ADR-0006) and never reach this redirect.
 """
 
 import ipaddress

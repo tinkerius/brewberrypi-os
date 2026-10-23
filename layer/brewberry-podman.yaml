@@ -5,6 +5,7 @@
 #  storage and pull staging on /data, the Quadlet unit brewberrypi.container
 #  running localhost/brewberrypi:active, GPIO device access for the gpio group,
 #  write access to /data/config/app for the brewberry-config group,
+#  port 80 forwarded to the app's port (brewberrypi-port80),
 #  and brewberry-firstload, which imports the app image preloaded in the OS
 #  image and tags it active.
 # X-Env-Layer-Version: 1.0.0
@@ -29,6 +30,8 @@ mmdebstrap:
     - netavark
     # groupadd for the brewberry-config group
     - passwd
+    # brewberrypi-port80: port 80 forwarded to the app
+    - nftables
   customize-hooks:
     - |-
       set -eu
@@ -36,6 +39,13 @@ mmdebstrap:
       mkdir -p "$1/usr/share/brewberrypi"
       cp -r "$IGconf_app_preload" "$1/usr/share/brewberrypi/preload"
       chmod -R u=rwX,go=rX "$1/usr/share/brewberrypi/preload"
+    - |-
+      set -eu
+      # brewberrypi-port80 loads its own table; the nftables service would load
+      # /etc/nftables.conf (flush ruleset) at boot, which BrewberryPi OS doesn't use.
+      if [ -e "$1/usr/lib/systemd/system/nftables.service" ]; then
+         systemctl --root="$1" disable nftables.service
+      fi
     - |-
       set -eu
       # The group of the app's folder /data/config/app (brewberry-datalayout):

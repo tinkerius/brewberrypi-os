@@ -201,6 +201,17 @@ class WebTest(unittest.TestCase):
         self.assertEqual(status, 200)
         self.assertIn(b"BrewberryPi OS", body)
 
+    def test_brand_files_without_login(self):
+        for path, ctype in (("/favicon.ico", "image/x-icon"), ("/favicon.svg", "image/svg+xml"),
+                            ("/static/logo.svg", "image/svg+xml"), ("/static/logo-stacked-dark.svg", "image/svg+xml"),
+                            ("/static/zilla-slab-medium.woff2", "font/woff2"), ("/apple-touch-icon.png", "image/png")):
+            status, body, headers = self.request("GET", path)
+            self.assertEqual((status, headers["Content-Type"]), (200, ctype), path)
+            self.assertGreater(len(body), 100, path)
+        # Only the listed files: nothing else from static/ or beside it.
+        for path in ("/static/OFL.txt", "/static/../server.py", "/static/helper.py"):
+            self.assertIn(self.request("GET", path)[0], (401, 404), path)
+
     def test_api_needs_a_session(self):
         self.assertEqual(self.request("GET", "/api/commands")[0], 401)
         self.assertEqual(self.request("GET", "/api/run/update.status")[0], 401)

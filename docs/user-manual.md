@@ -7,7 +7,7 @@ browser. Everything after flashing can be done in the **device web interface**
 
 The hardware (wiring, relay board, sensors) and the app itself (recipes, mashing, the web UI, the
 format of `config.json`) are documented in the
-[BrewberryPi app repository](https://github.com/tinkerius/brewberrypi). This manual covers only
+[BrewberryPi app repository](https://github.com/tinkerius/brewberrypi-app). This manual covers only
 the operating system around the app.
 
 ## Contents
@@ -66,7 +66,7 @@ Reflashing the SD card erases everything, `/data` included.
 - A network: Wi-Fi or Ethernet. Wi-Fi can be set up after flashing, from a phone.
 - On your computer: [Raspberry Pi Imager](https://www.raspberrypi.com/software/) **2.x** (1.8 works
   too), and for key logins an SSH key pair. To make one: `ssh-keygen -t ed25519`.
-- For online app updates: a GitHub account with access to `ghcr.io/tinkerius/brewberrypi`.
+- For online app updates: a GitHub account with access to `ghcr.io/tinkerius/brewberrypi-app`.
 
 ## 3. Installing
 
@@ -385,7 +385,7 @@ mode:
 
 The Pi runs one app version, the *active* one, and keeps the one before it, the *previous* one,
 to roll back to. Other versions are **downloaded** onto the Pi first and then **installed**;
-downloads stay until you remove them. App versions come from the private registry `ghcr.io/tinkerius/brewberrypi` and
+downloads stay until you remove them. App versions come from the private registry `ghcr.io/tinkerius/brewberrypi-app` and
 must be signed with the app's key. Unsigned or wrongly signed images are refused.
 
 Pick versions in the device web interface under **App versions**, or with the commands below over

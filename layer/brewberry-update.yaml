@@ -2,7 +2,7 @@
 # X-Env-Layer-Name: brewberry-update
 # X-Env-Layer-Category: app
 # X-Env-Layer-Desc: Signed app updates and version selection (ADR-0001, OS4):
-#  policy.json (default reject; ghcr.io/tinkerius/brewberrypi only with the
+#  policy.json (default reject; ghcr.io/tinkerius/brewberrypi-app only with the
 #  app's pinned cosign key; unsigned images only from the preload directory),
 #  registries.d for cosign v2 signature tags, the brewberry-update CLI
 #  (install with soak and rollback, rollback, list, status, login) and safe

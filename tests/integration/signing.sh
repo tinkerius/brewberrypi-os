@@ -43,15 +43,15 @@ push() { # <repo:tag> [signing key prefix]
          "${ref%:*}@$digest" > /dev/null 2>&1
    fi
 }
-push tinkerius/brewberrypi:1.0.0 good
-push tinkerius/brewberrypi:1.0.1
-push tinkerius/brewberrypi:1.0.2 other
+push tinkerius/brewberrypi-app:1.0.0 good
+push tinkerius/brewberrypi-app:1.0.1
+push tinkerius/brewberrypi-app:1.0.2 other
 push tinkerius/elsewhere:1.0.0 good
 
 # App releases for scripts/fetch-app.sh: arm64 with the app's labels. No RUN
 # step, so building for arm64 needs no emulation.
 push_app() { # <tag> <signing key prefix|-> <contract label> <version label>
-   local ref=$REG/tinkerius/brewberrypi:$1 digest
+   local ref=$REG/tinkerius/brewberrypi-app:$1 digest
    printf 'FROM mirror.gcr.io/library/busybox:1.36\nLABEL org.brewberrypi.runtime-contract="%s" org.opencontainers.image.version="%s"\n' \
       "$3" "$4" > "$T/Containerfile"
    podman build -q --platform linux/arm64 -t "$ref" -f "$T/Containerfile" "$T" > /dev/null
@@ -69,11 +69,11 @@ push_app 2.0.3 good 1 2.0.3
 push_app 2.0.4 good 2 9.9.9
 
 # The device's files, pointed at the test registry and key.
-sed -e "s|ghcr.io/tinkerius/brewberrypi|$REG/tinkerius/brewberrypi|" \
+sed -e "s|ghcr.io/tinkerius/brewberrypi-app|$REG/tinkerius/brewberrypi-app|" \
     -e "s|/usr/share/brewberrypi/keys/app-cosign.pub|$T/good.pub|" \
     "$OVERLAY/etc/containers/policy.json" > "$T/policy.json"
 mkdir "$T/registries.d"
-sed "s|ghcr.io/tinkerius/brewberrypi|$REG/tinkerius/brewberrypi|" \
+sed "s|ghcr.io/tinkerius/brewberrypi-app|$REG/tinkerius/brewberrypi-app|" \
     "$OVERLAY/etc/containers/registries.d/brewberrypi.yaml" > "$T/registries.d/brewberrypi.yaml"
 
 failures=0
@@ -85,15 +85,15 @@ expect() { # <description> <accept|reject> <repo:tag>
    fi
    if [ "$got" = "$2" ]; then echo "ok    $1"; else echo "FAIL  $1: $got, want $2"; failures=1; fi
 }
-expect "signed with the pinned key: accepted" accept tinkerius/brewberrypi:1.0.0
-expect "unsigned: rejected" reject tinkerius/brewberrypi:1.0.1
-expect "signed with another key: rejected" reject tinkerius/brewberrypi:1.0.2
+expect "signed with the pinned key: accepted" accept tinkerius/brewberrypi-app:1.0.0
+expect "unsigned: rejected" reject tinkerius/brewberrypi-app:1.0.1
+expect "signed with another key: rejected" reject tinkerius/brewberrypi-app:1.0.2
 expect "other repository, even if signed: rejected" reject tinkerius/elsewhere:1.0.0
 
 # 'dir:' exports (as podman save or skopeo write them): only the preload folder
 # of the image is accepted, even with a valid signature.
 skopeo copy --quiet --all --registries.d "$T/registries.d" --src-tls-verify=false \
-   "docker://$REG/tinkerius/brewberrypi:1.0.0" "dir:$T/export"
+   "docker://$REG/tinkerius/brewberrypi-app:1.0.0" "dir:$T/export"
 if compgen -G "$T/export/signature-*" > /dev/null; then echo "ok    the 'dir:' export carries its signature"
 else echo "FAIL  the 'dir:' export has no signature"; failures=1; fi
 if skopeo copy --quiet --policy "$T/policy.json" "dir:$T/export" "dir:$T/out-export" > /dev/null 2>&1; then
@@ -105,7 +105,7 @@ fi
 # Build-time preload (OS8): only a signed arm64 release with the right labels.
 expect_fetch() { # <description> <accept | words of the expected refusal> <x.y.z>
    local got dest=$T/preload/$3 err
-   if err=$("$ROOT/scripts/fetch-app.sh" "$3" "$dest" --repo "$REG/tinkerius/brewberrypi" --key "$T/good.pub" \
+   if err=$("$ROOT/scripts/fetch-app.sh" "$3" "$dest" --repo "$REG/tinkerius/brewberrypi-app" --key "$T/good.pub" \
          --insecure 2>&1 > /dev/null) && [ -f "$dest/manifest.json" ]; then
       got=accept
    elif [ -e "$dest" ]; then

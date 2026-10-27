@@ -7,7 +7,7 @@ with version selection, rollback and safe mode.
 
 ## Related repository
 
-- `tinkerius/brewberrypi`: the application, delivered as the image `ghcr.io/tinkerius/brewberrypi`.
+- `tinkerius/brewberrypi-app`: the application, delivered as the image `ghcr.io/tinkerius/brewberrypi-app`.
 - Its `docs/deployment/runtime-contract.md` is the **interface** this OS must implement (contract version 2). Do not change the contract unilaterally: a change needs a new contract version in both repositories.
 
 ## Layout

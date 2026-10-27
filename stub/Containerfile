@@ -1,6 +1,6 @@
 # BrewberryPi contract stub image (runtime contract version 2). Unlike the app, it writes
 # nothing into /config, so the app still finds no config.json and recipes/ at its first start.
-# Same base, user and entrypoint as the app image (tinkerius/brewberrypi Containerfile), so the
+# Same base, user and entrypoint as the app image (tinkerius/brewberrypi-app Containerfile), so the
 # host is tested against the same conditions. Build: scripts/build-stub.sh
 FROM docker.io/library/debian:trixie-slim
 

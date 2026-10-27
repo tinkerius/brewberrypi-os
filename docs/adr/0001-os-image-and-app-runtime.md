@@ -7,7 +7,7 @@
 
 ## Context
 
-The BrewberryPi application (repository `tinkerius/brewberrypi`, its ADR-0001) ships as a signed OCI
+The BrewberryPi application (repository `tinkerius/brewberrypi-app`, its ADR-0001) ships as a signed OCI
 container image. This repository provides the operating system that runs it on a Raspberry Pi
 3, 4 or 5 and controls a **mains-powered heater**. The interface between the two is the
 **runtime contract**, `docs/deployment/runtime-contract.md` in the application repository,
@@ -19,7 +19,7 @@ Product-owner wishes (2026-10-09):
 - Deploying means pushing an image version to a registry and **selecting the version on the device**.
 - **Local only**: no vendor cloud.
 - **No hardware change** to the relay board.
-- The registry is private: `ghcr.io/tinkerius/brewberrypi`.
+- The registry is private: `ghcr.io/tinkerius/brewberrypi-app` (until 2026-10-27, with runtime contract 1: `ghcr.io/tinkerius/brewberrypi`).
 
 Facts this ADR relies on (research 2026-10-08/09, primary sources, see `docs/research/`):
 

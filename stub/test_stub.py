@@ -91,8 +91,8 @@ class StubTest(unittest.TestCase):
         self.start()
         self.assertEqual(self.recv(), "READY=1")
         for path, ctype in (("/favicon.ico", "image/x-icon"), ("/favicon.svg", "image/svg+xml"),
-                            ("/static/logo-stacked.svg", "image/svg+xml"),
-                            ("/static/logo-stacked-dark.svg", "image/svg+xml"),
+                            ("/static/logo.svg", "image/svg+xml"),
+                            ("/static/logo-dark.svg", "image/svg+xml"),
                             ("/static/zilla-slab-medium.woff2", "font/woff2")):
             status, content_type, data = self.fetch(path)
             self.assertEqual((status, content_type), (200, ctype), path)

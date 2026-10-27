@@ -18,7 +18,7 @@ WEB_FILES="brand/logo.svg brand/logo-dark.svg brand/logo-stacked.svg brand/logo-
    brand/favicon.svg brand/favicon.ico brand/apple-touch-icon.png
    site/fonts/zilla-slab-medium.woff2 site/fonts/OFL.txt"
 STUB=$REPO_ROOT/stub/static
-STUB_FILES="brand/logo-stacked.svg brand/logo-stacked-dark.svg brand/favicon.svg brand/favicon.ico
+STUB_FILES="brand/logo.svg brand/logo-dark.svg brand/favicon.svg brand/favicon.ico
    site/fonts/zilla-slab-medium.woff2 site/fonts/OFL.txt"
 
 src=${1:-}

@@ -165,8 +165,8 @@ STATIC_DIR = os.environ.get("BREWBERRYPI_STUB_STATIC",
 STATIC = {
     "/favicon.ico": ("favicon.ico", "image/x-icon"),
     "/favicon.svg": ("favicon.svg", "image/svg+xml"),
-    "/static/logo-stacked.svg": ("logo-stacked.svg", "image/svg+xml"),
-    "/static/logo-stacked-dark.svg": ("logo-stacked-dark.svg", "image/svg+xml"),
+    "/static/logo.svg": ("logo.svg", "image/svg+xml"),
+    "/static/logo-dark.svg": ("logo-dark.svg", "image/svg+xml"),
     "/static/zilla-slab-medium.woff2": ("zilla-slab-medium.woff2", "font/woff2"),
 }
 
@@ -181,66 +181,91 @@ PAGE = """<!doctype html>
 <link rel="icon" href="/favicon.ico" sizes="48x48">
 <link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
-/* BrewberryPi brand (tinkerius/brewberrypi, brand/README.md), as on the device web interface:
-   paper, ink, berry, brass and leaf; the darker values on light, the lighter ones on dark. */
+/* BrewberryPi brand (tinkerius/brewberrypi, brand/README.md): paper, ink, berry, brass and leaf;
+   the darker values on light, the lighter ones on dark. The top bar and the cards look like the
+   app's (tinkerius/brewberrypi-app, frontend/src/ui.ts) and the device web interface's, so that
+   the page the app replaces already looks like it. */
 @font-face {{ font-family: "Zilla Slab"; font-weight: 500; font-display: swap;
   src: url("/static/zilla-slab-medium.woff2") format("woff2"); }}
 :root {{
   color-scheme: light dark;
-  --bg: #fbf8f6; --card: #ffffff; --text: #2a1d22; --muted: #6b5a61; --line: #eadfe2;
-  --accent: #8a2a4a; --note-bg: #fbf0db; --note-line: #e9c27a; --ok: #2f6b2e; --code-bg: #f5f0ee;
+  --bg: #fbf8f6; --card: #ffffff; --text: #2a1d22; --muted: oklch(55.3% .013 58.071);
+  --line: rgb(42 29 34 / .1); --ring: rgb(42 29 34 / .05); --accent: #8a2a4a;
+  --note-bg: rgb(196 130 26 / .1); --note-line: rgb(196 130 26 / .6); --ok: #3d7a3c; --code-bg: #fbf8f6;
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1);
 }}
 @media (prefers-color-scheme: dark) {{
   :root {{
-    --bg: #1c1719; --card: #251e21; --text: #f1e8eb; --muted: #a8979e; --line: #3b2f34;
-    --accent: #e0789a; --note-bg: #3a2b12; --note-line: #7a5a20; --ok: #8fc77f; --code-bg: #181315;
+    --bg: #1c1719; --card: #262023; --text: #f1e8eb; --muted: oklch(70.9% .01 56.259);
+    --line: rgb(255 255 255 / .1); --ring: rgb(255 255 255 / .1); --accent: #e0789a;
+    --note-bg: rgb(233 176 79 / .1); --note-line: rgb(233 176 79 / .4); --ok: #8fc77f;
+    --code-bg: rgb(255 255 255 / .05);
   }}
 }}
 * {{ box-sizing: border-box; }}
 body {{
-  margin: 0; background: var(--bg); color: var(--text);
-  font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  margin: 0; background: var(--bg); color: var(--text); -webkit-font-smoothing: antialiased;
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans",
+    Arial, sans-serif;
 }}
-main {{ max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 3rem; }}
-header p {{ margin: 0; color: var(--muted); }}
-header .logo {{ margin: 0 0 1.25rem; line-height: 0; text-align: center; }}
-header .logo img {{ width: min(13rem, 60vw); height: auto; }}
-h1, h2 {{ font-family: "Zilla Slab", Rockwell, Georgia, serif; font-weight: 500; }}
+header {{
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px;
+  background: var(--card); border-bottom: 1px solid var(--line);
+}}
+header .logo {{ margin: 0; line-height: 0; }}
+header .logo img {{ height: 32px; width: auto; }}
+header .host {{ color: var(--muted); }}
+header .device {{ margin-left: auto; font-size: 14px; font-weight: 500; text-decoration: none; }}
+header .device:hover {{ text-decoration: underline; }}
+main {{ max-width: 48rem; margin: 0 auto; padding: 24px 16px 48px; }}
+@media (min-width: 640px) {{ main {{ padding: 24px 24px 48px; }} }}
+.intro {{ margin: 8px 0 0; }}
+.intro p {{ margin: 0; color: var(--muted); }}
+h1, h2, .brand {{ font-family: "Zilla Slab", Rockwell, Georgia, serif; font-weight: 500; }}
 h1 {{ font-size: 1.9rem; line-height: 1.2; margin: 0.25rem 0 0.75rem; color: var(--accent); }}
-h2 {{ font-size: 1.25rem; margin: 0 0 0.5rem; color: var(--accent); }}
+h2 {{ font-size: 1.125rem; line-height: 1.75rem; margin: 0 0 1rem; color: var(--text); }}
 section {{
-  background: var(--card); border: 1px solid var(--line); border-radius: 12px;
-  padding: 1.1rem 1.25rem; margin-top: 1rem;
+  background: var(--card); border-radius: 12px; padding: 20px; margin-top: 24px;
+  box-shadow: 0 0 0 1px var(--ring), var(--shadow);
 }}
-.note {{ background: var(--note-bg); border-color: var(--note-line); }}
-.brand {{ color: var(--muted); font-family: "Zilla Slab", Rockwell, Georgia, serif; font-weight: 500;
-  font-size: 1.1rem; letter-spacing: 0.02em; }}
+@media (min-width: 640px) {{ section {{ padding: 24px; }} }}
+section p {{ margin: 0.5rem 0 0; }}
+section h2 + p {{ margin-top: 0; }}
+.note {{ background: var(--note-bg); box-shadow: inset 0 0 0 1px var(--note-line); }}
+.brand {{ color: var(--muted); font-size: 1.1rem; letter-spacing: 0.02em; }}
 dl {{ display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; margin: 0; }}
 dt {{ color: var(--muted); }}
 dd {{ margin: 0; }}
 .ok {{ color: var(--ok); font-weight: 600; }}
-pre, code {{ font: 0.9rem/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
+pre, code {{ font: 0.875em/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; }}
 code {{
   background: var(--code-bg); padding: 0.1rem 0.3rem; border-radius: 4px; overflow-wrap: anywhere;
 }}
-pre {{ background: var(--code-bg); padding: 0.75rem 1rem; border-radius: 8px; overflow-x: auto; }}
+pre {{
+  background: var(--code-bg); box-shadow: inset 0 0 0 1px var(--ring); padding: 0.75rem 1rem;
+  border-radius: 8px; overflow-x: auto; margin: 0.75rem 0;
+}}
 pre code {{ background: none; padding: 0; }}
 a {{ color: var(--accent); }}
-footer {{ margin-top: 1.5rem; color: var(--muted); font-size: 0.9rem; }}
+footer {{ margin-top: 1.5rem; color: var(--muted); font-size: 0.875rem; }}
 </style>
 </head>
 <body>
-<main>
 <header>
 <div class="logo"><picture>
-<source srcset="/static/logo-stacked-dark.svg" media="(prefers-color-scheme: dark)">
-<img src="/static/logo-stacked.svg" alt="BrewberryPi" width="208" height="137">
+<source srcset="/static/logo-dark.svg" media="(prefers-color-scheme: dark)">
+<img src="/static/logo.svg" alt="BrewberryPi" width="145" height="32">
 </picture></div>
+<span class="host">{hostname} · {header_version}</span>
+<a class="device" href="http://{hostname}.local:8081/">Device settings</a>
+</header>
+<main>
+<div class="intro">
 <p class="brand">BrewberryPi OS</p>
 <h1>The brewing app isn't installed yet</h1>
 <p>This Raspberry Pi is set up and running, but the BrewberryPi app is not on it yet. What answers
 here is a small placeholder that comes with the operating system.</p>
-</header>
+</div>
 
 <section class="note">
 <h2>What's running instead</h2>
@@ -328,6 +353,8 @@ def landing_page() -> str:
         heat, heat_note = "off", ""
     return PAGE.format(
         version="" if VERSION == PLACEHOLDER else ", test version " + html.escape(VERSION),
+        header_version=("no app installed" if VERSION == PLACEHOLDER
+                        else "test version " + html.escape(VERSION)),
         uptime=duration(time.time() - State.started),
         hostname=html.escape(socket.gethostname()),
         watchdog=watchdog,

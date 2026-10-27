@@ -5,7 +5,7 @@
 # version labels. scripts/build.sh calls this when BREWBERRY_APP_VERSION is set.
 #
 # Usage: scripts/fetch-app.sh <version> <dest dir> [--repo <registry/repo>] [--key <cosign.pub>] [--insecure]
-#   default repo: ghcr.io/tinkerius/brewberrypi; default key: the app key the
+#   default repo: ghcr.io/tinkerius/brewberrypi-app; default key: the app key the
 #   device pins; --insecure: plain-HTTP registry (tests only).
 #
 # The device accepts the preload unsigned (policy.json, path-scoped), so this
@@ -24,7 +24,7 @@ usage() { echo "usage: fetch-app.sh <version> <dest dir> [--repo <registry/repo>
 [ $# -ge 2 ] || usage
 VERSION=$1 DEST=$2
 shift 2
-REPO=ghcr.io/tinkerius/brewberrypi
+REPO=ghcr.io/tinkerius/brewberrypi-app
 OVERLAY=$REPO_ROOT/layer/brewberry-update.rootfs-overlay
 KEY=$OVERLAY/usr/share/brewberrypi/keys/app-cosign.pub
 TLS=()
@@ -56,7 +56,7 @@ fail() { echo "fetch-app: $*; not using $REPO:$VERSION" >&2; rm -rf "$DEST"; exi
 # path, repository and key.
 jq --arg path "$(dirname "$DEST")" --arg repo "$REPO" --arg key "$(realpath "$KEY")" '
    {default: [{type: "reject"}],
-    transports: {dir: {($path): [.transports.docker["ghcr.io/tinkerius/brewberrypi"][0]
+    transports: {dir: {($path): [.transports.docker["ghcr.io/tinkerius/brewberrypi-app"][0]
        | .keyPath = $key | .signedIdentity = {type: "exactRepository", dockerRepository: $repo}]}}}
 ' "$OVERLAY/etc/containers/policy.json" > "$T/policy.json"
 skopeo copy --quiet --policy "$T/policy.json" "dir:$DEST" "dir:$T/verify" > /dev/null 2>&1 ||

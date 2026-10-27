@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """BrewberryPi contract stub (runtime contract version 2).
 
-Stands in for the real app image (tinkerius/brewberrypi) until it is released, so the OS side of
+Stands in for the real app image (tinkerius/brewberrypi-app) until it is released, so the OS side of
 the contract can be tested: READY=1, WATCHDOG=1 every BREWBERRYPI_WATCHDOG_MS, STOPPING=1, and
 GET /healthz on port 8080. GET / is a page for people who open the Pi in a browser: it explains
 that the app isn't installed yet and how to install it.

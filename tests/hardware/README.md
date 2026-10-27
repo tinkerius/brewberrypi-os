@@ -83,7 +83,7 @@ ssh brewberry@brewberrypi.local 'sudo sh -s -- <mode>' < tests/hardware/os3-chec
 ## OS4: signed updates, rollback and safe mode
 
 The real app's images are signed in its own CI. For this test, `scripts/publish-test-stubs.sh`
-pushes stub versions to a **test repository** (never `ghcr.io/tinkerius/brewberrypi`), signed
+pushes stub versions to a **test repository** (never `ghcr.io/tinkerius/brewberrypi-app`), signed
 with a throwaway key: 0.2.0 healthy, 0.3.0 crashes on start, 0.4.0 unsigned, 0.5.0 signed with
 another key.
 
@@ -145,8 +145,8 @@ This covers the OS6 "done when". Afterwards, re-run the OS1 checks (`os1-check.s
 
 ## OS8: end-to-end with the real app
 
-Needs an app release (≥ 1.0 for the milestone) from `tinkerius/brewberrypi`, and the app's
-[hardware test protocol](https://github.com/tinkerius/brewberrypi/blob/main/docs/deployment/hardware-test-protocol.md).
+Needs an app release (≥ 1.0 for the milestone) from `tinkerius/brewberrypi-app`, and the app's
+[hardware test protocol](https://github.com/tinkerius/brewberrypi-app/blob/main/docs/deployment/hardware-test-protocol.md).
 
 1. **Through the update flow** (the OS8 "done when"): flash the current image (stub or an older app
    preloaded), then on the device:

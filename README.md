@@ -1,6 +1,6 @@
 # BrewberryPi OS
 
-Operating-system image for [BrewberryPi](https://github.com/tinkerius/brewberrypi), a Raspberry Pi
+Operating-system image for [BrewberryPi](https://github.com/tinkerius/brewberrypi-app), a Raspberry Pi
 controller for a home-brewing mash kettle. It is built to behave like a games console:
 
 - **Flash it, plug it in, brew.** It's a ready-made image for Raspberry Pi 3, 4 and 5, flashed with Raspberry Pi Imager.

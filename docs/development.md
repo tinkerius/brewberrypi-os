@@ -120,7 +120,7 @@ The output is `deploy/<image>-<version>.img.xz` plus a `.sha256`. The version is
 | Variable | Effect |
 |---|---|
 | `BREWBERRY_SSH_PUBKEY` | Key for the `brewberry` user built into the image. Optional when you flash through the manifest and set a key in Imager; without either, you can't log in. |
-| `BREWBERRY_APP_VERSION` | Preload this app version (`1.2.3` or a pre-release `1.2.3-alpha.N`) instead of the stub. `scripts/fetch-app.sh` fetches it from `ghcr.io/tinkerius/brewberrypi` and refuses it unless it is signed with the pinned key and labelled contract 1 and that version. Log in first: `skopeo login ghcr.io`. |
+| `BREWBERRY_APP_VERSION` | Preload this app version (`1.2.3` or a pre-release `1.2.3-alpha.N`) instead of the stub. `scripts/fetch-app.sh` fetches it from `ghcr.io/tinkerius/brewberrypi-app` and refuses it unless it is signed with the pinned key and labelled contract 1 and that version. Log in first: `skopeo login ghcr.io`. |
 | `BREWBERRY_OS_VERSION` | OS version for the image name and `/etc/brewberry-release` (default: `git describe --tags`). CI sets it to the tag of a release build. |
 | `BREWBERRY_PRELOAD` | Preload this local `dir:` image instead (`podman save --format docker-dir`). Not verified; development only. |
 | `STUB_VERSION`, `STUB_START` | For `build-stub.sh`: the stub's version (default `placeholder`) and start mode (`ok`, `crash`, `hwfail`, `config`, `hang`) |

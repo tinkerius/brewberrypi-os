@@ -39,7 +39,7 @@ PROG=brewberry-update
 
 # BREWBERRY_UPDATE_REPO is for the hardware test only (tests/hardware/os4-check.sh),
 # together with a temporary policy entry that a reboot removes.
-REPO=${BREWBERRY_UPDATE_REPO:-ghcr.io/tinkerius/brewberrypi}
+REPO=${BREWBERRY_UPDATE_REPO:-ghcr.io/tinkerius/brewberrypi-app}
 LOCAL=localhost/brewberrypi
 ACTIVE=$LOCAL:active
 PREVIOUS=$LOCAL:previous

@@ -19,7 +19,7 @@ set -euo pipefail
 
 REPO=${1:?usage: publish-test-stubs.sh <registry/repository>}
 case $REPO in
-   ghcr.io/tinkerius/brewberrypi | ghcr.io/tinkerius/brewberrypi:*) echo "refusing to push test images to the app repository" >&2; exit 1 ;;
+   ghcr.io/tinkerius/brewberrypi | ghcr.io/tinkerius/brewberrypi:* | ghcr.io/tinkerius/brewberrypi-app | ghcr.io/tinkerius/brewberrypi-app:*) echo "refusing to push test images to the app repository" >&2; exit 1 ;;
 esac
 cosign version 2>&1 | grep -q 'GitVersion: *v2\.' || { echo "cosign v2.x required" >&2; exit 1; }
 

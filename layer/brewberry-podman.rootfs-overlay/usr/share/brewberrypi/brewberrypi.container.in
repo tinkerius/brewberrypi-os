@@ -24,7 +24,7 @@ Image=localhost/brewberrypi:active
 Pull=never
 ContainerName=brewberrypi
 Notify=true
-# The app image's user (tinkerius/brewberrypi Containerfile); never root.
+# The app image's user (tinkerius/brewberrypi-app Containerfile); never root.
 User=10001
 Group=10001
 GroupAdd=@GPIO_GID@

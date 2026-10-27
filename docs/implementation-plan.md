@@ -2,7 +2,7 @@
 
 Milestones for BrewberryPi OS. Each milestone ends with its "done when" checks green. Hardware checks
 need a real Pi 3 or 4 first; Pi 5 follows in OS7. The application side of the runtime contract is
-implemented in `tinkerius/brewberrypi`. Until its first release, OS2–OS5 use a small **contract stub
+implemented in `tinkerius/brewberrypi-app`. Until its first release, OS2–OS5 use a small **contract stub
 image** from `stub/`. The stub implements READY, WATCHDOG and `/healthz`, and can crash, hang or
 refuse to start on request.
 

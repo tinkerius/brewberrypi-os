@@ -19,11 +19,14 @@ RUN apt-get update \
  && useradd --system --uid 10001 --user-group --no-create-home --home-dir /nonexistent brewberrypi
 
 COPY brewberrypi-stub.py /usr/local/bin/brewberrypi
+# The BrewberryPi brand files of the "app not installed" page (scripts/sync-brand.sh).
+COPY static/ /usr/local/share/brewberrypi-stub/
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
     BREWBERRYPI_STUB_VERSION="${VERSION}" \
-    BREWBERRYPI_STUB_START="${START}"
+    BREWBERRYPI_STUB_START="${START}" \
+    BREWBERRYPI_STUB_STATIC=/usr/local/share/brewberrypi-stub
 USER 10001:10001
 EXPOSE 8080
 ENTRYPOINT ["brewberrypi"]

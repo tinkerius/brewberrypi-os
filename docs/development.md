@@ -226,7 +226,10 @@ the start limits.
 Edit `stub/brewberrypi-stub.py` and `stub/test_stub.py`; `python3 -m unittest discover -s stub`
 runs as part of `lint.sh`. The stub never drives the heater unless `allowHeat` is set. Its page at
 `/` (the `PAGE` template) is what people see in a browser before an app is installed: keep it
-self-contained (no external files; the Pi may be offline).
+self-contained (nothing from the internet; the Pi may be offline). It is in the BrewberryPi brand;
+its logo, favicon and font are in `stub/static/` (copied by `scripts/sync-brand.sh`, installed in
+the image under `/usr/local/share/brewberrypi-stub`), and the stub serves only those, by a fixed
+list.
 
 The preloaded stub's version is the literal `placeholder` (image label and `/healthz`), not a
 release version: it is not an app release and is never in a registry. This is the one exception
@@ -247,8 +250,10 @@ scripts/sync-brand.sh                         # fresh clone of main
 scripts/sync-brand.sh ../brewberrypi origin/main   # or from a checkout and ref
 ```
 
-The colours are CSS variables at the top of `index.html` (light, and dark under
-`prefers-color-scheme`); keep them on the brand's values.
+It copies them into the device web interface (`layer/brewberry-web…/static/`) and into the
+contract stub (`stub/static/`, for its "app not installed" page). The colours are CSS variables at
+the top of `index.html` and of the stub's `PAGE` (light, and dark under `prefers-color-scheme`);
+keep them on the brand's values.
 
 ### Write a decision down
 

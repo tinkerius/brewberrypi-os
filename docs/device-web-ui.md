@@ -331,10 +331,17 @@ session.
 ## 9. User interface
 
 One page, no build step: vanilla JavaScript and inline CSS in `index.html`, light and dark following
-the browser, and the app's look (indigo/slate, cards). English, like the app.
+the browser, in the BrewberryPi brand (`tinkerius/brewberrypi`, `brand/README.md`): paper
+background, ink text, berry for actions and headings, brass for warnings, leaf for success, and
+Zilla Slab Medium for headings. English, like the app.
 
-- **Header:** "BrewberryPi OS", hostname, OS version, user `brewberry`, **Log out**; a link to the
-  app's UI (`http://<host>:<server.port>/`).
+- **Brand files** in `/usr/lib/brewberry-web/static/`: the logos (side by side and stacked, each
+  for light and dark), the favicons, the touch icon and a Latin subset of Zilla Slab Medium (OFL).
+  They are copies made by `scripts/sync-brand.sh`; don't edit them by hand. The server sends only
+  these files, by a fixed list and without a login (the login page shows the logo), so the page
+  needs nothing from the internet.
+- **Header:** the logo with "OS", hostname, OS version, user `brewberry`, **Log out**; a link to the
+  app's UI (`http://<host>:<server.port>/`). The login page shows the stacked logo.
 - **Banner** for the default password (§7.4) and for a running job.
 - **Screens** as tabs, matching §4: Overview, Wi-Fi, App versions (with Registry), Configuration,
   OS update, Logs, Account. (The USB stick screen was removed with ADR-0005.)

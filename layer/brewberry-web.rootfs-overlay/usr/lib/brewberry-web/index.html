@@ -4,41 +4,61 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BrewberryPi OS</title>
-<!-- Device web interface (ADR-0002, OS9). Self-contained: the Pi may be offline.
-     Every control names its catalogue command in data-cmd; tests/unit/parity.sh
-     checks them against /usr/share/brewberry/commands.json. -->
+<meta name="theme-color" content="#fbf8f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1719" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/apple-touch-icon.png">
+<!-- Device web interface (ADR-0002, OS9). Self-contained: the Pi may be offline;
+     the brand files (logos, favicons, Zilla Slab) are served by the Pi from static/
+     (scripts/sync-brand.sh). Every control names its catalogue command in data-cmd;
+     tests/unit/parity.sh checks them against /usr/share/brewberry/commands.json. -->
 <style>
+/* BrewberryPi brand (tinkerius/brewberrypi, brand/README.md): paper, ink, berry,
+   leaf and brass; the darker values on light backgrounds, the lighter ones on dark. */
+@font-face { font-family: "Zilla Slab"; font-weight: 500; font-display: swap; src: url("/static/zilla-slab-medium.woff2") format("woff2"); }
 :root {
-  --bg: #f8fafc; --card: #ffffff; --text: #0f172a; --muted: #64748b; --line: #e2e8f0;
-  --accent: #4f46e5; --accent-text: #ffffff; --warn-bg: #fef3c7; --warn: #92400e;
-  --bad-bg: #fee2e2; --bad: #991b1b; --good: #166534; --good-bg: #dcfce7; --code: #f1f5f9;
+  color-scheme: light dark;
+  --bg: #fbf8f6; --card: #ffffff; --text: #2a1d22; --muted: #6b5a61; --line: #eadfe2;
+  --accent: #8a2a4a; --accent-hover: #74213d; --accent-text: #fbf8f6; --tint: #f6ecef;
+  --warn-bg: #fbf0db; --warn: #7a4e0c; --bad-bg: #fbe5e2; --bad: #a3271c;
+  --good: #2f6b2e; --good-bg: #e6f1e1; --code: #f5f0ee;
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #0f172a; --card: #1e293b; --text: #e2e8f0; --muted: #94a3b8; --line: #334155;
-    --accent: #818cf8; --accent-text: #0f172a; --warn-bg: #422006; --warn: #fcd34d;
-    --bad-bg: #450a0a; --bad: #fca5a5; --good: #86efac; --good-bg: #052e16; --code: #0f172a;
+    --bg: #1c1719; --card: #251e21; --text: #f1e8eb; --muted: #a8979e; --line: #3b2f34;
+    --accent: #e0789a; --accent-hover: #ea93b0; --accent-text: #1c1719; --tint: #33242a;
+    --warn-bg: #3a2b12; --warn: #e9b04f; --bad-bg: #3e1d1a; --bad: #f2a097;
+    --good: #8fc77f; --good-bg: #1d2b1b; --code: #181315;
   }
 }
 * { box-sizing: border-box; }
 body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
-header h1 { font-size: 18px; margin: 0; }
+h1, h2, .brand-os { font-family: "Zilla Slab", Rockwell, Georgia, serif; font-weight: 500; }
+a { color: var(--accent); }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; background: var(--card); border-bottom: 3px solid var(--accent); }
+header h1 { display: flex; align-items: center; gap: 8px; margin: 0; line-height: 0; }
+header h1 img { height: 34px; width: auto; }
+.brand-os { font-size: 23px; line-height: 1; color: var(--muted); letter-spacing: .02em; }
 header .who { margin-left: auto; color: var(--muted); }
 main { max-width: 960px; margin: 0 auto; padding: 16px; }
 nav { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; }
 nav button { background: transparent; color: var(--text); border: 1px solid var(--line); }
+nav button:hover:not([aria-selected="true"]) { background: var(--tint); }
 nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
 .card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-.card h2 { font-size: 16px; margin: 0 0 12px; }
+.card h2 { font-size: 19px; margin: 0 0 12px; color: var(--accent); }
 .grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
 .grid .card { margin-bottom: 0; }
 dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
 dt { color: var(--muted); }
 dd { margin: 0; overflow-wrap: anywhere; }
 button, .button { font: inherit; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text); cursor: pointer; }
+button:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
 button.secondary { background: transparent; color: var(--accent); }
+button.secondary:hover:not(:disabled) { background: var(--tint); border-color: var(--accent); }
 button.danger { background: var(--bad); border-color: var(--bad); color: var(--card); }
+button.danger:hover:not(:disabled) { background: var(--bad); border-color: var(--bad); filter: brightness(.92); }
 button:disabled { opacity: .5; cursor: default; }
 .row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
 input[type=text], input[type=password], select { font: inherit; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--text); min-width: 0; }
@@ -56,6 +76,10 @@ td:last-child { text-align: right; }
 dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); max-width: min(560px, calc(100vw - 32px)); }
 dialog::backdrop { background: rgb(0 0 0 / .45); }
 #login { max-width: 380px; margin: 48px auto; }
+#login .logo { text-align: center; margin: 4px 0 20px; line-height: 0; }
+#login .logo img { width: 190px; height: auto; }
+#login h2 { text-align: center; }
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
@@ -65,7 +89,13 @@ td button + button { margin-left: 6px; }
 </head>
 <body>
 <header>
-  <h1>BrewberryPi OS</h1>
+  <h1>
+    <picture>
+      <source srcset="/static/logo-dark.svg" media="(prefers-color-scheme: dark)">
+      <img src="/static/logo.svg" alt="BrewberryPi" width="154" height="34">
+    </picture>
+    <span class="brand-os">OS</span>
+  </h1>
   <span class="muted" id="hostinfo"></span>
   <span class="who hidden" id="who">User <strong>brewberry</strong> ·
     <a href="#" id="applink">App</a> ·
@@ -73,7 +103,13 @@ td button + button { margin-left: 6px; }
 </header>
 <main>
   <section id="login" class="card hidden">
-    <h2>Log in</h2>
+    <div class="logo">
+      <picture>
+        <source srcset="/static/logo-stacked-dark.svg" media="(prefers-color-scheme: dark)">
+        <img src="/static/logo-stacked.svg" alt="BrewberryPi" width="190" height="125">
+      </picture>
+    </div>
+    <h2>Log in to BrewberryPi OS</h2>
     <form id="loginform">
       <label>User</label>
       <div><strong>brewberry</strong></div>

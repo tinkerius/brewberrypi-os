@@ -158,21 +158,42 @@ class Heater:
 
 MANUAL = "https://github.com/tinkerius/brewberrypi-os/blob/main/docs/user-manual.md"
 
+# The BrewberryPi brand files the page uses (copies made by scripts/sync-brand.sh;
+# in the image under /usr/local/share/brewberrypi-stub). Only these paths are served.
+STATIC_DIR = os.environ.get("BREWBERRYPI_STUB_STATIC",
+                            os.path.join(os.path.dirname(os.path.abspath(__file__)), "static"))
+STATIC = {
+    "/favicon.ico": ("favicon.ico", "image/x-icon"),
+    "/favicon.svg": ("favicon.svg", "image/svg+xml"),
+    "/static/logo-stacked.svg": ("logo-stacked.svg", "image/svg+xml"),
+    "/static/logo-stacked-dark.svg": ("logo-stacked-dark.svg", "image/svg+xml"),
+    "/static/zilla-slab-medium.woff2": ("zilla-slab-medium.woff2", "font/woff2"),
+}
+
 PAGE = """<!doctype html>
 <html lang="en">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>BrewberryPi: app not installed</title>
+<meta name="theme-color" content="#fbf8f6" media="(prefers-color-scheme: light)">
+<meta name="theme-color" content="#1c1719" media="(prefers-color-scheme: dark)">
+<link rel="icon" href="/favicon.ico" sizes="48x48">
+<link rel="icon" href="/favicon.svg" type="image/svg+xml">
 <style>
+/* BrewberryPi brand (tinkerius/brewberrypi, brand/README.md), as on the device web interface:
+   paper, ink, berry, brass and leaf; the darker values on light, the lighter ones on dark. */
+@font-face {{ font-family: "Zilla Slab"; font-weight: 500; font-display: swap;
+  src: url("/static/zilla-slab-medium.woff2") format("woff2"); }}
 :root {{
-  --bg: #f6f4ef; --card: #ffffff; --text: #24211c; --muted: #6b655b; --line: #e3ded3;
-  --accent: #8a4b14; --note-bg: #fff4e0; --note-line: #f0c27a; --ok: #2f7a3e; --code-bg: #f1eee7;
+  color-scheme: light dark;
+  --bg: #fbf8f6; --card: #ffffff; --text: #2a1d22; --muted: #6b5a61; --line: #eadfe2;
+  --accent: #8a2a4a; --note-bg: #fbf0db; --note-line: #e9c27a; --ok: #2f6b2e; --code-bg: #f5f0ee;
 }}
 @media (prefers-color-scheme: dark) {{
   :root {{
-    --bg: #1b1916; --card: #24221e; --text: #ece8e0; --muted: #a59e92; --line: #3a362f;
-    --accent: #e3a35f; --note-bg: #3a2c17; --note-line: #8a6326; --ok: #6cc47c; --code-bg: #2e2b26;
+    --bg: #1c1719; --card: #251e21; --text: #f1e8eb; --muted: #a8979e; --line: #3b2f34;
+    --accent: #e0789a; --note-bg: #3a2b12; --note-line: #7a5a20; --ok: #8fc77f; --code-bg: #181315;
   }}
 }}
 * {{ box-sizing: border-box; }}
@@ -182,14 +203,18 @@ body {{
 }}
 main {{ max-width: 44rem; margin: 0 auto; padding: 2rem 1rem 3rem; }}
 header p {{ margin: 0; color: var(--muted); }}
-h1 {{ font-size: 1.7rem; line-height: 1.25; margin: 0.25rem 0 0.75rem; }}
-h2 {{ font-size: 1.1rem; margin: 0 0 0.5rem; }}
+header .logo {{ margin: 0 0 1.25rem; line-height: 0; text-align: center; }}
+header .logo img {{ width: min(13rem, 60vw); height: auto; }}
+h1, h2 {{ font-family: "Zilla Slab", Rockwell, Georgia, serif; font-weight: 500; }}
+h1 {{ font-size: 1.9rem; line-height: 1.2; margin: 0.25rem 0 0.75rem; color: var(--accent); }}
+h2 {{ font-size: 1.25rem; margin: 0 0 0.5rem; color: var(--accent); }}
 section {{
   background: var(--card); border: 1px solid var(--line); border-radius: 12px;
   padding: 1.1rem 1.25rem; margin-top: 1rem;
 }}
 .note {{ background: var(--note-bg); border-color: var(--note-line); }}
-.brand {{ color: var(--accent); font-weight: 600; letter-spacing: 0.02em; }}
+.brand {{ color: var(--muted); font-family: "Zilla Slab", Rockwell, Georgia, serif; font-weight: 500;
+  font-size: 1.1rem; letter-spacing: 0.02em; }}
 dl {{ display: grid; grid-template-columns: max-content 1fr; gap: 0.35rem 1rem; margin: 0; }}
 dt {{ color: var(--muted); }}
 dd {{ margin: 0; }}
@@ -207,6 +232,10 @@ footer {{ margin-top: 1.5rem; color: var(--muted); font-size: 0.9rem; }}
 <body>
 <main>
 <header>
+<div class="logo"><picture>
+<source srcset="/static/logo-stacked-dark.svg" media="(prefers-color-scheme: dark)">
+<img src="/static/logo-stacked.svg" alt="BrewberryPi" width="208" height="137">
+</picture></div>
 <p class="brand">BrewberryPi OS</p>
 <h1>The brewing app isn't installed yet</h1>
 <p>This Raspberry Pi is set up and running, but the BrewberryPi app is not on it yet. What answers
@@ -245,7 +274,8 @@ off.{heat_note}</p>
 sudo brewberry-update login
 # the released app versions
 sudo brewberry-update list
-# install one of them
+# download one of them onto the Pi, then install it
+sudo brewberry-update download 1.2.3
 sudo brewberry-update install 1.2.3</code></pre>
 <p>Every version must be signed by the app's developers, or the Pi refuses it. When the app runs,
 this page is replaced by its web UI, and the app writes its <code>config.json</code> and recipes into
@@ -333,15 +363,28 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(data)
 
+    def _reply_static(self, name: str, ctype: str) -> None:
+        try:
+            with open(os.path.join(STATIC_DIR, name), "rb") as f:
+                data = f.read()
+        except OSError:
+            self._reply(404, {"error": "not found"})
+            return
+        self.send_response(200)
+        self.send_header("Content-Type", ctype)
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "max-age=86400")
+        self.end_headers()
+        self.wfile.write(data)
+
     def do_GET(self) -> None:  # noqa: N802 (http.server API)
         path = urlparse(self.path).path
         if path == "/healthz":
             self._reply(200, {"status": "ok", "version": VERSION, "engine": "NoProcess"})
         elif path in ("/", "/index.html"):
             self._reply_html(landing_page())
-        elif path == "/favicon.ico":
-            self.send_response(204)
-            self.end_headers()
+        elif path in STATIC:
+            self._reply_static(*STATIC[path])
         else:
             self._reply(404, {"error": "not found"})
 

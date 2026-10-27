@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 import signal
 import socket
 import subprocess
@@ -79,6 +80,26 @@ class StubTest(unittest.TestCase):
         with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=5) as resp:
             return resp.status, resp.headers["Content-Type"], resp.read().decode()
 
+    def fetch(self, path: str) -> tuple[int, str, bytes]:
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{self.port}{path}", timeout=5) as resp:
+                return resp.status, resp.headers["Content-Type"], resp.read()
+        except urllib.error.HTTPError as e:
+            return e.code, e.headers["Content-Type"], e.read()
+
+    def test_brand_files_and_nothing_else(self) -> None:
+        self.start()
+        self.assertEqual(self.recv(), "READY=1")
+        for path, ctype in (("/favicon.ico", "image/x-icon"), ("/favicon.svg", "image/svg+xml"),
+                            ("/static/logo-stacked.svg", "image/svg+xml"),
+                            ("/static/logo-stacked-dark.svg", "image/svg+xml"),
+                            ("/static/zilla-slab-medium.woff2", "font/woff2")):
+            status, content_type, data = self.fetch(path)
+            self.assertEqual((status, content_type), (200, ctype), path)
+            self.assertGreater(len(data), 100, path)
+        for path in ("/static/OFL.txt", "/static/../brewberrypi-stub.py", "/static/"):
+            self.assertEqual(self.fetch(path)[0], 404, path)
+
     def test_preloaded_placeholder_reports_no_version_number(self) -> None:
         # The preloaded stub is not an app release (scripts/build-stub.sh).
         self.start(version="placeholder")
@@ -104,8 +125,16 @@ class StubTest(unittest.TestCase):
         self.assertIn("pinged every 0.2 s", body)
         self.assertIn("<dt>Heater test</dt><dd>off</dd>", body)
         self.assertIn("<dt>Demo mode</dt><dd>off</dd>", body)
-        for tag in ("<script", "<link", "src="):  # nothing to load: the Pi may be offline
-            self.assertNotIn(tag, body)
+        # Nothing from the internet (the Pi may be offline): no scripts, and every file the
+        # page loads (logo, font, favicon) comes from the stub itself.
+        self.assertNotIn("<script", body)
+        loads = re.findall(r'(?:src|srcset|href)="([^"]*)"', body.split("<body>")[0]) + \
+            re.findall(r'(?:src|srcset)="([^"]*)"', body) + re.findall(r'url\("([^"]*)"\)', body)
+        self.assertTrue(loads)
+        for url in loads:
+            self.assertTrue(url.startswith("/"), url)
+            status, _, _ = self.fetch(url)
+            self.assertEqual(status, 200, url)
         self.assertIn("The brewing app isn't installed yet", self.page("/index.html")[2])
         self.assertEqual(self.http("GET", "/healthz")["status"], "ok")  # contract unchanged
 

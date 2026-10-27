@@ -29,6 +29,19 @@ PORT = int(os.environ.get("BREWBERRY_WEB_PORT", "8081"))
 HELPER_SOCKET = os.environ.get("BREWBERRY_WEBCMD_SOCKET", "/run/brewberry-webcmd.sock")
 CATALOGUE = os.environ.get("BREWBERRY_CATALOGUE", "/usr/share/brewberry/commands.json")
 PAGE = os.path.join(os.path.dirname(os.path.abspath(__file__)), "index.html")
+# The BrewberryPi brand files the page uses (scripts/sync-brand.sh), served
+# without a login: the login page shows them too. Only these paths.
+STATIC_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
+STATIC = {
+    "/favicon.ico": ("favicon.ico", "image/x-icon"),
+    "/favicon.svg": ("favicon.svg", "image/svg+xml"),
+    "/apple-touch-icon.png": ("apple-touch-icon.png", "image/png"),
+    "/static/logo.svg": ("logo.svg", "image/svg+xml"),
+    "/static/logo-dark.svg": ("logo-dark.svg", "image/svg+xml"),
+    "/static/logo-stacked.svg": ("logo-stacked.svg", "image/svg+xml"),
+    "/static/logo-stacked-dark.svg": ("logo-stacked-dark.svg", "image/svg+xml"),
+    "/static/zilla-slab-medium.woff2": ("zilla-slab-medium.woff2", "font/woff2"),
+}
 USER = "brewberry"
 COOKIE = "brewberry_session"
 IDLE_SECONDS = 30 * 60
@@ -87,11 +100,11 @@ class Handler(BaseHTTPRequestHandler):
         sys.stderr.write("brewberry-web: %s %s\n" % (self.address_string(), fmt % args))
 
     # --- replies -----------------------------------------------------------
-    def _send(self, status, body, ctype="application/json", headers=()):
+    def _send(self, status, body, ctype="application/json", headers=(), cache="no-store"):
         self.send_response(status)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(body)))
-        self.send_header("Cache-Control", "no-store")
+        self.send_header("Cache-Control", cache)
         self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("X-Frame-Options", "DENY")
         self.send_header("Referrer-Policy", "no-referrer")
@@ -150,8 +163,10 @@ class Handler(BaseHTTPRequestHandler):
         if url.path in ("/", "/index.html"):
             with open(PAGE, "rb") as f:
                 return self._send(200, f.read(), "text/html; charset=utf-8")
-        if url.path == "/favicon.ico":
-            return self._send(204, b"", "image/x-icon")
+        if url.path in STATIC:
+            name, ctype = STATIC[url.path]
+            with open(os.path.join(STATIC_DIR, name), "rb") as f:
+                return self._send(200, f.read(), ctype, cache="max-age=86400")
         if url.path == "/api/session":
             _, s = self._session()
             return self._json(200, {"user": USER, "loggedIn": s is not None,

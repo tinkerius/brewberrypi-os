@@ -14,73 +14,98 @@
      (scripts/sync-brand.sh). Every control names its catalogue command in data-cmd;
      tests/unit/parity.sh checks them against /usr/share/brewberry/commands.json. -->
 <style>
-/* BrewberryPi brand (tinkerius/brewberrypi, brand/README.md): paper, ink, berry,
-   leaf and brass; the darker values on light backgrounds, the lighter ones on dark. */
+/* BrewberryPi brand (tinkerius/brewberrypi, brand/README.md): paper, ink, berry, leaf and brass;
+   the darker values on light backgrounds, the lighter ones on dark. The look (top bar, cards, buttons,
+   fields, dialogs) is the app's (tinkerius/brewberrypi-app, frontend/src/ui.ts), so that the app, this
+   interface and the stub's "app not installed" page look like one product. Its neutral greys and the
+   red are Tailwind's stone and red, as in the app. */
 @font-face { font-family: "Zilla Slab"; font-weight: 500; font-display: swap; src: url("/static/zilla-slab-medium.woff2") format("woff2"); }
 :root {
   color-scheme: light dark;
-  --bg: #fbf8f6; --card: #ffffff; --text: #2a1d22; --muted: #6b5a61; --line: #eadfe2;
-  --accent: #8a2a4a; --accent-hover: #74213d; --accent-text: #fbf8f6; --tint: #f6ecef;
-  --warn-bg: #fbf0db; --warn: #7a4e0c; --bad-bg: #fbe5e2; --bad: #a3271c;
-  --good: #2f6b2e; --good-bg: #e6f1e1; --code: #f5f0ee;
+  --bg: #fbf8f6; --card: #ffffff; --text: #2a1d22; --muted: oklch(55.3% .013 58.071); --line: rgb(42 29 34 / .1);
+  --ring: rgb(42 29 34 / .05); --field-line: oklch(86.9% .005 56.366); --field: #ffffff; --tint: oklch(98.5% .001 106.423);
+  --accent: #8a2a4a; --accent-hover: #9e3557; --accent-text: #fbf8f6;
+  --warn-bg: rgb(196 130 26 / .15); --warn-line: rgb(196 130 26 / .5); --warn: #2a1d22;
+  --bad-bg: oklch(97.1% .013 17.38); --bad-line: oklch(80.8% .114 19.571); --bad: oklch(57.7% .245 27.325); --bad-solid: oklch(57.7% .245 27.325);
+  --good-bg: rgb(61 122 60 / .08); --good-line: rgb(61 122 60 / .25); --good: #3d7a3c; --code: #fbf8f6;
+  --shadow: 0 1px 3px 0 rgb(0 0 0 / .1), 0 1px 2px -1px rgb(0 0 0 / .1);
 }
 @media (prefers-color-scheme: dark) {
   :root {
-    --bg: #1c1719; --card: #251e21; --text: #f1e8eb; --muted: #a8979e; --line: #3b2f34;
-    --accent: #e0789a; --accent-hover: #ea93b0; --accent-text: #1c1719; --tint: #33242a;
-    --warn-bg: #3a2b12; --warn: #e9b04f; --bad-bg: #3e1d1a; --bad: #f2a097;
-    --good: #8fc77f; --good-bg: #1d2b1b; --code: #181315;
+    --bg: #1c1719; --card: #262023; --text: #f1e8eb; --muted: oklch(70.9% .01 56.259); --line: rgb(255 255 255 / .1);
+    --ring: rgb(255 255 255 / .1); --field-line: rgb(255 255 255 / .1); --field: rgb(255 255 255 / .1); --tint: rgb(255 255 255 / .2);
+    --accent: #e0789a; --accent-hover: #e88fad; --accent-text: #1c1719;
+    --warn-bg: rgb(233 176 79 / .15); --warn-line: rgb(233 176 79 / .3); --warn: #e9b04f;
+    --bad-bg: oklch(63.7% .237 25.331 / .1); --bad-line: oklch(70.4% .191 22.216 / .4); --bad: oklch(70.4% .191 22.216);
+    --good-bg: rgb(143 199 127 / .1); --good-line: rgb(143 199 127 / .2); --good: #8fc77f; --code: rgb(255 255 255 / .05);
   }
 }
 * { box-sizing: border-box; }
-body { margin: 0; background: var(--bg); color: var(--text); font: 15px/1.45 system-ui, -apple-system, "Segoe UI", sans-serif; }
+body { margin: 0; background: var(--bg); color: var(--text); font: 16px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, "Helvetica Neue", "Noto Sans", Arial, sans-serif; -webkit-font-smoothing: antialiased; }
 h1, h2, .brand-os { font-family: "Zilla Slab", Rockwell, Georgia, serif; font-weight: 500; }
 a { color: var(--accent); }
-header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 10px 16px; background: var(--card); border-bottom: 3px solid var(--accent); }
+code { font: .875em ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; background: var(--code); padding: .1em .3em; border-radius: 4px; overflow-wrap: anywhere; }
+header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; padding: 12px 16px; background: var(--card); border-bottom: 1px solid var(--line); }
 header h1 { display: flex; align-items: center; gap: 8px; margin: 0; line-height: 0; }
-header h1 img { height: 34px; width: auto; }
-.brand-os { font-size: 23px; line-height: 1; color: var(--muted); letter-spacing: .02em; }
-header .who { margin-left: auto; color: var(--muted); }
-main { max-width: 960px; margin: 0 auto; padding: 16px; }
-nav { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 16px; }
-nav button { background: transparent; color: var(--text); border: 1px solid var(--line); }
-nav button:hover:not([aria-selected="true"]) { background: var(--tint); }
-nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); border-color: var(--accent); }
-.card { background: var(--card); border: 1px solid var(--line); border-radius: 10px; padding: 16px; margin-bottom: 16px; }
-.card h2 { font-size: 19px; margin: 0 0 12px; color: var(--accent); }
-.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; }
+header h1 img { height: 32px; width: auto; }
+.brand-os { font-size: 22px; line-height: 1; color: var(--muted); letter-spacing: .02em; }
+header .who { margin-left: auto; color: var(--muted); font-size: 14px; }
+header .who a { font-weight: 500; text-decoration: none; }
+header .who a:hover { text-decoration: underline; }
+header .who button { margin-left: 4px; padding: 6px 12px; }
+main { max-width: 1024px; margin: 0 auto; padding: 24px 16px; }
+@media (min-width: 640px) { main { padding: 24px; } }
+nav { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 24px; }
+nav button[aria-selected="true"] { background: var(--accent); color: var(--accent-text); box-shadow: 0 1px 2px 0 rgb(0 0 0 / .05); }
+nav button[aria-selected="true"]:hover { background: var(--accent-hover); }
+.card { background: var(--card); border-radius: 12px; padding: 20px; margin-bottom: 24px; box-shadow: 0 0 0 1px var(--ring), var(--shadow); }
+@media (min-width: 640px) { .card { padding: 24px; } }
+.card h2 { font-size: 18px; line-height: 28px; margin: 0 0 16px; color: var(--text); }
+.grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 24px; margin-bottom: 24px; }
 .grid .card { margin-bottom: 0; }
-dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 12px; margin: 0; }
+dl { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: 4px 16px; margin: 0; }
 dt { color: var(--muted); }
-dd { margin: 0; overflow-wrap: anywhere; }
-button, .button { font: inherit; padding: 7px 14px; border-radius: 7px; border: 1px solid var(--accent); background: var(--accent); color: var(--accent-text); cursor: pointer; }
-button:hover:not(:disabled) { background: var(--accent-hover); border-color: var(--accent-hover); }
-button.secondary { background: transparent; color: var(--accent); }
-button.secondary:hover:not(:disabled) { background: var(--tint); border-color: var(--accent); }
-button.danger { background: var(--bad); border-color: var(--bad); color: var(--card); }
-button.danger:hover:not(:disabled) { background: var(--bad); border-color: var(--bad); filter: brightness(.92); }
-button:disabled { opacity: .5; cursor: default; }
-.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 12px; }
-input[type=text], input[type=password], select { font: inherit; padding: 7px 10px; border-radius: 7px; border: 1px solid var(--line); background: var(--bg); color: var(--text); min-width: 0; }
-label { display: block; margin: 8px 0 4px; color: var(--muted); }
-pre { background: var(--code); border: 1px solid var(--line); border-radius: 7px; padding: 10px; overflow: auto; max-height: 420px; margin: 8px 0 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
-.banner { padding: 10px 16px; border-radius: 8px; margin-bottom: 16px; }
-.warn { background: var(--warn-bg); color: var(--warn); }
-.bad { background: var(--bad-bg); color: var(--bad); }
-.good { background: var(--good-bg); color: var(--good); }
+dd { margin: 0; overflow-wrap: break-word; }
+/* Buttons as the app's BUTTON_STYLES: primary berry, secondary neutral, danger red. */
+button, .button { display: inline-flex; align-items: center; justify-content: center; font: inherit; font-size: 14px; font-weight: 500; line-height: 20px;
+  padding: 8px 16px; border-radius: 8px; border: 0; background: var(--accent); color: var(--accent-text); cursor: pointer;
+  box-shadow: 0 1px 2px 0 rgb(0 0 0 / .05); transition: background-color .15s; }
+button:hover:not(:disabled) { background: var(--accent-hover); }
+button.secondary, nav button { background: var(--field); color: var(--text); box-shadow: inset 0 0 0 1px var(--field-line), 0 1px 2px 0 rgb(0 0 0 / .05); }
+button.secondary:hover:not(:disabled), nav button:hover:not(:disabled):not([aria-selected="true"]) { background: var(--tint); }
+button.danger { background: var(--bad-solid); color: #fff; }
+button.danger:hover:not(:disabled) { background: oklch(63.7% .237 25.331); }
+button:disabled { opacity: .4; cursor: not-allowed; }
+.row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-top: 16px; }
+.row + p { margin-top: 16px; }
+input[type=text], input[type=password], select { font: inherit; font-size: 14px; line-height: 20px; padding: 8px 12px; border-radius: 8px; border: 0;
+  box-shadow: inset 0 0 0 1px var(--field-line), 0 1px 2px 0 rgb(0 0 0 / .05); background: var(--field); color: var(--text); min-width: 0; }
+option { background: var(--card); color: var(--text); }
+label { display: block; margin: 12px 0 4px; color: var(--muted); font-size: 14px; font-weight: 500; }
+label:has(input[type=checkbox]) { font-weight: 400; color: var(--text); }
+p { margin: 8px 0; }
+pre { background: var(--code); box-shadow: inset 0 0 0 1px var(--ring); border-radius: 8px; padding: 12px; overflow: auto; max-height: 420px; margin: 12px 0 0; font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; white-space: pre-wrap; overflow-wrap: anywhere; }
+.banner { padding: 10px 16px; border-radius: 8px; margin-bottom: 24px; border: 1px solid transparent; }
+.warn { background: var(--warn-bg); border-color: var(--warn-line); color: var(--warn); }
+.bad { background: var(--bad-bg); border-color: var(--bad-line); color: var(--bad); }
+.good { background: var(--good-bg); border-color: var(--good-line); color: var(--good); }
 .muted { color: var(--muted); }
 .hidden { display: none !important; }
-table { width: 100%; border-collapse: collapse; }
-td { padding: 6px 4px; border-top: 1px solid var(--line); }
+table { width: 100%; border-collapse: collapse; margin-top: 8px; }
+td { padding: 8px 4px; border-top: 1px solid var(--line); }
 td:last-child { text-align: right; }
-dialog { border: 1px solid var(--line); border-radius: 10px; background: var(--card); color: var(--text); max-width: min(560px, calc(100vw - 32px)); }
-dialog::backdrop { background: rgb(0 0 0 / .45); }
+dialog { border: 0; border-radius: 12px; padding: 24px; background: var(--card); color: var(--text); width: min(448px, calc(100vw - 32px)); margin-top: 80px;
+  box-shadow: 0 0 0 1px var(--ring), 0 20px 25px -5px rgb(0 0 0 / .1), 0 8px 10px -6px rgb(0 0 0 / .1); }
+dialog h2 { font-size: 18px; line-height: 28px; margin: 0; }
+dialog p { color: var(--muted); font-size: 14px; }
+dialog .row { justify-content: flex-end; margin-top: 24px; }
+dialog::backdrop { background: rgb(42 29 34 / .5); backdrop-filter: blur(4px); }
 #login { max-width: 380px; margin: 48px auto; }
 #login .logo { text-align: center; margin: 4px 0 20px; line-height: 0; }
 #login .logo img { width: 190px; height: auto; }
 #login h2 { text-align: center; }
 input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid var(--line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
+.spinner { display: inline-block; width: 1em; height: 1em; border: 2px solid var(--field-line); border-top-color: var(--accent); border-radius: 50%; animation: spin .8s linear infinite; vertical-align: -2px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
 td .muted { margin-left: 8px; }
@@ -92,7 +117,7 @@ td button + button { margin-left: 6px; }
   <h1>
     <picture>
       <source srcset="/static/logo-dark.svg" media="(prefers-color-scheme: dark)">
-      <img src="/static/logo.svg" alt="BrewberryPi" width="154" height="34">
+      <img src="/static/logo.svg" alt="BrewberryPi" width="145" height="32">
     </picture>
     <span class="brand-os">OS</span>
   </h1>
@@ -270,7 +295,7 @@ td button + button { margin-left: 6px; }
       <div class="card">
         <h2>Operating system update</h2>
         <dl id="os-status"></dl>
-        <div class="banner warn" style="margin-top:12px">Keep the power connected from <em>Maintenance mode on</em> until
+        <div class="banner warn" style="margin:16px 0 0">Keep the power connected from <em>Maintenance mode on</em> until
           <em>Maintenance mode off</em> has rebooted: in between the system is writable, and pulling the plug can damage it.</div>
         <div class="row">
           <button data-cmd="maint.on">1. Maintenance mode on (reboots)</button>
@@ -314,9 +339,9 @@ td button + button { margin-left: 6px; }
 </main>
 
 <dialog id="confirm">
-  <h2 id="confirm-title" style="font-size:16px;margin-top:0"></h2>
+  <h2 id="confirm-title"></h2>
   <p id="confirm-text"></p>
-  <div class="row"><button id="confirm-yes">Continue</button><button class="secondary" id="confirm-no">Cancel</button></div>
+  <div class="row"><button class="secondary" id="confirm-no">Cancel</button><button id="confirm-yes">Continue</button></div>
 </dialog>
 
 <script>

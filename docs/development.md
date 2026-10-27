@@ -253,7 +253,9 @@ scripts/sync-brand.sh ../brewberrypi origin/main   # or from a checkout and ref
 It copies them into the device web interface (`layer/brewberry-web…/static/`) and into the
 contract stub (`stub/static/`, for its "app not installed" page). The colours are CSS variables at
 the top of `index.html` and of the stub's `PAGE` (light, and dark under `prefers-color-scheme`);
-keep them on the brand's values.
+keep them on the brand's values. The look of both pages (top bar, cards, buttons, fields,
+dialogs) follows the app's UI (`tinkerius/brewberrypi-app`, `frontend/src/ui.ts`), so the three
+look like one product: when the app's look changes, change these two with it.
 
 ### Write a decision down
 

@@ -332,8 +332,12 @@ session.
 
 One page, no build step: vanilla JavaScript and inline CSS in `index.html`, light and dark following
 the browser, in the BrewberryPi brand (`tinkerius/brewberrypi`, `brand/README.md`): paper
-background, ink text, berry for actions and headings, brass for warnings, leaf for success, and
-Zilla Slab Medium for headings. English, like the app.
+background, ink text, berry for actions and links, brass for warnings, leaf for success, and
+Zilla Slab Medium for headings. It looks like the app's UI (`tinkerius/brewberrypi-app`,
+`frontend/src/ui.ts`): the same white top bar with the side-by-side logo, white cards with a
+faint ring and shadow, ink card titles, berry primary and neutral secondary buttons, the same
+fields and dialogs, and Tailwind's stone greys and red. The stub's "app not installed" page uses
+the same look. English, like the app.
 
 - **Brand files** in `/usr/lib/brewberry-web/static/`: the logos (side by side and stacked, each
   for light and dark), the favicons, the touch icon and a Latin subset of Zilla Slab Medium (OFL).

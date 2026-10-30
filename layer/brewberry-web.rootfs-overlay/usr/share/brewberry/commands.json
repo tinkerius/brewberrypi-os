@@ -42,12 +42,6 @@
       "argv": ["brewberry-update", "restart"], "kind": "action", "confirm": true, "job": true
     },
     {
-      "id": "update.login", "title": "Registry login", "screen": "versions",
-      "argv": ["brewberry-update", "login", "--username", "{username}", "--password-stdin"],
-      "args": { "username": "^[A-Za-z0-9-]{1,39}$" }, "stdin": "token",
-      "kind": "action", "timeout": 60
-    },
-    {
       "id": "config.show", "title": "Configuration", "screen": "config",
       "argv": ["brewberry-config", "show"], "kind": "query"
     },

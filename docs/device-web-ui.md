@@ -91,7 +91,7 @@ flowchart LR
 **Why two processes:** the HTTP server faces the LAN and parses untrusted input, so it has no
 privileges. The root side accepts only commands that are in the catalogue, with arguments that
 match the catalogue's patterns. A compromised web process can at most run catalogue commands, as
-a logged-in user can; it cannot get a root shell, read the registry token or write files.
+a logged-in user can; it cannot get a root shell or write files.
 
 **Why not other options** (see [ADR-0002](adr/0002-device-web-interface.md)): a web server running
 as root would expose the HTTP parser with full privileges; `sudo` rules are blocked by
@@ -143,7 +143,7 @@ test (§10) checks the CLIs and the user manual against it.
 Fields: `id`; `title`; `screen`; `argv` with `{placeholders}`; `args` with an anchored pattern per
 placeholder; `kind` (`query` or `action`); `confirm` (asks first, §5.3); `job` (runs as a transient
 unit, §6); `reboots`; `timeout` (seconds, default 60); `stdin` (a secret passed on standard input,
-the registry token, Wi-Fi passwords); `stdinOptional` (an empty line is allowed: an open
+Wi-Fi passwords); `stdinOptional` (an empty line is allowed: an open
 network or hotspot); `upload` (`{upload}` becomes the uploaded files, §8); `download` (the file
 name of a query's raw output); `webOnly` with its CLI counterpart and a `reason`, for the declared
 exceptions.
@@ -156,7 +156,6 @@ Every command of the user manual's command reference, plus the ones its other se
 |---|---|---|
 | Overview | `update.status` (with its *Update* row, ADR-0007), `system.info` + `maint.status` (one card, *OS*), `wifi.status` | `system.info` is new (§5.4): replaces `cat /etc/brewberry-release` and adds hostname, addresses, uptime, `/data` usage |
 | App versions | `update.list`, `update.download <version>`, `update.install <version>`, `update.remove <version>`, `update.rollback`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi`. The list marks the versions on the Pi; a row offers Download (only in the registry), Install (on the Pi) or Remove (on the Pi, neither active nor previous), with a spinner while a download or install runs (ADR-0001, amended 2026-10-20). The update notice (ADR-0007, §15) adds a card at the top with Download or Install of the offered version |
-| Registry | `update.login` | gets non-interactive input (§5.4) |
 | Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
 | OS update | `maint.on`, `maint.off`, `maint.upgrade` | `upgrade` is new (§5.4): replaces `apt update && apt full-upgrade`; only in maintenance mode |
 | Wi-Fi | `wifi.status`, `wifi.scan`, `wifi.add <ssid>`, `wifi.forget <ssid>`, `wifi.country <code>`, `wifi.hotspot-password` | OS11 (§14); `wifi.status` is on the overview too |
@@ -232,7 +231,6 @@ now ask for confirmation, as `brewberry-maint` already does. Scripts and
 | Command | Replaces in the manual | What it does |
 |---|---|---|
 | `brewberry-update restart` | `systemctl reset-failed brewberrypi; systemctl restart brewberrypi` | Restarts the app; reports a configuration error (exit 2/3) like `install` does |
-| `brewberry-update login --username <u> --password-stdin` | interactive `login` (still works) | Non-interactive form for the web interface; the token is read from stdin and never appears in an argument list or log |
 | `brewberry-config show` | `cat /data/config/app/config.json` | `config.json` and the recipe ids (`--json`) |
 | `brewberry-config import <source>` | the SSH steps in "Configuration → Over SSH" | A folder (`*.json`, `recipes/`), one `.json` file or an export `.tar.gz` (only plain files, no absolute or `..` paths): the checks, backup (in `/data/config/os/backup`) and atomic writes; recipes are replaced file by file inside `recipes/`, which the app watches (ADR-0005) |
 | `brewberry-config export` | `scp -r …:/data/config/app` | Writes a `.tar.gz` of `/data/config/app` to stdout |
@@ -383,7 +381,7 @@ the web interface and the manual in one change.
 | A compromised web server | It runs unprivileged and can only send catalogue requests over the socket |
 | Weak default password | Reminder banner (WEB-07); SSH stays key-only by default |
 | Downgrades | Allowed, as on the CLI: only signed versions install, and only logged-in users can ask. This answers ADR-0001's open question for the web interface. |
-| **Plain HTTP** | Passwords, session cookies and the registry token cross the LAN unencrypted, as with the app (app `IF-060`). Accepted for a home LAN; TLS with a self-signed certificate is a follow-up. |
+| **Plain HTTP** | Passwords and session cookies cross the LAN unencrypted, as with the app (app `IF-060`). Accepted for a home LAN; TLS with a self-signed certificate is a follow-up. |
 
 Safety is unchanged: the web interface only runs the CLIs, which keep the outputs-off reset,
 watchdogs, signature policy and `/data`-only writes.
@@ -411,7 +409,7 @@ watchdogs, signature policy and `/data`-only writes.
 - The **runtime contract** (version 1) and the app repository. The app's open question `Q-16`
   ("update from the web UI") can be answered there with: not part of the app; the OS's device web
   interface on port 8081 does it.
-- The app container: no `/update` mount, no access to the registry token.
+- The app container: no `/update` mount.
 - Safety measures, `policy.json` and the image tags `active` and `previous`.
 
 ## 14. Wi-Fi setup and the captive portal (OS11)
@@ -457,3 +455,6 @@ The page reads `update.status` when a screen loads and every 5 minutes while log
 message when the Pi doesn't answer. No new catalogue entry: the check is `update.list` (*Check the
 registry*), and its log `system.logs update`.
 
+The registry is public (ADR-0007), so there is no registry login: the catalogue entry `update.login`,
+the *Registry access* card and `brewberry-update login` were removed, and `brewberry-update-check`
+deletes a token an earlier version stored (`/data/secrets/auth.json`).

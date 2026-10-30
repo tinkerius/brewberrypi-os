@@ -54,7 +54,7 @@ What is kept where:
 |---|---|
 | App configuration and recipes (`/data/config/app`), Wi-Fi settings (`/data/config/os`) | Logs (`journalctl`) |
 | The installed app versions (active and previous) | Files in home directories |
-| The registry token and changed passwords (`/data/secrets`) | Changes to system files or packages |
+| Changed passwords (`/data/secrets`) | Changes to system files or packages |
 | Update state, the version list and the last update check (`/data/update`) | |
 
 Reflashing the SD card erases everything, `/data` included.
@@ -214,8 +214,7 @@ Actions that restart the app or reboot the Pi ask first, and warn when a brew is
 Long actions (an install, an OS update) keep running when you close the page; open it again to see
 how they ended.
 
-The page uses plain HTTP, like the app: passwords and the registry token cross your network
-unencrypted. Use it only on your own network. If `.local` names don't work, use the Pi's IP address
+The page uses plain HTTP, like the app: passwords cross your network unencrypted. Use it only on your own network. If `.local` names don't work, use the Pi's IP address
 from your router: `http://192.168.1.23:8081/`.
 
 ### Over SSH
@@ -390,8 +389,9 @@ mode:
 
 The Pi runs one app version, the *active* one, and keeps the one before it, the *previous* one,
 to roll back to. Other versions are **downloaded** onto the Pi first and then **installed**;
-downloads stay until you remove them. App versions come from the registry `ghcr.io/tinkerius/brewberrypi-app` and
-must be signed with the app's key. Unsigned or wrongly signed images are refused.
+downloads stay until you remove them. App versions come from the public registry
+`ghcr.io/tinkerius/brewberrypi-app`, so the Pi needs no account or token, only internet. Every version
+must be signed with the app's key; unsigned or wrongly signed images are refused.
 
 Pick versions in the device web interface under **App versions**, or with the commands below over
 SSH. Both do exactly the same.
@@ -403,8 +403,9 @@ the image. `http://<hostname>.local/` then shows a page saying that the app isn'
 yet. The placeholder never switches the outputs. Its `/healthz` reports the version `placeholder`, and
 `brewberry-update status` (and the web interface) show *placeholder (no app installed)*.
 
-Meanwhile the Pi asks the registry every 15 minutes. As soon as it answers, the Pi downloads the
-newest version and installs it, with the same checks, 60-second watch and rollback as an install by
+Once the first boot is done (the Pi has rebooted once by itself), it asks the registry 2 minutes
+after starting and then every 15 minutes. As soon as it answers, the Pi downloads the newest
+version and installs it, with the same checks, 60-second watch and rollback as an install by
 hand. The placeholder keeps running until the switch. Which version:
 
 - the newest release (`1.2.3`);
@@ -416,9 +417,6 @@ progress under **App versions**; the log is **Logs → Update check and first in
 keeps the placeholder until a newer version is released; install one by hand then. The Pi never
 installs anything by itself once an app version has been installed, also not after you roll back to
 the placeholder.
-
-If the registry is private, the Pi can't see it until you give it a token (next section); the
-install then starts within seconds.
 
 ### Update notice
 
@@ -435,26 +433,6 @@ no brew is running.
 
 Which versions are offered depends on what you run: on a release, only newer releases; on a
 pre-release, newer pre-releases too (you opted in by installing one), until you install a release.
-
-### Give the Pi access to a private registry (once)
-
-Only needed while the registry is private; a public registry needs no token.
-
-1. On GitHub, open **Settings → Developer settings → Personal access tokens → Tokens (classic) →
-   Generate new token (classic)**.
-2. Tick only the **`read:packages`** scope. Choose an expiry date and note it down.
-3. In the device web interface: **App versions → Registry access**, your GitHub user name and the
-   token. Or over SSH:
-
-   ```sh
-   sudo brewberry-update login
-   ```
-
-   Enter your GitHub user name, and the token as the password.
-
-The token is stored in `/data/secrets/auth.json`, readable by root only. The app container never
-sees it. When the token expires, create a new one and run `login` again. After a login the Pi
-checks for updates at once (and, while no app is installed, installs the newest version).
 
 ### List, download, install, roll back
 
@@ -477,8 +455,8 @@ the Pi, marked *on the Pi* with their size (and *active* or *previous*). Next to
 - **Remove** for a downloaded version that is neither active nor previous. The active and the
   previous version are always kept.
 
-**Check the registry** loads the list again. Without internet (or without the token a private
-registry needs) the page still lists the versions on the Pi, so you can switch between them offline. **Roll back** and **Restart
+**Check the registry** loads the list again. Without internet the page still lists the versions on
+the Pi, so you can switch between them offline. **Roll back** and **Restart
 the app** are on the same page.
 
 Downloads take space on `/data` (about 250 MB each; the page shows what is free). Remove the ones
@@ -564,7 +542,7 @@ because an update removed the BrewberryPi block from `/boot/firmware/config.txt`
 [docs/os-update.md](os-update.md#steps). That page also covers power cuts during an update.
 
 Alternatively, flash a newer BrewberryPi OS release. That erases `/data`, so back up the
-configuration first, and run `brewberry-update login` again afterwards.
+configuration first; the newest app installs itself again.
 
 ## 8. Troubleshooting
 
@@ -673,14 +651,10 @@ limit of 4 starts in 10 minutes too.
 2. Look at **App versions** (or `sudo brewberry-update status`): the *Update* line says when the
    registry was last asked and why it failed; *Last action* shows a failed download or install.
 3. The log: **Logs → Update check and first install** (`sudo brewberry-system logs update`).
-4. "the registry needs a token": the registry is private; see the next section.
-5. A version that failed 3 times isn't tried again until a newer one is out: install another
+   Nothing happens during the first boot, nor in maintenance mode: the check runs only on the
+   sealed system.
+4. A version that failed 3 times isn't tried again until a newer one is out: install another
    version by hand ([List, download, install, roll back](#list-download-install-roll-back)).
-
-### `brewberry-update` says "the registry needs a token" or the login fails
-
-The registry is private. Run `sudo brewberry-update login` with a token that has the
-`read:packages` scope and hasn't expired. After a reflash the token is gone, so log in again.
 
 ### An install says the signature was rejected
 
@@ -714,7 +688,6 @@ All commands run as root (`sudo`). The device web interface offers each of them
 
 | Command | What it does |
 |---|---|
-| `brewberry-update login` | Store the token of a private registry (`--username <user> --password-stdin` without a prompt) |
 | `brewberry-update list` | Available app versions (releases and pre-releases), newest first, and the ones on the Pi |
 | `brewberry-update download <version>` | Download a version onto the Pi (signature checked); nothing switches |
 | `brewberry-update remove <version>` | Delete a downloaded version (never the active or previous one) |

@@ -1,8 +1,11 @@
 # Update check and, while no app is installed, the first install (ADR-0007,
-# OS14). Started by brewberry-update-check.timer and 'brewberry-update login'.
+# OS14). Started by brewberry-update-check.timer. Only on the sealed system:
+# the first boot reboots when brewberry-seal is done, which would cut a
+# download short, and in maintenance mode the Pi is busy with the OS.
 # Logs: brewberry-system logs update.
 [Unit]
 Description=BrewberryPi OS: check the registry for app updates; install the first app version
+ConditionKernelCommandLine=overlayroot
 Requires=data.mount
 After=data.mount brewberry-firstload.service network-online.target
 Wants=network-online.target

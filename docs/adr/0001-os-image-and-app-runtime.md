@@ -2,6 +2,7 @@
 
 - **Status:** Accepted
 - **Note (2026-10-23):** the read-only `/config` mount and the USB stick are superseded by [ADR-0005](0005-config-folders-and-no-usb.md).
+- **Note (2026-10-30):** the registry is public and the registry token is gone; the first app version installs itself and updates are announced ([ADR-0007](0007-first-install-and-update-notice.md)).
 - **Date:** 2026-10-09
 - **Deciders:** Benedikt Hauptmann (product owner); proposal and research by Claude Code
 

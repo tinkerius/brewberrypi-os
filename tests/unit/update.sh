@@ -3,8 +3,8 @@
 # systemctl: download with signature or contract rejection, install of a
 # downloaded version with soak and rollback, removing downloads, configuration
 # errors, rollback, garbage collection that keeps :previous and the downloads,
-# the list of the registry's and the Pi's versions, a public or a private
-# registry, the update in status, brewberry-update-check (the update check and
+# the list of the registry's and the Pi's versions (the registry without a
+# token), the update in status, brewberry-update-check (the update check and
 # the first install while no app is installed), and safe mode switching
 # exactly once. Run by scripts/lint.sh.
 set -euo pipefail
@@ -38,9 +38,6 @@ case "$1 ${2:-}" in
       esac ;;
    "pull -q")
       tag=${3##*:}
-      # A private registry ($FAKE/private) refuses requests without a token.
-      [ ! -e "$FAKE/private" ] || [ -n "${REGISTRY_AUTH_FILE:-}" ] ||
-         { echo "Error: reading manifest $tag: unauthorized: authentication required" >&2; exit 125; }
       [ -f "$FAKE/registry/$tag" ] || { echo "rejected by policy" >&2; exit 125; }
       id=$(cat "$FAKE/registry/$tag"); touch "$FAKE/images/$id"
       echo "$id" > "$FAKE/tags/$(key "$3")"; echo "$id" ;;
@@ -92,10 +89,8 @@ cat > "$T/bin/skopeo" <<'FAKE'
 set -u
 [ "$1" = --command-timeout ] && shift 2
 [ "$1" = list-tags ] || { echo "fake skopeo: unsupported: $*" >&2; exit 99; }
-echo "list-tags auth=${REGISTRY_AUTH_FILE:+token}" >> "$FAKE/skopeo.log"
+echo "list-tags auth=${REGISTRY_AUTH_FILE:-none}" >> "$FAKE/skopeo.log"
 [ ! -e "$FAKE/offline" ] || { echo "pinging container registry: dial tcp: no route to host" >&2; exit 1; }
-[ ! -e "$FAKE/private" ] || [ -n "${REGISTRY_AUTH_FILE:-}" ] ||
-   { echo "FATA[0000] Error listing repository tags: unauthorized: authentication required" >&2; exit 1; }
 { ls "$FAKE/registry"; echo sha256-0123.sig; echo latest; } | jq -R . | jq -sc '{Tags: .}'
 FAKE
 # --- fake curl: the app's /healthz reports $FAKE/engine (none: not answering) --
@@ -114,7 +109,6 @@ export PATH=$T/bin:$PATH
 fixture() {
    rm -rf "$FAKE" "$BREWBERRY_UPDATE_ROOT"
    mkdir -p "$FAKE"/{tags,images,labels,registry,behave,sys} "$BREWBERRY_UPDATE_ROOT"/{data/secrets,run}
-   echo token > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
    : > "$FAKE/log"
    local v id behave contract labelled
    while read -r v id behave contract labelled; do
@@ -211,13 +205,6 @@ expect "download: version label differs from the tag, not kept" "$RC $(tag_of ac
 fixture; run "$UPDATE" download latest
 expect "non-release tag refused before pulling" "$RC $(tag_of active) $(grep -c . "$FAKE/log")" "1 id100 0"
 
-fixture; rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"; run "$UPDATE" download 1.1.0
-expect "no registry token, public registry: downloads anonymously" "$RC $(tag_of 1.1.0)" "0 id110"
-fixture; rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"; touch "$FAKE/private"; run "$UPDATE" download 1.1.0
-expect "no registry token, private registry: refused, says to log in" \
-   "$RC $(images) $(phase) $(jq -r '.message | test("needs a token; run: brewberry-update login")' "$BREWBERRY_UPDATE_ROOT/data/update/state.json")" "1 id100 failed true"
-fixture; touch "$FAKE/private"; run "$UPDATE" download 1.1.0
-expect "private registry with a token: downloads" "$RC $(tag_of 1.1.0)" "0 id110"
 
 fixture; inst 1.1.0; run "$UPDATE" --yes install 1.1.0
 expect "already active: nothing changed" "$RC $(tag_of active) $(tag_of previous) $(phase)" "0 id110 id100 done"
@@ -249,10 +236,9 @@ expect "list without the registry: the Pi's versions, and why" "$RC $(paste -sd 
 expect "list --json without the registry: registryError" "$("$UPDATE" list --json 2>/dev/null | jq -c '[(.tags | length), (.local | length), (.registryError | test("did not answer"))]')" '[0,3,true]'
 expect "list without the registry: tags.json keeps the last answer, records the failed try" \
    "$(jq -c '[(.tags | length), (.error | test("did not answer")), (.tried >= .time)]' "$BREWBERRY_UPDATE_ROOT/data/update/tags.json")" '[11,true,true]'
-rm "$FAKE/offline"; rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
-expect "list --json without a token, public registry: anonymous" "$("$UPDATE" list --json 2>/dev/null | jq -c '[(.tags | length), .registryError]') $(tail -n 1 "$FAKE/skopeo.log")" '[11,null] list-tags auth='
-touch "$FAKE/private"
-expect "list --json without a token, private registry: says so" "$("$UPDATE" list --json 2>/dev/null | jq -r .registryError)" "the registry needs a token; run: brewberry-update login"
+rm "$FAKE/offline"; echo '{"auths": {}}' > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
+expect "list: the registry without a token, also with an old token file on the Pi" \
+   "$("$UPDATE" list --json 2>/dev/null | jq -c '[(.tags | length), .registryError]') $(tail -n 1 "$FAKE/skopeo.log")" '[11,null] list-tags auth=none'
 
 fixture; dl 1.9.0-alpha.2; run "$UPDATE" --yes install 1.9.0-alpha.2
 expect "install a pre-release (runtime contract §1)" "$RC $(tag_of active) $(phase)" "0 id192 done"
@@ -312,7 +298,7 @@ inst 1.1.0
 expect "install over the placeholder: it becomes previous" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .active.placeholder, .previous.placeholder]')" '["1.1.0",false,true]'
 fixture
 expect "status --json: no previous, app not answering" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.previous, .engine, .last]')" '[null,null,null]'
-fixture; echo '{}' > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
+fixture
 expect "list --json: tags.json" "$("$UPDATE" list --json 2>/dev/null | jq -c '[.active, .tags[0]]')" '["1.0.0","1.9.0"]'
 
 fixture; run "$UPDATE" restart --yes
@@ -377,9 +363,9 @@ expect "check, no app installed, offline: asks at every run, the placeholder kee
 rm "$FAKE/offline"; run "$CHECK"
 expect "check, no app installed, online again: installed" "$RC $(tag_of active)" "0 id190"
 
-fixture; placeholder; rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"; touch "$FAKE/private"; run "$CHECK"
-expect "check, private registry without a token: says so, nothing installed" \
-   "$RC $(tag_of active) $(grep -c 'registry: the registry needs a token' "$T/out")" "0 id100 1"
+fixture; echo '{"auths": {"ghcr.io": {"auth": "x"}}}' > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"; run "$CHECK"
+expect "check: the registry token of an earlier version is removed" \
+   "$RC $(test -e "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json" && echo kept || echo removed) $(grep -c 'removed the registry token' "$T/out")" "0 removed 1"
 
 fixture; placeholder; for v in 1.1.0 1.3.0 1.5.0 1.6.0 1.7.0 1.8.0 1.9.0 1.9.0-alpha.2 1.9.0-alpha.10 1.9.0-rc.1; do rm "$FAKE/registry/$v"; done
 for _ in 1 2 3; do run "$CHECK"; done

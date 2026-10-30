@@ -266,18 +266,6 @@ td button + button { margin-left: 6px; }
         <p id="ver-note" class="muted hidden"></p>
         <table id="ver-list"></table>
       </div>
-      <div class="card">
-        <h2>Registry access</h2>
-        <p class="muted">Only for a private registry: a public one needs no token. A GitHub classic personal access token with only the
-          <code>read:packages</code> scope. It is stored on the Pi for root only; the app never sees it.</p>
-        <form id="loginregistry">
-          <label for="reg-user">GitHub user name</label>
-          <input type="text" id="reg-user" autocomplete="off" required>
-          <label for="reg-token">Token</label>
-          <input type="password" id="reg-token" autocomplete="off" required style="width:100%">
-          <div class="row"><button type="submit" data-cmd="update.login">Store the token</button></div>
-        </form>
-      </div>
     </section>
 
     <section data-view="config" class="hidden">
@@ -798,13 +786,6 @@ async function onCommand(el) {
         const files = await readFiles(input, $("#cfg-recipes").checked);
         await action(id, {}, { files });
         input.value = "";
-        break;
-      }
-      case "update.login": {
-        const user = $("#reg-user").value.trim(), token = $("#reg-token").value.trim();
-        if (!user || !token) { message("Enter the user name and the token.", "warn"); break; }
-        await action(id, { username: user }, { stdin: token });
-        $("#reg-token").value = "";
         break;
       }
       case "account.password": {

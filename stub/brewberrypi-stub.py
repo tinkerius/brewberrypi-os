@@ -295,11 +295,9 @@ a few minutes (longer on a Pi 3); then this page is replaced by the app. Reload 
 The device web interface at
 <a href="http://{hostname}.local:8081/#versions">http://{hostname}.local:8081/</a>
 (user <code>brewberry</code>, default password <code>pi</code>) shows how far it got under
-<em>App versions</em>. If the app's registry is private, store a registry token there first.</p>
+<em>App versions</em>.</p>
 <p>To pick a version by hand, log in to the Pi over SSH (<code>ssh &lt;user&gt;@{hostname}.local</code>), then:</p>
-<pre><code># only for a private registry: your GitHub user, and a classic token with read:packages
-sudo brewberry-update login
-# the released app versions
+<pre><code># the released app versions
 sudo brewberry-update list
 # download one of them onto the Pi, then install it
 sudo brewberry-update download 1.2.3

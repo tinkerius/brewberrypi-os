@@ -1,7 +1,8 @@
 #!/bin/bash
 # Update check and first install (ADR-0007, OS14). Run as root by
-# brewberry-update-check.timer every 15 minutes, and by 'brewberry-update
-# login'. Not an operator command: it only runs brewberry-update.
+# brewberry-update-check.timer every 15 minutes, on the sealed system only (not
+# during the first boot, which reboots, nor in maintenance mode). Not an
+# operator command: it only runs brewberry-update.
 #
 # - Every 6 hours it asks the registry for its versions (brewberry-update
 #   list, which writes /data/update/tags.json). brewberry-update status then
@@ -35,6 +36,15 @@ MAX_ATTEMPTS=3
 
 [ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run as root"
 install -d -m 0755 "$UPDATE_DIR"
+
+# The registry is public (ADR-0007): a token stored by an earlier OS version
+# is no longer used, so it doesn't stay on the Pi.
+OLD_TOKEN=$ROOT/data/secrets/auth.json
+if [ -e "$OLD_TOKEN" ]; then
+   rm -f "$OLD_TOKEN"
+   sync "$(dirname "$OLD_TOKEN")"
+   log "removed the registry token of an earlier version; the registry is public"
+fi
 
 first_install() { # <status --json>
    jq -e '.update.firstInstall' > /dev/null <<< "$1"

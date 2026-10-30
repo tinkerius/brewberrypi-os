@@ -37,7 +37,6 @@ case "$(basename "$0") $1" in
    "brewberry-update install" | "brewberry-update demo" | "brewberry-maint on")
       if [ $yes = 0 ]; then echo '{"confirm": "This installs '"$2"' and restarts the app."}'; exit 10; fi
       echo "working on $2"; sleep "${FAKE_SLEEP:-0}"; echo "done" ;;
-   "brewberry-update login") cat > "$FAKE/token"; echo "Login Succeeded!" >&2 ;;
    "brewberry-config show") echo '{"config": {}, "files": ["config.json"], "recipes": null}' ;;
    "brewberry-config import") (cd "$2" 2>/dev/null && find . -type f | sort || echo "file:$(basename "$2")") >> "$FAKE/imported"; echo "imported" >&2 ;;
    "brewberry-config export") printf 'TARDATA' ;;
@@ -306,13 +305,9 @@ class WebTest(unittest.TestCase):
         finally:
             self.helper_server.RequestHandlerClass = make_helper_handler(self.env)
 
-    def test_registry_login_token_on_stdin(self):
-        status, data = self.api("POST", "/api/run/update.login", {"args": {"username": "tinkerius"}, "stdin": "ghp_secret"})
-        self.assertEqual(status, 200)
-        with open(os.path.join(self.fake, "token")) as f:
-            self.assertEqual(f.read(), "ghp_secret\n")
-        self.assertIn("brewberry-update login --username tinkerius --password-stdin", self.log())
-        self.assertNotIn("ghp_secret", self.log())
+    def test_no_registry_login(self):
+        # The registry is public (ADR-0007): there is no token to store, from the browser either.
+        self.assertEqual(self.api("POST", "/api/run/update.login", {"args": {"username": "x"}, "stdin": "ghp_secret"})[0], 404)
 
     def test_wifi_password_on_stdin_empty_for_an_open_network(self):
         status, data = self.api("POST", "/api/run/wifi.add", {"args": {"ssid": "Mein WLAN"}, "stdin": "secret pass"})
@@ -324,8 +319,6 @@ class WebTest(unittest.TestCase):
         self.assertEqual(status, 200)
         with open(os.path.join(self.fake, "wifi-password")) as f:
             self.assertEqual(f.read(), "")
-        # Other commands still need their secret.
-        self.assertEqual(self.api("POST", "/api/run/update.login", {"args": {"username": "x"}, "stdin": ""})[0], 400)
 
     def test_wifi_names_checked_before_the_cli(self):
         before = self.log()

@@ -5,7 +5,8 @@
 - **Deciders:** Benedikt Hauptmann (product owner); proposal and research by Claude Code
 - **Changes:** [ADR-0001](0001-os-image-and-app-runtime.md) "Updating and selecting versions": a
   timer now runs `brewberry-update list` and, only while no app is installed, `download` and
-  `install`; the registry is used without a token when there is none
+  `install`; the registry is public, and the registry login (`brewberry-update login`, the
+  token in `/data/secrets/auth.json`) is removed
 
 ## Context
 
@@ -24,8 +25,8 @@ Until now a fresh Pi ran the placeholder until someone stored a registry token a
 Constraints:
 - **Installing restarts the app and ends a running brew** (ADR-0002). Nothing may restart a real app
   version unasked.
-- **The registry is private** (ADR-0001): every request needs a token, so a fresh Pi can't see or
-  download anything until a token is stored. GHCR lets anyone list and pull a *public* package
+- **The registry was private** (ADR-0001): every request needed a token, so a fresh Pi couldn't see
+  or download anything until a token was stored. GHCR lets anyone list and pull a *public* package
   without a token ([GitHub Docs: package visibility](https://docs.github.com/en/enterprise-server@3.13/packages/learn-github-packages/configuring-a-packages-access-control-and-visibility));
   making a package public can't be undone. The signature policy (`policy.json`, pinned cosign key)
   protects the Pi either way: a public package changes who can *read* the image, not what the Pi runs.
@@ -78,19 +79,21 @@ Where the notice shows in the device web interface:
 
 ### Registry access
 
-`brewberry-update` uses the registry **without a token when none is stored** (Podman and skopeo
-refuse an auth file that doesn't exist, so `REGISTRY_AUTH_FILE` is only set when there is one). A
-registry that refuses says so: "the registry needs a token; run: brewberry-update login". So the Pi
-works with a private registry after `login`, as before, and with a **public** one without any setup.
-
-**Recommendation to the product owner:** make the package `ghcr.io/tinkerius/brewberrypi-app`
-public. Only then does a fresh Pi install the app with no step at all. The cosign signature check
-stays the gate for what runs on the Pi.
+The product owner made the package `ghcr.io/tinkerius/brewberrypi-app` **public** (2026-10-30;
+checked: tags and manifests answer without a token). The OS has **no registry authentication**
+any more: `brewberry-update login`, its catalogue entry `update.login`, the *Registry access* card
+and `REGISTRY_AUTH_FILE` are gone; Podman and skopeo go to the registry anonymously.
+`brewberry-update-check` deletes a token an earlier version stored (`/data/secrets/auth.json`). CI
+fetches an app preload without a token too (`BREWBERRY_GHCR_TOKEN` is no longer used). The cosign
+signature check stays the gate for what runs on the Pi. Making the package private again would
+need the login back (a new ADR).
 
 ### Update check: `brewberry-update-check` (timer)
 
 `brewberry-update-check.timer` runs `brewberry-update-check` 2 minutes after boot and then 15
-minutes after each run ends. It is not an operator command: it only runs `brewberry-update`.
+minutes after each run ends, **on the sealed system only** (`ConditionKernelCommandLine=overlayroot`):
+not during the first boot, which `brewberry-seal` ends with a reboot that would cut a download short,
+and not in maintenance mode. It is not an operator command: it only runs `brewberry-update`.
 
 - It asks the registry (`brewberry-update list`, which writes `/data/update/tags.json`) **every
   6 hours** (OctoPrint's default); a manual *Check the registry* counts too. `tags.json` records the
@@ -115,8 +118,9 @@ asks the registry at every run (every 15 minutes) and, when it gets an answer, r
 signature, contract and version checks, the 60-second watch and the rollback as by hand. The
 placeholder runs until the install switches. A version that fails is tried **3 times**
 (`/data/update/first-install.json`), then left alone until a newer one is released; the placeholder
-keeps running and the notice says the last try failed. `brewberry-update login` starts a check at
-once, so with a private registry the install follows the login within seconds.
+keeps running and the notice says the last try failed. So a Pi flashed with the stub has the newest
+app about 2 minutes after its second boot (the first one after sealing), plus the download time,
+once it is online.
 
 It **never installs over an app version**; demo mode and the configuration are untouched.
 
@@ -166,19 +170,20 @@ the proposal: it ties the app's UI to the device web interface's address and por
 ## Consequences
 
 - **Positive:**
-  - A Pi flashed without any setting ends up with the newest app by itself (with a public package),
-    and a brewer sees new versions without looking for them.
+  - A Pi flashed without any setting ends up with the newest app by itself, with no account or
+    token, and a brewer sees new versions without looking for them.
   - Nothing restarts a real app unasked; every install still goes through the signature policy,
     the contract check, the watch and the rollback.
 - **Negative / risks:**
-  - With the package private, the first install still needs `login` once.
   - The Pi asks `ghcr.io` every 6 hours (every 15 minutes until the app is installed); behind a
     metered or no connection that is a request that fails quietly.
   - A first install over a slow connection takes minutes, during which the placeholder's page
     says so; the brewer may install by hand in parallel (the lock refuses one of the two).
   - Pre-release users keep being offered pre-releases until they install a release.
 - **Follow-ups:**
-  - Product owner: make the package public, or keep it private and log in once per Pi.
+  - The app repository's runtime contract still calls the registry private (§1); update it with
+    the next contract change.
+  - The OS4 hardware test's package (`ghcr.io/tinkerius/brewberrypi-os-test`) must be public too.
   - App repository: decide the proposal above (runtime contract 3), and with it `Q-16`'s scope.
   - Release notes in the notice (an image label or the GitHub release) once the app repository is
     public.

@@ -11,8 +11,8 @@
 # The device accepts the preload unsigned (policy.json, path-scoped), so this
 # build-time check is what keeps an unsigned or foreign image out of the OS
 # image. The app's release CI signs recursively (cosign sign --recursive), so
-# the arm64 manifest carries its own signature. Needs skopeo and jq; for the
-# private registry, log in first (skopeo login ghcr.io).
+# the arm64 manifest carries its own signature. Needs skopeo and jq; the app's
+# package is public, so no login (ADR-0007).
 set -euo pipefail
 
 # shellcheck source=scripts/common.sh

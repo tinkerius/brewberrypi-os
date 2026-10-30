@@ -94,11 +94,8 @@ another key.
    scp work/test-signing/test.pub brewberry@brewberrypi.local:/tmp/
    ```
 
-2. On the device, a registry token for that repository (a classic PAT with `read:packages`):
-
-   ```sh
-   ssh -t brewberry@brewberrypi.local 'sudo BREWBERRY_UPDATE_REPO=ghcr.io/tinkerius/brewberrypi-os-test brewberry-update login'
-   ```
+2. Make the test package **public** (GitHub: the package's *Package settings → Change visibility*):
+   the device has no registry login (ADR-0007).
 
 3. Install the test key and policy entry. They live in the RAM overlay only, so a reboot removes
    them:
@@ -152,17 +149,15 @@ Needs an app release (≥ 1.0 for the milestone) from `tinkerius/brewberrypi-app
    preloaded), then on the device:
 
    ```sh
-   sudo brewberry-update login             # classic PAT with read:packages
    sudo brewberry-update download <version>
    sudo brewberry-update install <version> # must end with the new version active
    sudo brewberry-update status
    ```
 
 2. **As the preload** (for the release image): set the repository variable
-   `BREWBERRY_APP_VERSION=<version>` and give CI read access to the app's package (the secret
-   `BREWBERRY_GHCR_TOKEN`, or this repository under the package's *Manage Actions access*). The
+   `BREWBERRY_APP_VERSION=<version>` (the app's package is public: no token). The
    image build fetches the arm64 image with `scripts/fetch-app.sh` and refuses it unless it is
-   signed with the pinned key and its labels say contract 1 and that version.
+   signed with the pinned key and its labels say contract 2 and that version.
    `/etc/brewberry-release` shows `BREWBERRY_OS_APP_PRELOAD`.
 3. Re-run the OS3 scenarios with the real app instead of the stub. `os3-check.sh` drives the stub's
    heater endpoint, so here use the app's protocol (H-08 stop, H-09 `kill`, H-10 `pause`); the
@@ -227,7 +222,7 @@ By hand, in a browser on another machine (`http://brewberrypi.local:8081/`):
 1. The login page shows the user `brewberry`; `pi` logs in and the default-password reminder
    shows until the password is changed.
 2. Every page loads; every button of the user manual's command reference works: **Check the
-   registry** and **Install** (with a registry token), **Roll back**, **Demo mode on/off**,
+   registry** and **Install**, **Roll back**, **Demo mode on/off**,
    **Restart the app**, **Download** and **Import**
    of the configuration, **Logs**, and the three **OS update** steps (OS6; the page reconnects after
    each reboot).
@@ -348,14 +343,13 @@ listens on port 80. Then, from another machine:
 
 ## OS14: first install and update notice
 
-Needs the app's registry to be reachable: public, or private with a token (step 2). Have at least
-two app releases in the registry, and a way to publish a newer one (or use the OS4 test images in a
-test repository with `BREWBERRY_UPDATE_REPO`, as in OS4).
+Needs internet; the app's registry is public. Have at least two app releases in the registry, and
+a way to publish a newer one (or use the OS4 test images in a public test repository with
+`BREWBERRY_UPDATE_REPO`, as in OS4).
 
 1. Flash a card **without** a preloaded app (the stub; the default build) and boot it with a
    network. On `http://brewberrypi.local/` the placeholder's page says the app installs itself.
-2. Private registry only: log in (**App versions → Registry access**). The install starts within
-   seconds.
+2. The first boot reboots once by itself; nothing is downloaded before that.
 3. Within about 15 minutes of the Pi being online (a few more on a Pi 3), without touching
    anything: the top bar of the device web interface shows *Installing the app <version>* while it
    runs, then `http://brewberrypi.local/` opens the app, the newest release (or the newest

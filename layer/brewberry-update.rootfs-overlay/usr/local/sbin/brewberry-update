@@ -1,9 +1,6 @@
 #!/bin/bash
 # Select the BrewberryPi app version on the device (ADR-0001, OS4). Run as root.
 #
-#   brewberry-update login [--username <user> --password-stdin]
-#                                    store the registry token (/data/secrets/auth.json),
-#                                    for a private registry; then check for updates
 #   brewberry-update list            the registry's versions (also written to
 #                                    /data/update/tags.json) and the ones on the Pi
 #   brewberry-update status          active and previous image, last result, and a
@@ -28,8 +25,8 @@
 # otherwise print what they would do and exit 10). They warn when a brew is
 # loaded or running, because restarting the app ends it (ADR-0002).
 #
-# Registry: without a stored token it is used anonymously (a public package);
-# signatures are checked by policy.json either way. brewberry-update-check
+# Registry: public, used without a token (ADR-0007); what the Pi runs is
+# decided by the signature check in policy.json. brewberry-update-check
 # (timer) runs 'list' every 6 h, and installs the newest version by itself
 # while no app is installed (ADR-0007).
 #
@@ -66,14 +63,7 @@ SAFEMODE_MARK=$UPDATE_DIR/safemode.json
 # Extra app arguments, read by brewberrypi.service (EnvironmentFile=).
 APP_ARGS=$UPDATE_DIR/app-args.env
 LOCK=$ROOT/run/brewberry-update.lock
-# podman pull's messages, to tell a refused token from a refused signature.
-PULL_ERR=$ROOT/run/brewberry-update.pull.err
 TAGS=$UPDATE_DIR/tags.json
-AUTH_FILE=$ROOT/data/secrets/auth.json
-# Without a token, Podman and skopeo go to the registry anonymously; they
-# refuse an auth file that doesn't exist, so it is only set when there is one.
-[ ! -s "$AUTH_FILE" ] || export REGISTRY_AUTH_FILE=$AUTH_FILE
-CHECK_SERVICE=brewberry-update-check.service
 
 image_id() { podman image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
 label() { podman image inspect -f "{{index .Labels \"$2\"}}" "$1" 2>/dev/null || true; }
@@ -115,14 +105,6 @@ lock() {
    flock -n 9 || die "another update or safe-mode switch is running"
 }
 
-# The registry's answer to a request without (or with a wrong) token, made readable.
-registry_error() { # <output of podman or skopeo>
-   if grep -qiE 'unauthorized|authentication required|denied' <<< "$1"; then
-      echo "the registry needs a token; run: brewberry-update login"
-   else
-      echo "the registry did not answer: $(tail -n 1 <<< "$1")"
-   fi
-}
 
 # Restart the app and watch it: it must reach READY (systemctl restart waits for
 # it) and then run for SOAK_S without a restart. Returns 0 if healthy, 2 for a
@@ -166,24 +148,6 @@ gc() {
    podman image prune -f > /dev/null || true
 }
 
-cmd_login() { # [--username <user> --password-stdin]
-   install -d -m 0700 "$(dirname "$AUTH_FILE")"
-   if [ $# -eq 3 ] && [ "$1" = --username ] && [ "$3" = --password-stdin ]; then
-      [[ $2 =~ ^[A-Za-z0-9-]+$ ]] || die "not a GitHub user name: $2"
-      podman login --authfile "$AUTH_FILE" --username "$2" --password-stdin "${REPO%%/*}"
-   elif [ $# -eq 0 ]; then
-      echo "Registry token for $REPO: a GitHub classic PAT with read:packages only." >&2
-      podman login --authfile "$AUTH_FILE" "${REPO%%/*}"
-   else
-      die "usage: brewberry-update login [--username <user> --password-stdin]"
-   fi
-   chmod 0600 "$AUTH_FILE"
-   sync -f "$(dirname "$AUTH_FILE")"
-   # With the token the registry answers: check now (and, while no app is
-   # installed, install the newest version) instead of at the next timer run.
-   systemctl --no-block start "$CHECK_SERVICE" 2> /dev/null || true
-}
-
 # jq: newest first in SemVer order (a pre-release sorts before its release:
 # 1.2.0-alpha.2 < 1.2.0-beta.1 < 1.2.0).
 # shellcheck disable=SC2016  # jq program
@@ -191,9 +155,9 @@ SEMVER_DESC='def semver_desc: sort_by(capture("^(?<v>[0-9.]+)(-(?<k>[a-z]+)\\.(?
    | (.v | split(".") | map(tonumber)) + [if .k then 0 else 1 end, .k // "", (.n // "0" | tonumber)])
    | reverse;'
 
-# The registry's versions and the ones on the Pi. Without a network (or
-# without the token a private registry needs), it still lists the Pi's own
-# versions and says why the registry is missing (registryError).
+# The registry's versions and the ones on the Pi. Without a network, it still
+# lists the Pi's own versions and says why the registry is missing
+# (registryError).
 # tags.json: the registry's versions at the last answer (time), the last try
 # (tried) and why it failed (error); status reports an update from it.
 cmd_list() {
@@ -205,7 +169,7 @@ cmd_list() {
       jq -n --argjson tags "$tags" --arg time "$now" --arg active "$(version_of "$ACTIVE")" \
          '{time: $time, tried: $time, active: $active, tags: $tags, error: null}' | write_atomic "$TAGS"
    else
-      err=$(registry_error "$out")
+      err="the registry did not answer: $(tail -n 1 <<< "$out")"
       # Keep the versions of the last answer; record the failed try.
       { jq -c . "$TAGS" 2> /dev/null || echo '{"time": null, "tags": []}'; } |
          jq --arg tried "$now" --arg err "$err" '. + {tried: $tried, error: $err}' | write_atomic "$TAGS"
@@ -253,17 +217,10 @@ cmd_download() { # <version>
       return 0
    fi
    state downloading "downloading $version from $REPO (signature checked)" "$version"
-   if ! id=$(podman pull -q "$REPO:$version" 2> "$PULL_ERR"); then
-      cat "$PULL_ERR" >&2
-      if grep -qiE 'unauthorized|authentication required' "$PULL_ERR"; then
-         state failed "$(registry_error "$(cat "$PULL_ERR")"); nothing changed" "$version"
-      else
-         state failed "download failed or the signature was rejected; nothing changed" "$version"
-      fi
-      rm -f "$PULL_ERR"
+   if ! id=$(podman pull -q "$REPO:$version"); then
+      state failed "download failed or the signature was rejected; nothing changed" "$version"
       exit 1
    fi
-   rm -f "$PULL_ERR"
    id=$(image_id "$id")
    podman untag "$id" "$REPO:$version" || true
    if [ "$(label "$id" org.brewberrypi.runtime-contract)" != "$CONTRACT" ]; then
@@ -491,7 +448,6 @@ install -d -m 0755 "$UPDATE_DIR"
 parse_opts "$@"
 set -- "${ARGS[@]+"${ARGS[@]}"}"
 case ${1:-} in
-   login) shift; cmd_login "$@" ;;
    list) cmd_list ;;
    status) cmd_status ;;
    download) [ $# -eq 2 ] || die "usage: brewberry-update download <version>"; cmd_download "$2" ;;

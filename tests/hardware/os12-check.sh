@@ -44,8 +44,8 @@ gone() { # <id>: within 10 s
    done
    return 1
 }
-add_recipe() {
-   su -s /bin/sh brewberry -c 'printf "%s\n" "{\"name\": \"OS12 check\", \"goals\": [{\"type\": \"MashIn\"}]}" > /data/config/app/recipes/OS12CHECK.json'
+add_recipe() { # in the app's recipe format: the goals in mashing_process (app RCP-007, Q-31)
+   su -s /bin/sh brewberry -c 'printf "%s\n" "{\"name\": \"OS12 check\", \"mashing_process\": {\"goals\": [{\"type\": \"MashIn\"}]}}" > /data/config/app/recipes/OS12CHECK.json'
 }
 
 run() {

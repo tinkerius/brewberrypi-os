@@ -4,7 +4,7 @@
 Stands in for the real app image (tinkerius/brewberrypi-app) until it is released, so the OS side of
 the contract can be tested: READY=1, WATCHDOG=1 every BREWBERRYPI_WATCHDOG_MS, STOPPING=1, and
 GET /healthz on port 8080. GET / is a page for people who open the Pi in a browser: it explains
-that the app isn't installed yet and how to install it.
+that the app isn't installed yet, and that BrewberryPi OS installs it by itself (ADR-0007).
 
 Version: the preloaded stub reports "placeholder" (image label and /healthz), because it is not an
 app release; brewberry-update shows it as "no app installed". Test images for the OS4 check get
@@ -289,13 +289,15 @@ off.{heat_note}</p>
 </section>
 
 <section>
-<h2>Install the app</h2>
-<p>Easiest: open the device web interface at
+<h2>The app installs itself</h2>
+<p>Once the Pi is online, it downloads the newest app version and installs it by itself. That takes
+a few minutes (longer on a Pi 3); then this page is replaced by the app. Reload it now and then.
+The device web interface at
 <a href="http://{hostname}.local:8081/#versions">http://{hostname}.local:8081/</a>
-(user <code>brewberry</code>, default password <code>pi</code>), store the registry token under
-<em>App versions</em>, then pick a version there.</p>
-<p>Or log in to the Pi over SSH (<code>ssh &lt;user&gt;@{hostname}.local</code>), then:</p>
-<pre><code># once: your GitHub user, and a classic token with read:packages
+(user <code>brewberry</code>, default password <code>pi</code>) shows how far it got under
+<em>App versions</em>. If the app's registry is private, store a registry token there first.</p>
+<p>To pick a version by hand, log in to the Pi over SSH (<code>ssh &lt;user&gt;@{hostname}.local</code>), then:</p>
+<pre><code># only for a private registry: your GitHub user, and a classic token with read:packages
 sudo brewberry-update login
 # the released app versions
 sudo brewberry-update list

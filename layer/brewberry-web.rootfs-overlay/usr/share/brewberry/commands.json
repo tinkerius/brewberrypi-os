@@ -82,7 +82,7 @@
     {
       "id": "system.logs", "title": "Logs", "screen": "logs",
       "argv": ["brewberry-system", "logs", "{name}"],
-      "args": { "name": "^(app|safemode|firstload|outputs-off|web|share|wifi)$" }, "kind": "query"
+      "args": { "name": "^(app|safemode|firstload|update|outputs-off|web|share|wifi)$" }, "kind": "query"
     },
     {
       "id": "wifi.status", "title": "Wi-Fi", "screen": "wifi",

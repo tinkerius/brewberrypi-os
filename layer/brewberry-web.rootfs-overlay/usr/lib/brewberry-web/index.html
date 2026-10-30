@@ -109,6 +109,15 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .spinner { animation-duration: 3s; } }
 td .muted { margin-left: 8px; }
+/* The update notice (ADR-0007): a pill in the top bar and a dot on the tab, both to App versions,
+   and a card at the top of that screen. Quiet: no pop-up, nothing that blocks a screen. */
+.update-pill { display: inline-flex; align-items: center; gap: 6px; padding: 4px 10px; border-radius: 999px; font-size: 13px; font-weight: 500;
+  line-height: 20px; text-decoration: none; background: var(--accent); color: var(--accent-text); }
+.update-pill:hover { background: var(--accent-hover); }
+.update-pill::before, .dot { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: currentColor; }
+.dot { margin-left: 6px; background: var(--accent); vertical-align: 1px; }
+nav button[aria-selected="true"] .dot { background: var(--accent-text); }
+.card.update { box-shadow: 0 0 0 1px var(--accent), var(--shadow); }
 td button + button { margin-left: 6px; }
 </style>
 </head>
@@ -122,6 +131,7 @@ td button + button { margin-left: 6px; }
     <span class="brand-os">OS</span>
   </h1>
   <span class="muted" id="hostinfo"></span>
+  <a class="update-pill hidden" id="update-pill" href="#versions" title="A newer app version is available"></a>
   <span class="who hidden" id="who">User <strong>brewberry</strong> ·
     <a href="#" id="applink">App</a> ·
     <button class="secondary" id="logout">Log out</button></span>
@@ -157,7 +167,7 @@ td button + button { margin-left: 6px; }
     <nav id="tabs">
       <button data-screen="overview">Overview</button>
       <button data-screen="wifi">Wi-Fi</button>
-      <button data-screen="versions">App versions</button>
+      <button data-screen="versions">App versions<span class="dot hidden" id="update-dot" title="Update available"></span></button>
       <button data-screen="config">Configuration</button>
       <button data-screen="os">OS update</button>
       <button data-screen="logs">Logs</button>
@@ -226,6 +236,14 @@ td button + button { margin-left: 6px; }
     </section>
 
     <section data-view="versions" class="hidden">
+      <div class="card update hidden" id="ver-update">
+        <h2 id="ver-update-title"></h2>
+        <p id="ver-update-text"></p>
+        <div class="row" id="ver-update-actions">
+          <button data-cmd="update.download" id="ver-update-download">Download</button>
+          <button data-cmd="update.install" id="ver-update-install">Install</button>
+        </div>
+      </div>
       <div class="card">
         <h2>Installed</h2>
         <dl id="ver-status"></dl>
@@ -242,13 +260,16 @@ td button + button { margin-left: 6px; }
         <h2>Available versions</h2>
         <p class="muted">Download a version onto the Pi first, then install it. Downloads stay on the Pi until you remove them,
           so switching between them needs no internet. The active and the previous version are always kept. <span id="ver-space"></span></p>
+        <p class="muted">The Pi checks the registry for a newer version every 6 hours and shows it at the top of every page; it never installs
+          one by itself while an app is installed. Until the first app version is installed, it installs the newest one by itself.</p>
         <div class="row"><button data-cmd="update.list">Check the registry</button></div>
         <p id="ver-note" class="muted hidden"></p>
         <table id="ver-list"></table>
       </div>
       <div class="card">
         <h2>Registry access</h2>
-        <p class="muted">A GitHub classic personal access token with only the <code>read:packages</code> scope. It is stored on the Pi for root only; the app never sees it.</p>
+        <p class="muted">Only for a private registry: a public one needs no token. A GitHub classic personal access token with only the
+          <code>read:packages</code> scope. It is stored on the Pi for root only; the app never sees it.</p>
         <form id="loginregistry">
           <label for="reg-user">GitHub user name</label>
           <input type="text" id="reg-user" autocomplete="off" required>
@@ -313,6 +334,7 @@ td button + button { margin-left: 6px; }
           <select id="log-name">
             <option value="app">App</option><option value="outputs-off">Outputs switched off</option>
             <option value="safemode">Safe mode</option><option value="firstload">First app load</option>
+            <option value="update">Update check and first install</option>
             <option value="web">Web interface and its actions</option><option value="share">File share</option>
             <option value="wifi">Wi-Fi</option>
           </select>
@@ -458,7 +480,7 @@ function waitForReboot() {
 const views = {
   async overview() {
     const [app, sys, maint, wifi] = await Promise.all([query("update.status"), query("system.info"), query("maint.status"), query("wifi.status")]);
-    if (app) showAppStatus($("#ov-app"), app);
+    if (app) { showAppStatus($("#ov-app"), app); showUpdate(app); }
     // One card for the OS: brewberry-system info and brewberry-maint status.
     const rows = [];
     if (sys && sys.os) {
@@ -501,7 +523,7 @@ const views = {
   },
   async versions() {
     const [app, sys] = await Promise.all([query("update.status"), query("system.info")]);
-    if (app) showAppStatus($("#ver-status"), app);
+    if (app) { showAppStatus($("#ver-status"), app); showUpdate(app); }
     $("#ver-space").textContent = sys && sys.data ? `Free on the Pi: ${Math.round(sys.data.free / 1048576)} MiB.` : "";
     await loadVersions();
   },
@@ -592,12 +614,63 @@ function renderVersions() {
   if (!all.length) t.insertRow().insertCell().textContent = "No versions found.";
 }
 
+function updateText(u) {
+  if (!u || !u.checked) return u && u.error ? `not checked yet: ${u.error}` : "not checked yet";
+  const when = `registry checked at ${u.checked}`;
+  const failed = u.error ? `; the last check failed: ${u.error}` : "";
+  return (u.available ? `${u.latest} is available (${when})` : `none, up to date (${when})`) + failed;
+}
+
 function showAppStatus(dl, s) {
   const v = x => !x ? null : x.placeholder ? `none: placeholder, no app installed (${x.id})` : `${x.version || "?"} (${x.id})`;
-  fill(dl, [["Active", v(s.active)], ["Previous", v(s.previous)], ["Service", s.service],
+  fill(dl, [["Active", v(s.active)], ["Previous", v(s.previous)], ["Update", updateText(s.update)], ["Service", s.service],
     ["Engine", s.engine || "not answering"], ["Demo mode", s.demo ? "on" : "off"],
     ["Last action", s.last ? `${s.last.phase}: ${s.last.message} (${s.last.time})` : null],
     ["Safe mode", s.safemode ? `switched at ${s.safemode.time}` : "no"]]);
+}
+
+// The update notice: brewberry-update status decides what is newer (update.available); the page only shows it.
+function showUpdate(s) {
+  const u = s.update || {};
+  const noApp = !!u.firstInstall;
+  const on = !!u.available;
+  const pill = $("#update-pill");
+  pill.textContent = noApp ? `Installing the app ${u.latest || ""}`.trim() : `Update: ${u.latest}`;
+  pill.classList.toggle("hidden", !on);
+  $("#update-dot").classList.toggle("hidden", !on);
+  $("#ver-update").classList.toggle("hidden", !on);
+  if (!on) return;
+  const last = s.last && s.last.version === u.latest ? s.last : null;
+  const failedBefore = last && ["rolled-back", "failed"].includes(last.phase) ? ` The last try failed: ${last.message}.` : "";
+  const running = !!last && ["downloading", "switching"].includes(last.phase);
+  $("#ver-update-actions").classList.toggle("hidden", running);
+  if (noApp) {
+    $("#ver-update-title").textContent = `Installing the app: ${u.latest}`;
+    $("#ver-update-text").textContent = `No app is installed yet, so the Pi downloads and installs the newest version, ${u.latest}, by itself; `
+      + `the placeholder keeps running until then. This takes a few minutes; the log is under Logs, "Update check and first install". `
+      + (running ? `Now: ${last.message}.` : failedBefore + " You can also start it here.");
+  } else {
+    const active = !s.active || s.active.placeholder ? "no app (the placeholder runs)" : s.active.version;
+    $("#ver-update-title").textContent = `Update available: ${u.latest}`;
+    $("#ver-update-text").textContent = `You have ${active}. ` + (u.onPi
+      ? `${u.latest} is downloaded: install it when no brew is running (installing restarts the app and ends a brew; it is rolled back by itself if it fails).`
+      : `Download it first (the app keeps running), then install it when no brew is running.`) + failedBefore;
+  }
+  const dl = $("#ver-update-download"), inst = $("#ver-update-install");
+  dl.dataset.argVersion = inst.dataset.argVersion = u.latest;
+  const isBusy = busy && busy.version === u.latest;
+  dl.classList.toggle("hidden", !!u.onPi);
+  inst.classList.toggle("hidden", !u.onPi);
+  dl.disabled = inst.disabled = !!isBusy;
+  inst.textContent = isBusy ? busy.label : `Install ${u.latest}`;
+  if (!u.onPi) dl.textContent = isBusy ? busy.label : `Download ${u.latest}`;
+}
+
+// The notice on every screen: status again every 5 minutes, without a message when the Pi doesn't answer.
+let updateTimer = null;
+async function pollUpdate() {
+  const { status, data } = await api("GET", "/api/run/update.status");
+  if (status === 200 && data.output) showUpdate(data.output);
 }
 
 function showWifi(dl, w) {
@@ -707,7 +780,7 @@ async function onCommand(el) {
         const version = el.dataset.argVersion;
         busy = { version, label: id === "update.download" ? "Downloading…" : "Installing…" };
         renderVersions();
-        if (!(await action(id, { version }))) { busy = null; renderVersions(); }
+        if (!(await action(id, { version }))) { busy = null; renderVersions(); pollUpdate(); }
         break;
       }
       case "system.logs": {
@@ -785,6 +858,9 @@ async function enter(defaultPassword) {
   $("#who").classList.remove("hidden");
   $("#defaultpw").classList.toggle("hidden", !defaultPassword);
   show(current());
+  if (current() !== "overview" && current() !== "versions") pollUpdate();
+  clearInterval(updateTimer);
+  updateTimer = setInterval(pollUpdate, 5 * 60 * 1000);
 }
 
 $("#loginform").addEventListener("submit", async e => {
@@ -794,7 +870,7 @@ $("#loginform").addEventListener("submit", async e => {
   if (status === 200) enter(data.defaultPassword);
   else alert(data.error || "Login failed");
 });
-$("#logout").addEventListener("click", async () => { await api("POST", "/api/logout", {}); showLogin(); });
+$("#logout").addEventListener("click", async () => { await api("POST", "/api/logout", {}); clearInterval(updateTimer); showLogin(); });
 
 (async () => {
   const { status, data } = await api("GET", "/api/session");

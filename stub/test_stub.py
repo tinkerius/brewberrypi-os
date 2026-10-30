@@ -121,6 +121,7 @@ class StubTest(unittest.TestCase):
         self.assertIn("The brewing app isn't installed yet", body)
         self.assertIn("test version 9.9.9", body)
         self.assertIn("sudo brewberry-update install", body)
+        self.assertIn("installs it by itself", body)
         self.assertIn("built-in defaults", body)
         self.assertIn("pinged every 0.2 s", body)
         self.assertIn("<dt>Heater test</dt><dd>off</dd>", body)

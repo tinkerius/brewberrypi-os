@@ -58,7 +58,7 @@ The Pi switches a **mains-powered heater**. These hold for every change, tests i
 | `tests/integration/signing.sh` | Signature policy against a local registry with cosign v2 |
 | `tests/hardware/` | On-device checks, the milestones' "done when" (see its README) |
 | `docs/adr/` | Decisions; copy `0000-template.md` for a new one |
-| `docs/implementation-plan.md` | Milestones OS0–OS11 |
+| `docs/implementation-plan.md` | Milestones OS0–OS14 |
 | `docs/device-web-ui.md` | Design of the device web interface (ADR-0002) |
 
 The layers, in the order the base config lists them:
@@ -70,7 +70,7 @@ The layers, in the order the base config lists them:
 | `brewberry-readonly` | `data.mount`, first-boot grow/layout/seal, volatile journal, `brewberry-maint`, apt guard while sealed |
 | `brewberry-safety` | `config.txt` safety block, `brewberrypi-outputs-off`, `RuntimeWatchdogSec` |
 | `brewberry-podman` | Podman on `/data`, the group `brewberry-config`, the Quadlet unit `brewberrypi.container` (`/data/config/app` read-write at `/config`), `brewberrypi-port80` (port 80 forwarded to the app, ADR-0006), gpiochip udev rule, `brewberry-firstload` |
-| `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode` |
+| `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode`, `brewberry-update-check` + its timer (update check every 6 h, first install while no app is installed, ADR-0007) |
 | `brewberry-imager` | cloud-init for Imager's `cloudinit-rpi` customisation; disabled after first boot |
 | `brewberry-web` | Device web interface on port 8081 (server, root helper, command catalogue, the brand files in `static/`), the account password `pi`, `brewberry-passwd` (passwords kept on `/data`) |
 | `brewberry-share` | Samba file share of `/data/config` with its folders `app` and `os` (ADR-0003, ADR-0005), `brewberry` in the group `brewberry-config`: `smb.conf` (always on), `brewberry-share-sync` (smbd's start check and the PAM hook that keeps the share's password in step with `brewberry`'s), mDNS `_smb._tcp` |

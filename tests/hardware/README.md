@@ -345,3 +345,35 @@ listens on port 80. Then, from another machine:
    still opens it, `:8080` no longer does. Set it back.
 3. On the setup hotspot (OS11), `http://10.42.0.1/` and any other name still open the Wi-Fi page.
 
+
+## OS14: first install and update notice
+
+Needs the app's registry to be reachable: public, or private with a token (step 2). Have at least
+two app releases in the registry, and a way to publish a newer one (or use the OS4 test images in a
+test repository with `BREWBERRY_UPDATE_REPO`, as in OS4).
+
+1. Flash a card **without** a preloaded app (the stub; the default build) and boot it with a
+   network. On `http://brewberrypi.local/` the placeholder's page says the app installs itself.
+2. Private registry only: log in (**App versions → Registry access**). The install starts within
+   seconds.
+3. Within about 15 minutes of the Pi being online (a few more on a Pi 3), without touching
+   anything: the top bar of the device web interface shows *Installing the app <version>* while it
+   runs, then `http://brewberrypi.local/` opens the app, the newest release (or the newest
+   pre-release while there is no release). **Logs → Update check and first install** shows the
+   download and the install.
+4. Run the check:
+
+   ```sh
+   ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os14-check.sh
+   ```
+
+5. Install an older version by hand (**App versions**), then click **Check the registry**: the top
+   bar shows *Update: <newest>*, the tab has a dot, and the card at the top of **App versions**
+   offers **Download**, then **Install**; `sudo brewberry-update status` has the line
+   `update: <newest> is available`. Install it from the card: the notice goes away.
+6. Load a brew in the app and leave it loaded across the next check (or run
+   `sudo systemctl start brewberry-update-check.service`): nothing is installed by itself, and the
+   brew is still loaded.
+7. Publish a version that crashes on start (OS4's `crash` test image) as the newest on a fresh card:
+   the Pi tries it 3 times, rolls back to the placeholder each time, then stops trying
+   (`/data/update/first-install.json`), and the card on **App versions** names the failed try.

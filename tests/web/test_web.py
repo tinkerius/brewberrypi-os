@@ -33,7 +33,7 @@ echo "$(basename "$0") $*" >> "$FAKE/log"
 args=" $* "
 yes=0; case $args in *" --yes "*) yes=1 ;; esac
 case "$(basename "$0") $1" in
-   "brewberry-update status") echo '{"active": {"version": "0.3.0", "id": "abc"}, "previous": null, "service": "active", "engine": "NoProcess", "last": null, "safemode": null, "demo": false}' ;;
+   "brewberry-update status") echo '{"active": {"version": "0.3.0", "id": "abc"}, "previous": null, "service": "active", "engine": "NoProcess", "last": null, "safemode": null, "demo": false, "update": {"latest": "0.4.0", "available": true, "onPi": false, "firstInstall": false, "checked": "2026-10-30T08:00:00Z", "tried": "2026-10-30T08:00:00Z", "error": null}}' ;;
    "brewberry-update install" | "brewberry-update demo" | "brewberry-maint on")
       if [ $yes = 0 ]; then echo '{"confirm": "This installs '"$2"' and restarts the app."}'; exit 10; fi
       echo "working on $2"; sleep "${FAKE_SLEEP:-0}"; echo "done" ;;
@@ -245,6 +245,15 @@ class WebTest(unittest.TestCase):
         status, data = self.api("GET", "/api/run/update.status")
         self.assertEqual((status, data["output"]["active"]["version"]), (200, "0.3.0"))
         self.assertIn("brewberry-update status --json", self.log())
+
+    def test_update_notice_comes_from_the_cli(self):
+        # The page shows what brewberry-update status reports (ADR-0007); it decides nothing itself.
+        status, data = self.api("GET", "/api/run/update.status")
+        self.assertEqual((status, data["output"]["update"]["latest"], data["output"]["update"]["available"]), (200, "0.4.0", True))
+        with open(os.path.join(WEB, "index.html"), encoding="utf-8") as f:
+            page = f.read()
+        for marker in ('id="update-pill" href="#versions"', 'id="update-dot"', 'id="ver-update"', "u.available"):
+            self.assertIn(marker, page)
 
     def test_query_argument_checked(self):
         status, data = self.api("GET", "/api/run/system.logs?name=app")

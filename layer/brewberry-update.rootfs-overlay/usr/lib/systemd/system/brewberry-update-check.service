@@ -1,0 +1,16 @@
+# Update check and, while no app is installed, the first install (ADR-0007,
+# OS14). Started by brewberry-update-check.timer and 'brewberry-update login'.
+# Logs: brewberry-system logs update.
+[Unit]
+Description=BrewberryPi OS: check the registry for app updates; install the first app version
+Requires=data.mount
+After=data.mount brewberry-firstload.service network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+ExecStart=/usr/local/sbin/brewberry-update-check
+# A first install downloads about 250 MB, slowly on a Pi 3, and watches the app for 60 s.
+TimeoutStartSec=45min
+Nice=10
+IOSchedulingClass=idle

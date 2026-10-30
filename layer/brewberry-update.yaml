@@ -6,7 +6,10 @@
 #  app's pinned cosign key; unsigned images only from the preload directory),
 #  registries.d for cosign v2 signature tags, the brewberry-update CLI
 #  (install with soak and rollback, rollback, list, status, login) and safe
-#  mode (brewberrypi-safemode, OnFailure= of brewberrypi.service).
+#  mode (brewberrypi-safemode, OnFailure= of brewberrypi.service), and the
+#  update check (brewberry-update-check.timer, ADR-0007): the registry's
+#  versions every 6 h for the update notice, and the newest version installed
+#  by itself while no app is installed.
 # X-Env-Layer-Version: 1.0.0
 # X-Env-Layer-Requires: brewberry-podman
 # METAEND
@@ -16,3 +19,5 @@ mmdebstrap:
     - skopeo
     - jq
     - util-linux
+  customize-hooks:
+    - $BDEBSTRAP_HOOKS/enable-units "$1" brewberry-update-check.timer

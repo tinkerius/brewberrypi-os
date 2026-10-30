@@ -1,0 +1,90 @@
+#!/bin/bash
+# Update check and first install (ADR-0007, OS14). Run as root by
+# brewberry-update-check.timer every 15 minutes, and by 'brewberry-update
+# login'. Not an operator command: it only runs brewberry-update.
+#
+# - Every 6 hours it asks the registry for its versions (brewberry-update
+#   list, which writes /data/update/tags.json). brewberry-update status then
+#   reports a newer version, and the device web interface shows it.
+# - Until the first app version is installed (brewberry-update status:
+#   update.firstInstall; the preloaded placeholder runs, or no image at all),
+#   it asks at every run and downloads and installs the newest version
+#   (update.latest) by itself; the placeholder keeps running until the install
+#   switches. It gives up on a version after MAX_ATTEMPTS failed tries, until a
+#   newer one is released.
+# - It never installs over an app version: that restarts the app and ends a
+#   brew, so updates are the brewer's choice. Nor after a rollback or safe mode
+#   back to the placeholder: someone or something chose it.
+#
+# Logs: brewberry-system logs update.
+set -euo pipefail
+
+PROG=brewberry-update-check
+# BREWBERRY_LIB, BREWBERRY_UPDATE_ROOT and BREWBERRY_UPDATE are for tests (tests/unit/update.sh).
+# shellcheck source=layer/brewberry-base.rootfs-overlay/usr/lib/brewberry/common.sh
+. "${BREWBERRY_LIB:-/usr/lib/brewberry}/common.sh"
+
+UPDATE=${BREWBERRY_UPDATE:-/usr/local/sbin/brewberry-update}
+ROOT=${BREWBERRY_UPDATE_ROOT:-}
+UPDATE_DIR=$ROOT/data/update
+TAGS=$UPDATE_DIR/tags.json
+# The first install's tries per version: {version, attempts, time, result}.
+AUTO=$UPDATE_DIR/first-install.json
+INTERVAL_S=$((6 * 3600))
+MAX_ATTEMPTS=3
+
+[ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run as root"
+install -d -m 0755 "$UPDATE_DIR"
+
+first_install() { # <status --json>
+   jq -e '.update.firstInstall' > /dev/null <<< "$1"
+}
+
+# Seconds since the last try (tags.json "tried"); a time in the future (the
+# clock was set back) counts as never.
+since_last_try() {
+   local tried
+   tried=$(jq -r '.tried // empty' "$TAGS" 2> /dev/null || true)
+   [ -n "$tried" ] || { echo -1; return 0; }
+   echo $(( $(date -u +%s) - $(date -u -d "$tried" +%s 2> /dev/null || echo 0) ))
+}
+
+status=$("$UPDATE" status --json)
+age=$(since_last_try)
+if ! first_install "$status" && [ "$age" -ge 0 ] && [ "$age" -lt "$INTERVAL_S" ]; then
+   exit 0
+fi
+
+"$UPDATE" list --json > /dev/null
+status=$("$UPDATE" status --json)
+jq -r '.update | if .error then "registry: \(.error)"
+   elif .available then "update available: \(.latest)" else "no update (newest: \(.latest // "none"))" end' <<< "$status" |
+   while read -r line; do log "$line"; done
+
+first_install "$status" || exit 0
+latest=$(jq -r '.update.latest // empty' <<< "$status")
+[ -n "$latest" ] || exit 0
+
+attempts=$(jq -r --arg v "$latest" 'if .version == $v then .attempts else 0 end' "$AUTO" 2> /dev/null || echo 0)
+if [ "$attempts" -ge "$MAX_ATTEMPTS" ]; then
+   log "no app installed; $latest failed $attempts times, not trying it again (install a version by hand)"
+   exit 0
+fi
+attempts=$((attempts + 1))
+record() { # <result>
+   jq -n --arg v "$latest" --argjson n "$attempts" --arg r "$1" --arg t "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+      '{version: $v, attempts: $n, time: $t, result: $r}' | write_atomic "$AUTO"
+}
+
+log "no app installed: downloading and installing $latest (try $attempts of $MAX_ATTEMPTS)"
+record started
+if ! "$UPDATE" download "$latest"; then
+   record download-failed
+   die "the download of $latest failed; trying again at the next check"
+fi
+if ! "$UPDATE" --yes install "$latest"; then
+   record install-failed
+   die "the install of $latest failed (brewberry-update status); the placeholder keeps running"
+fi
+record installed
+log "$latest is installed"

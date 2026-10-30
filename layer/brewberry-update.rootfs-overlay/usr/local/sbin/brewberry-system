@@ -4,7 +4,8 @@
 #   brewberry-system info            OS version, board, hostname, addresses, uptime, /data usage
 #   brewberry-system logs <name> [--lines N]
 #                                    this boot's log of: app, safemode, firstload,
-#                                    outputs-off, web, share, wifi (default: the last 200 lines)
+#                                    update, outputs-off, web, share, wifi (default: the
+#                                    last 200 lines)
 #
 # Options: --json (info, logs). Logs are kept in memory and lost at reboot.
 set -euo pipefail
@@ -49,19 +50,21 @@ cmd_logs() { # <name> [--lines N]
    if [ $# -eq 3 ] && [ "$2" = --lines ] && [[ $3 =~ ^[0-9]+$ ]] && [ "$3" -ge 1 ] && [ "$3" -le 5000 ]; then
       lines=$3
    elif [ $# -ne 1 ]; then
-      die "usage: brewberry-system logs <app|safemode|firstload|outputs-off|web|share|wifi> [--lines 1..5000]"
+      die "usage: brewberry-system logs <app|safemode|firstload|update|outputs-off|web|share|wifi> [--lines 1..5000]"
    fi
    case $name in
       app) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberrypi.service) ;;
       safemode) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberrypi-safemode.service) ;;
       firstload) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberry-firstload.service) ;;
+      # The update check and the first install (ADR-0007).
+      update) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberry-update-check.service) ;;
       outputs-off) out=$(journalctl -b --no-pager -o short-iso | grep -F brewberrypi-outputs-off | tail -n "$lines" || true) ;;
       web) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberry-web.service -u 'brewberry-webcmd@*' -u 'brewberry-job-*') ;;
       # smbd, and the share's password hook (PAM, outside smbd): '+' is OR.
       share) out=$(journalctl -b --no-pager -o short-iso -n "$lines" _SYSTEMD_UNIT=smbd.service + SYSLOG_IDENTIFIER=brewberry-share-sync) ;;
       # The Wi-Fi service, the first boot's move of Imager's Wi-Fi, and NetworkManager.
       wifi) out=$(journalctl -b --no-pager -o short-iso -n "$lines" -u brewberry-wifi.service -u brewberry-wifi-migrate.service -u NetworkManager.service) ;;
-      *) die "unknown log '$name': app, safemode, firstload, outputs-off, web, share or wifi" ;;
+      *) die "unknown log '$name': app, safemode, firstload, update, outputs-off, web, share or wifi" ;;
    esac
    if [ "$JSON" = 1 ]; then
       jq -n --arg name "$name" --arg out "$out" '{name: $name, lines: ($out | split("\n") | map(select(. != "")))}'

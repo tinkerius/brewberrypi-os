@@ -249,7 +249,7 @@ The configuration lives in `/data/config`, in two folders:
 
 | Folder | Holds | Written by |
 |---|---|---|
-| `app` | the app's `config.json` and its recipes, `recipes/<id>.json` (for example `recipes/ZORA.json`) | the app, and you |
+| `app` | the app's `config.json` and its recipes, `recipes/<id>.json` (for example `recipes/BENIWEISS.json`) | the app, and you |
 | `os` | the [Wi-Fi settings](#wi-fi) `wifi.json`, and `backup/` with the files that imports replaced | the OS, and you |
 
 The app owns its folder: at its first start it writes `config.json` with every setting at its

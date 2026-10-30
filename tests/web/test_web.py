@@ -335,11 +335,11 @@ class WebTest(unittest.TestCase):
 
     def test_upload_goes_through_brewberry_config(self):
         files = [{"name": "config.json", "data": base64.b64encode(b"{}").decode()},
-                 {"name": "recipes/WIT.json", "data": base64.b64encode(b"{}").decode()}]
+                 {"name": "recipes/WaterBoil.json", "data": base64.b64encode(b"{}").decode()}]
         status, data = self.api("POST", "/api/run/config.import", {"files": files})
         self.assertEqual(status, 200)
         with open(os.path.join(self.fake, "imported")) as f:
-            self.assertIn("./config.json\n./recipes/WIT.json\n", f.read())
+            self.assertIn("./config.json\n./recipes/WaterBoil.json\n", f.read())
         self.assertEqual(os.listdir(os.path.join(self.tmp, "uploads")), [])
         bad = [{"name": "../evil.json", "data": base64.b64encode(b"{}").decode()}]
         self.assertEqual(self.api("POST", "/api/run/config.import", {"files": bad})[0], 400)

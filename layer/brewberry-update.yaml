@@ -5,7 +5,8 @@
 #  policy.json (default reject; ghcr.io/tinkerius/brewberrypi-app only with the
 #  app's pinned cosign key; unsigned images only from the preload directory),
 #  registries.d for cosign v2 signature tags, the brewberry-update CLI
-#  (install with soak and rollback, rollback, list, status, login) and safe
+#  (list, check, download, install with soak and the way back on failure,
+#  status) and safe
 #  mode (brewberrypi-safemode, OnFailure= of brewberrypi.service), and the
 #  update check (brewberry-update-check.timer, ADR-0007): the registry's
 #  versions every 6 h for the update notice, and the newest version installed

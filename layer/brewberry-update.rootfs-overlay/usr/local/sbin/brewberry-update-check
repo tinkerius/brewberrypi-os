@@ -5,7 +5,7 @@
 # operator command: it only runs brewberry-update.
 #
 # - Every 6 hours it asks the registry for its versions (brewberry-update
-#   list, which writes /data/update/tags.json). brewberry-update status then
+#   check, which writes /data/update/tags.json). brewberry-update status then
 #   reports a newer version, and the device web interface shows it.
 # - Until the first app version is installed (brewberry-update status:
 #   update.firstInstall; the preloaded placeholder runs, or no image at all),
@@ -14,8 +14,8 @@
 #   switches. It gives up on a version after MAX_ATTEMPTS failed tries, until a
 #   newer one is released.
 # - It never installs over an app version: that restarts the app and ends a
-#   brew, so updates are the brewer's choice. Nor after a rollback or safe mode
-#   back to the placeholder: someone or something chose it.
+#   brew, so updates are the brewer's choice. Nor after safe mode fell back to
+#   the placeholder.
 #
 # Logs: brewberry-system logs update.
 set -euo pipefail
@@ -37,15 +37,6 @@ MAX_ATTEMPTS=3
 [ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run as root"
 install -d -m 0755 "$UPDATE_DIR"
 
-# The registry is public (ADR-0007): a token stored by an earlier OS version
-# is no longer used, so it doesn't stay on the Pi.
-OLD_TOKEN=$ROOT/data/secrets/auth.json
-if [ -e "$OLD_TOKEN" ]; then
-   rm -f "$OLD_TOKEN"
-   sync "$(dirname "$OLD_TOKEN")"
-   log "removed the registry token of an earlier version; the registry is public"
-fi
-
 first_install() { # <status --json>
    jq -e '.update.firstInstall' > /dev/null <<< "$1"
 }
@@ -65,7 +56,7 @@ if ! first_install "$status" && [ "$age" -ge 0 ] && [ "$age" -lt "$INTERVAL_S" ]
    exit 0
 fi
 
-"$UPDATE" list --json > /dev/null
+"$UPDATE" check --json > /dev/null
 status=$("$UPDATE" status --json)
 jq -r '.update | if .error then "registry: \(.error)"
    elif .available then "update available: \(.latest)" else "no update (newest: \(.latest // "none"))" end' <<< "$status" |

@@ -11,6 +11,10 @@
       "argv": ["brewberry-update", "list"], "kind": "query", "timeout": 120
     },
     {
+      "id": "update.check", "title": "Check for newer versions", "screen": "versions",
+      "argv": ["brewberry-update", "check"], "kind": "query", "timeout": 120
+    },
+    {
       "id": "update.download", "title": "Download", "screen": "versions",
       "argv": ["brewberry-update", "download", "{version}"],
       "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },
@@ -27,10 +31,6 @@
       "argv": ["brewberry-update", "install", "{version}"],
       "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },
       "kind": "action", "confirm": true, "job": true
-    },
-    {
-      "id": "update.rollback", "title": "Roll back", "screen": "versions",
-      "argv": ["brewberry-update", "rollback"], "kind": "action", "confirm": true, "job": true
     },
     {
       "id": "update.demo", "title": "Demo mode", "screen": "versions",

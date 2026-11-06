@@ -34,6 +34,6 @@ ensure_dir 2775 "$D/config/os" "$OWNER"
 ensure_dir 0755 "$D/containers/storage"  # Podman graphroot (OS2)
 ensure_dir 0755 "$D/tmp"                 # Podman pull staging (OS2)
 ensure_dir 0755 "$D/update"              # update requests, state, tags.json (OS4)
-ensure_dir 0700 "$D/secrets"             # registry auth.json (OS4)
+ensure_dir 0700 "$D/secrets"             # password hashes (OS9), Samba state (OS10)
 
 [ "$created" -eq 0 ] || sync -f "$D"

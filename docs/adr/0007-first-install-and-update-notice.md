@@ -4,9 +4,10 @@
 - **Date:** 2026-10-30
 - **Deciders:** Benedikt Hauptmann (product owner); proposal and research by Claude Code
 - **Changes:** [ADR-0001](0001-os-image-and-app-runtime.md) "Updating and selecting versions": a
-  timer now runs `brewberry-update list` and, only while no app is installed, `download` and
+  timer now runs `brewberry-update check` and, only while no app is installed, `download` and
   `install`; the registry is public, and the registry login (`brewberry-update login`, the
-  token in `/data/secrets/auth.json`) is removed
+  token in `/data/secrets/auth.json`) is removed; `brewberry-update rollback` is removed
+  (2026-11-06): an older version is installed like any other
 
 ## Context
 
@@ -82,9 +83,9 @@ Where the notice shows in the device web interface:
 The product owner made the package `ghcr.io/tinkerius/brewberrypi-app` **public** (2026-10-30;
 checked: tags and manifests answer without a token). The OS has **no registry authentication**
 any more: `brewberry-update login`, its catalogue entry `update.login`, the *Registry access* card
-and `REGISTRY_AUTH_FILE` are gone; Podman and skopeo go to the registry anonymously.
-`brewberry-update-check` deletes a token an earlier version stored (`/data/secrets/auth.json`). CI
-fetches an app preload without a token too (`BREWBERRY_GHCR_TOKEN` is no longer used). The cosign
+and `REGISTRY_AUTH_FILE` are gone; Podman and skopeo go to the registry anonymously. CI fetches
+an app preload without a token too. (A new OS reaches a Pi only by reflashing, which erases `/data`,
+so no old token survives on a Pi to clean up.) The cosign
 signature check stays the gate for what runs on the Pi. Making the package private again would
 need the login back (a new ADR).
 
@@ -95,8 +96,10 @@ minutes after each run ends, **on the sealed system only** (`ConditionKernelComm
 not during the first boot, which `brewberry-seal` ends with a reboot that would cut a download short,
 and not in maintenance mode. It is not an operator command: it only runs `brewberry-update`.
 
-- It asks the registry (`brewberry-update list`, which writes `/data/update/tags.json`) **every
-  6 hours** (OctoPrint's default); a manual *Check the registry* counts too. `tags.json` records the
+- It asks the registry (`brewberry-update check`, which writes `/data/update/tags.json`) **every
+  6 hours** (OctoPrint's default); a manual *Check for newer versions* counts too.
+  `brewberry-update list` shows the registry's versions from `tags.json` without asking it (asking
+  only when it was never asked), so *App versions* shows them as soon as it opens. `tags.json` records the
   last answer (`time`, `tags`), the last try (`tried`) and why it failed (`error`), keeping the last
   answer when the registry can't be reached. A last try in the future (the Pi has no clock and
   the time was set back) counts as never.
@@ -111,11 +114,10 @@ and not in maintenance mode. It is not an operator command: it only runs `brewbe
 ### First install
 
 Until **the first app version is installed** (`firstInstall`: the active and the previous image are
-the placeholder or nothing; not after a rollback or safe mode back to the placeholder, which someone
-or something chose), the check
+the placeholder or nothing; not after safe mode fell back to the placeholder), the check
 asks the registry at every run (every 15 minutes) and, when it gets an answer, runs
 `brewberry-update download <latest>` and `brewberry-update --yes install <latest>`: the same
-signature, contract and version checks, the 60-second watch and the rollback as by hand. The
+signature, contract and version checks, the 60-second watch and the way back on failure as by hand. The
 placeholder runs until the install switches. A version that fails is tried **3 times**
 (`/data/update/first-install.json`), then left alone until a newer one is released; the placeholder
 keeps running and the notice says the last try failed. So a Pi flashed with the stub has the newest
@@ -134,8 +136,17 @@ It **never installs over an app version**; demo mode and the configuration are u
   warning); while the first install runs, its progress instead of buttons;
 - the overview's *App* card: a row *Update*.
 
-The page reads `update.status` when a screen loads and every 5 minutes. No new operator command:
-the check is the existing `list` (*Check the registry*); the log is `brewberry-system logs update`.
+The page reads `update.status` when a screen loads and every 5 minutes. *App versions* shows the
+list at once (`update.list`); *Check for newer versions* (`update.check`, the operator command
+`brewberry-update check`) asks the registry now. The log is `brewberry-system logs update`.
+
+### No roll back command (2026-11-06)
+
+The product owner: "if a software update is not working, I can manually select a previous version".
+`brewberry-update rollback`, its catalogue entry and the *Roll back* button are removed. Going back
+is an install of the older version from the list: the previous version is always on the Pi, older
+ones once downloaded. Kept: the automatic way back when an install fails within its 60-second watch,
+and safe mode (ADR-0001), which both use `:previous`; neither is an operator command.
 
 ### In the app (proposal, needs runtime contract 3)
 
@@ -173,7 +184,7 @@ the proposal: it ties the app's UI to the device web interface's address and por
   - A Pi flashed without any setting ends up with the newest app by itself, with no account or
     token, and a brewer sees new versions without looking for them.
   - Nothing restarts a real app unasked; every install still goes through the signature policy,
-    the contract check, the watch and the rollback.
+    the contract check, the watch and the way back on failure.
 - **Negative / risks:**
   - The Pi asks `ghcr.io` every 6 hours (every 15 minutes until the app is installed); behind a
     metered or no connection that is a request that fails quietly.

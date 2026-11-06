@@ -20,7 +20,7 @@ check() { # <description> <command...>
 }
 version() { podman image inspect -f '{{index .Labels "org.opencontainers.image.version"}}' "localhost/brewberrypi:$1" 2>/dev/null; }
 is_version() { test "$(version "$1")" = "$2"; }
-# --yes: install, rollback and demo ask for confirmation otherwise (ADR-0002).
+# --yes: install and demo ask for confirmation otherwise (ADR-0002).
 update() { BREWBERRY_UPDATE_REPO=$REPO brewberry-update "$@" --yes; }
 
 setup() { # <repo> <test.pub>

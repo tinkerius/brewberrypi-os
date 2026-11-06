@@ -238,7 +238,7 @@ systemctl status brewberrypi           # the app service
 Every command in this manual that changes something needs `sudo`. The admin user doesn't need a
 password for it.
 
-Commands that restart the app or reboot the Pi (`install`, `rollback`, `demo`, `restart`,
+Commands that restart the app or reboot the Pi (`install`, `demo`, `restart`,
 `brewberry-maint on|upgrade|off`) ask you to type `yes`, and warn first when a brew is loaded or
 running, because they end it. Add `--yes` to skip the question in scripts. Without a terminal and
 without `--yes`, they print what they would do and exit with code 10, changing nothing. Queries
@@ -388,7 +388,7 @@ mode:
 ## 6. App versions
 
 The Pi runs one app version, the *active* one, and keeps the one before it, the *previous* one,
-to roll back to. Other versions are **downloaded** onto the Pi first and then **installed**;
+for safe mode. Other versions are **downloaded** onto the Pi first and then **installed**;
 downloads stay until you remove them. App versions come from the public registry
 `ghcr.io/tinkerius/brewberrypi-app`, so the Pi needs no account or token, only internet. Every version
 must be signed with the app's key; unsigned or wrongly signed images are refused.
@@ -415,13 +415,13 @@ The device web interface shows *Installing the app 1.2.3* at the top of every pa
 progress under **App versions**; the log is **Logs → Update check and first install**
 (`sudo brewberry-system logs update`). If the version fails 3 times, the Pi stops trying it and
 keeps the placeholder until a newer version is released; install one by hand then. The Pi never
-installs anything by itself once an app version has been installed, also not after you roll back to
-the placeholder.
+installs anything by itself once an app version has been installed, also not after safe mode fell
+back to the placeholder.
 
 ### Update notice
 
 Once an app is installed, the Pi asks the registry for its versions **every 6 hours** (and whenever
-you click **Check the registry**). When there is a newer version, the device web interface shows:
+you click **Check for newer versions**). When there is a newer version, the device web interface shows:
 
 - *Update: 1.2.3* at the top of every page, and a dot on **App versions**;
 - at the top of **App versions**: the version you have and the new one, with **Download 1.2.3**,
@@ -434,20 +434,21 @@ no brew is running.
 Which versions are offered depends on what you run: on a release, only newer releases; on a
 pre-release, newer pre-releases too (you opted in by installing one), until you install a release.
 
-### List, download, install, roll back
+### List, download, install
 
 ```sh
-sudo brewberry-update list             # the registry's versions, newest first; the Pi's are marked
+sudo brewberry-update list             # the registry's versions (as of the last check), newest first; the Pi's are marked
+sudo brewberry-update check            # ask the registry now for newer versions
 sudo brewberry-update download 1.2.3   # download 1.2.3 onto the Pi (nothing switches yet)
-sudo brewberry-update install 1.2.3    # switch to the downloaded 1.2.3
+sudo brewberry-update install 1.2.3    # switch to the downloaded 1.2.3 (also an older version)
 sudo brewberry-update remove 1.2.2     # delete a downloaded version again
 sudo brewberry-update status           # active and previous version, result of the last action
-sudo brewberry-update rollback         # switch back to the previous version
 sudo brewberry-update restart          # restart the app, for example after a config change
 ```
 
-In the device web interface, **App versions** lists every version: the registry's and the ones on
-the Pi, marked *on the Pi* with their size (and *active* or *previous*). Next to each:
+In the device web interface, **App versions** lists every version as soon as the page opens: the
+registry's (as of the last check, every 6 hours) and the ones on the Pi, marked *on the Pi* with
+their size (and *active* or *previous*). Next to each:
 
 - **Download** for a version that is only in the registry. A spinner shows while it downloads;
   that can take a few minutes on a Pi 3. The app keeps running.
@@ -455,9 +456,12 @@ the Pi, marked *on the Pi* with their size (and *active* or *previous*). Next to
 - **Remove** for a downloaded version that is neither active nor previous. The active and the
   previous version are always kept.
 
-**Check the registry** loads the list again. Without internet the page still lists the versions on
-the Pi, so you can switch between them offline. **Roll back** and **Restart
-the app** are on the same page.
+**Check for newer versions** asks the registry now and updates the list. Without internet the page
+still lists the versions on the Pi, so you can switch between them offline. **Restart the app** is
+on the same page.
+
+**Going back to an older version:** there is no separate *roll back*. Install the older version from
+the list like any other: the previous one is always on the Pi, older ones once downloaded.
 
 Downloads take space on `/data` (about 250 MB each; the page shows what is free). Remove the ones
 you no longer need.
@@ -610,7 +614,7 @@ on the network.
    sudo brewberry-update restart
    ```
 
-3. Otherwise the version itself is broken. Install a working version, or roll back:
+3. Otherwise the version itself is broken. Install a working version, for example the previous one:
 
    ```sh
    sudo brewberry-update download 1.2.2   # if it isn't on the Pi yet
@@ -654,7 +658,7 @@ limit of 4 starts in 10 minutes too.
    Nothing happens during the first boot, nor in maintenance mode: the check runs only on the
    sealed system.
 4. A version that failed 3 times isn't tried again until a newer one is out: install another
-   version by hand ([List, download, install, roll back](#list-download-install-roll-back)).
+   version by hand ([List, download, install](#list-download-install)).
 
 ### An install says the signature was rejected
 
@@ -688,11 +692,11 @@ All commands run as root (`sudo`). The device web interface offers each of them
 
 | Command | What it does |
 |---|---|
-| `brewberry-update list` | Available app versions (releases and pre-releases), newest first, and the ones on the Pi |
+| `brewberry-update list` | Available app versions (releases and pre-releases) as of the last check, newest first, and the ones on the Pi |
+| `brewberry-update check` | Ask the registry now for newer versions (also every 6 hours by itself) |
 | `brewberry-update download <version>` | Download a version onto the Pi (signature checked); nothing switches |
 | `brewberry-update remove <version>` | Delete a downloaded version (never the active or previous one) |
 | `brewberry-update install <version>` | Switch to a downloaded version; rolls back if it fails |
-| `brewberry-update rollback` | Switch back to the previous version |
 | `brewberry-update status` | Active and previous version, last result, safe mode, an available update, demo mode |
 | `brewberry-update demo on\|off` | Run the app with a simulated kettle (no GPIO), or normally |
 | `brewberry-update restart` | Restart the app (ends a running brew), also after a configuration error |

@@ -248,23 +248,23 @@ td button + button { margin-left: 6px; }
         <h2>Installed</h2>
         <dl id="ver-status"></dl>
         <div class="row">
-          <button data-cmd="update.rollback">Roll back to the previous version</button>
           <button class="secondary" data-cmd="update.restart">Restart the app</button>
           <button class="secondary" data-cmd="update.demo" data-arg-mode="on">Demo mode on</button>
           <button class="secondary" data-cmd="update.demo" data-arg-mode="off">Demo mode off</button>
         </div>
-        <p class="muted">Installing, rolling back, restarting and demo mode restart the app, which ends a running brew.
-          An install is watched for 60 s and rolled back automatically if the new version fails.</p>
+        <p class="muted">Installing, restarting and demo mode restart the app, which ends a running brew.
+          An install is watched for 60 s; if the new version fails, the version before comes back by itself.
+          To go back to an older version, install it from the list below.</p>
       </div>
       <div class="card">
         <h2>Available versions</h2>
-        <p class="muted">Download a version onto the Pi first, then install it. Downloads stay on the Pi until you remove them,
+        <p class="muted">Download a version onto the Pi first, then install it; older versions too. Downloads stay on the Pi until you remove them,
           so switching between them needs no internet. The active and the previous version are always kept. <span id="ver-space"></span></p>
-        <p class="muted">The Pi checks the registry for a newer version every 6 hours and shows it at the top of every page; it never installs
+        <p class="muted">The Pi checks the registry for newer versions every 6 hours and shows one at the top of every page; it never installs
           one by itself while an app is installed. Until the first app version is installed, it installs the newest one by itself.</p>
-        <div class="row"><button data-cmd="update.list">Check the registry</button></div>
-        <p id="ver-note" class="muted hidden"></p>
-        <table id="ver-list"></table>
+        <p id="ver-note" class="muted"></p>
+        <table id="ver-list" data-load="update.list"><tr><td><span class="spinner"></span> Loading the versions…</td></tr></table>
+        <div class="row"><button class="secondary" data-cmd="update.check">Check for newer versions</button></div>
       </div>
     </section>
 
@@ -557,9 +557,11 @@ function renderVersions() {
   t.replaceChildren();
   const out = versionList;
   if (!out) return;
+  // The list is the registry's answer at the last check (every 6 h, or the button), so it shows at once.
   const note = $("#ver-note");
-  note.textContent = out.registryError ? `Only the versions on the Pi: ${out.registryError}.` : "";
-  note.classList.toggle("hidden", !out.registryError);
+  note.textContent = (out.checked ? `The registry's versions as of ${out.checked}.` : "The registry hasn't answered yet: only the versions on the Pi.")
+    + (out.registryError ? ` The last check failed: ${out.registryError}.` : "");
+  note.className = out.registryError ? "banner warn" : "muted";
   const local = Object.fromEntries((out.local || []).map(l => [l.version, l]));
   const all = [...new Set([...(out.tags || []), ...Object.keys(local)])].sort(semverCompare).reverse();
   const button = (label, version, primary) => {
@@ -641,7 +643,7 @@ function showUpdate(s) {
     const active = !s.active || s.active.placeholder ? "no app (the placeholder runs)" : s.active.version;
     $("#ver-update-title").textContent = `Update available: ${u.latest}`;
     $("#ver-update-text").textContent = `You have ${active}. ` + (u.onPi
-      ? `${u.latest} is downloaded: install it when no brew is running (installing restarts the app and ends a brew; it is rolled back by itself if it fails).`
+      ? `${u.latest} is downloaded: install it when no brew is running (installing restarts the app and ends a brew; if it fails, the version before comes back by itself).`
       : `Download it first (the app keeps running), then install it when no brew is running.`) + failedBefore;
   }
   const dl = $("#ver-update-download"), inst = $("#ver-update-install");
@@ -762,7 +764,15 @@ async function onCommand(el) {
         $("#hotspot-password").value = "";
         break;
       }
-      case "update.list": await loadVersions(); break;
+      case "update.check": {
+        // Ask the registry now, then show its versions and the update notice again.
+        const u = await query(id);
+        if (u && u.error) message(`Check for newer versions: ${u.error}.`, "warn");
+        else if (u) message(u.available ? `${u.latest} is available.` : "No newer version.", "good");
+        await loadVersions();
+        pollUpdate();
+        break;
+      }
       case "update.download": case "update.install": {
         // The row shows a spinner until the job ends (watchJob clears it).
         const version = el.dataset.argVersion;

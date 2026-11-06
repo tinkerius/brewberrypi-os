@@ -155,7 +155,7 @@ Every command of the user manual's command reference, plus the ones its other se
 | Screen | Catalogue ids → CLI | Notes |
 |---|---|---|
 | Overview | `update.status` (with its *Update* row, ADR-0007), `system.info` + `maint.status` (one card, *OS*), `wifi.status` | `system.info` is new (§5.4): replaces `cat /etc/brewberry-release` and adds hostname, addresses, uptime, `/data` usage |
-| App versions | `update.list`, `update.download <version>`, `update.install <version>`, `update.remove <version>`, `update.rollback`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi`. The list marks the versions on the Pi; a row offers Download (only in the registry), Install (on the Pi) or Remove (on the Pi, neither active nor previous), with a spinner while a download or install runs (ADR-0001, amended 2026-10-20). The update notice (ADR-0007, §15) adds a card at the top with Download or Install of the offered version |
+| App versions | `update.list` (loaded with the screen: the registry's versions as of the last check, no network), `update.check` (*Check for newer versions*), `update.download <version>`, `update.install <version>`, `update.remove <version>`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi`. No *roll back* (removed 2026-11-06): an older version is installed from the list like any other. The list marks the versions on the Pi; a row offers Download (only in the registry), Install (on the Pi) or Remove (on the Pi, neither active nor previous), with a spinner while a download or install runs (ADR-0001, amended 2026-10-20). The update notice (ADR-0007, §15) adds a card at the top with Download or Install of the offered version |
 | Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
 | OS update | `maint.on`, `maint.off`, `maint.upgrade` | `upgrade` is new (§5.4): replaces `apt update && apt full-upgrade`; only in maintenance mode |
 | Wi-Fi | `wifi.status`, `wifi.scan`, `wifi.add <ssid>`, `wifi.forget <ssid>`, `wifi.country <code>`, `wifi.hotspot-password` | OS11 (§14); `wifi.status` is on the overview too |
@@ -215,14 +215,14 @@ Every action marked `confirm` in the catalogue follows one protocol, in the CLI:
 The web interface calls the command without `--yes`, shows the returned prompt in a dialog, and on
 **Confirm** calls it again with `--yes`. It is a warning, never a refusal, on both sides.
 
-This applies to `update install|rollback|demo|restart` and `maint on|off|upgrade`. A config import restarts nothing (the app reads `config.json` at start
+This applies to `update install|demo|restart` and `maint on|off|upgrade`. A config import restarts nothing (the app reads `config.json` at start
 and its recipes whenever they change), so it doesn't ask; after a new `config.json` it ends with
 the hint to restart the app. `brewberry-wifi forget` asks
 only for the network the Pi is connected to, and without the brew warning (`confirm --no-brew`):
 it drops the browser's connection, not the app. A confirmed action that is not a job gets `--yes`
 from the helper the same way.
 
-**Behaviour change:** `brewberry-update install`, `rollback` and `demo`
+**Behaviour change:** `brewberry-update install` and `demo`
 now ask for confirmation, as `brewberry-maint` already does. Scripts and
 `tests/hardware/os4-check.sh` pass `--yes`.
 
@@ -438,7 +438,7 @@ over it.
 
 [ADR-0007](adr/0007-first-install-and-update-notice.md). `brewberry-update status --json` has
 `update: {latest, available, onPi, firstInstall, checked, tried, error}`, from the last registry answer
-(`/data/update/tags.json`, written by `brewberry-update list`, which `brewberry-update-check.timer`
+(`/data/update/tags.json`, written by `brewberry-update check`, which `brewberry-update-check.timer`
 runs every 6 hours, and at every run while no app is installed). The CLI decides which version is
 offered and whether it is newer; the page only shows it:
 
@@ -452,9 +452,8 @@ offered and whether it is newer; the page only shows it:
 - **Overview**, card *App*: a row *Update* (available, up to date, or why the last check failed).
 
 The page reads `update.status` when a screen loads and every 5 minutes while logged in, without a
-message when the Pi doesn't answer. No new catalogue entry: the check is `update.list` (*Check the
-registry*), and its log `system.logs update`.
+message when the Pi doesn't answer. *App versions* shows `update.list` at once (no registry request;
+`data-load`, which the parity test counts like `data-cmd`); *Check for newer versions* runs
+`update.check` and loads the list again. The log is `system.logs update`.
 
-The registry is public (ADR-0007), so there is no registry login: the catalogue entry `update.login`,
-the *Registry access* card and `brewberry-update login` were removed, and `brewberry-update-check`
-deletes a token an earlier version stored (`/data/secrets/auth.json`).
+The registry is public (ADR-0007), so there is no registry login and no token anywhere on the Pi.

@@ -221,8 +221,8 @@ By hand, in a browser on another machine (`http://brewberrypi.local:8081/`):
 
 1. The login page shows the user `brewberry`; `pi` logs in and the default-password reminder
    shows until the password is changed.
-2. Every page loads; every button of the user manual's command reference works: **Check the
-   registry** and **Install**, **Roll back**, **Demo mode on/off**,
+2. Every page loads; every button of the user manual's command reference works: **Check for newer
+   versions**, **Download** and **Install** of a version, **Demo mode on/off**,
    **Restart the app**, **Download** and **Import**
    of the configuration, **Logs**, and the three **OS update** steps (OS6; the page reconnects after
    each reboot).
@@ -361,7 +361,7 @@ a way to publish a newer one (or use the OS4 test images in a public test reposi
    ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os14-check.sh
    ```
 
-5. Install an older version by hand (**App versions**), then click **Check the registry**: the top
+5. Install an older version by hand (**App versions**), then click **Check for newer versions**: the top
    bar shows *Update: <newest>*, the tab has a dot, and the card at the top of **App versions**
    offers **Download**, then **Install**; `sudo brewberry-update status` has the line
    `update: <newest> is available`. Install it from the card: the notice goes away.

@@ -309,6 +309,17 @@ class WebTest(unittest.TestCase):
         # The registry is public (ADR-0007): there is no token to store, from the browser either.
         self.assertEqual(self.api("POST", "/api/run/update.login", {"args": {"username": "x"}, "stdin": "ghp_secret"})[0], 404)
 
+    def test_check_for_newer_versions_and_no_roll_back(self):
+        # The list shows without asking the registry; the button asks it (update.check). There is
+        # no roll back: an older version is installed from the list (ADR-0007).
+        self.assertEqual(self.api("GET", "/api/run/update.check")[0], 200)
+        self.assertIn("brewberry-update check --json", self.log())
+        self.assertEqual(self.api("POST", "/api/run/update.rollback", {"yes": True})[0], 404)
+        with open(os.path.join(WEB, "index.html"), encoding="utf-8") as f:
+            page = f.read()
+        self.assertIn('data-load="update.list"', page)
+        self.assertNotIn("update.rollback", page)
+
     def test_wifi_password_on_stdin_empty_for_an_open_network(self):
         status, data = self.api("POST", "/api/run/wifi.add", {"args": {"ssid": "Mein WLAN"}, "stdin": "secret pass"})
         self.assertEqual((status, data["stderr"]), (200, "saved Mein WLAN\n"))

@@ -58,7 +58,7 @@ The Pi switches a **mains-powered heater**. These hold for every change, tests i
 | `tests/integration/signing.sh` | Signature policy against a local registry with cosign v2 |
 | `tests/hardware/` | On-device checks, the milestones' "done when" (see its README) |
 | `docs/adr/` | Decisions; copy `0000-template.md` for a new one |
-| `docs/implementation-plan.md` | Milestones OS0–OS11 |
+| `docs/implementation-plan.md` | Milestones OS0–OS14 |
 | `docs/device-web-ui.md` | Design of the device web interface (ADR-0002) |
 
 The layers, in the order the base config lists them:
@@ -70,7 +70,7 @@ The layers, in the order the base config lists them:
 | `brewberry-readonly` | `data.mount`, first-boot grow/layout/seal, volatile journal, `brewberry-maint`, apt guard while sealed |
 | `brewberry-safety` | `config.txt` safety block, `brewberrypi-outputs-off`, `RuntimeWatchdogSec` |
 | `brewberry-podman` | Podman on `/data`, the group `brewberry-config`, the Quadlet unit `brewberrypi.container` (`/data/config/app` read-write at `/config`), `brewberrypi-port80` (port 80 forwarded to the app, ADR-0006), gpiochip udev rule, `brewberry-firstload` |
-| `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode` |
+| `brewberry-update` | `policy.json`, pinned keys, `brewberry-update`, `brewberry-config`, `brewberry-system`, `brewberrypi-safemode`, `brewberry-update-check` + its timer (update check every 6 h, first install while no app is installed, ADR-0007) |
 | `brewberry-imager` | cloud-init for Imager's `cloudinit-rpi` customisation; disabled after first boot |
 | `brewberry-web` | Device web interface on port 8081 (server, root helper, command catalogue, the brand files in `static/`), the account password `pi`, `brewberry-passwd` (passwords kept on `/data`) |
 | `brewberry-share` | Samba file share of `/data/config` with its folders `app` and `os` (ADR-0003, ADR-0005), `brewberry` in the group `brewberry-config`: `smb.conf` (always on), `brewberry-share-sync` (smbd's start check and the PAM hook that keeps the share's password in step with `brewberry`'s), mDNS `_smb._tcp` |
@@ -120,7 +120,7 @@ The output is `deploy/<image>-<version>.img.xz` plus a `.sha256`. The version is
 | Variable | Effect |
 |---|---|
 | `BREWBERRY_SSH_PUBKEY` | Key for the `brewberry` user built into the image. Optional when you flash through the manifest and set a key in Imager; without either, you can't log in. |
-| `BREWBERRY_APP_VERSION` | Preload this app version (`1.2.3` or a pre-release `1.2.3-alpha.N`) instead of the stub. `scripts/fetch-app.sh` fetches it from `ghcr.io/tinkerius/brewberrypi-app` and refuses it unless it is signed with the pinned key and labelled contract 1 and that version. Log in first: `skopeo login ghcr.io`. |
+| `BREWBERRY_APP_VERSION` | Preload this app version (`1.2.3` or a pre-release `1.2.3-alpha.N`) instead of the stub. `scripts/fetch-app.sh` fetches it from `ghcr.io/tinkerius/brewberrypi-app` and refuses it unless it is signed with the pinned key and labelled contract 2 and that version. The package is public: no login. |
 | `BREWBERRY_OS_VERSION` | OS version for the image name and `/etc/brewberry-release` (default: `git describe --tags`). CI sets it to the tag of a release build. |
 | `BREWBERRY_PRELOAD` | Preload this local `dir:` image instead (`podman save --format docker-dir`). Not verified; development only. |
 | `STUB_VERSION`, `STUB_START` | For `build-stub.sh`: the stub's version (default `placeholder`) and start mode (`ok`, `crash`, `hwfail`, `config`, `hang`) |
@@ -319,7 +319,6 @@ Repository settings the build reads (Settings → Secrets and variables → Acti
 |---|---|---|
 | `BREWBERRY_SSH_PUBKEY` | Variable | Key built into CI images (optional; warns when unset) |
 | `BREWBERRY_APP_VERSION` | Variable | Preload this app release instead of the stub |
-| `BREWBERRY_GHCR_TOKEN` | Secret | Classic PAT with `read:packages` for the app's private package. Alternatively, grant this repository access in the package's *Manage Actions access*. |
 
 CI keeps no image artifacts. To try a branch on a Pi, build it locally, or merge it and tag a
 pre-release (`v1.2.3-alpha.N`, see [releasing.md](releasing.md)).

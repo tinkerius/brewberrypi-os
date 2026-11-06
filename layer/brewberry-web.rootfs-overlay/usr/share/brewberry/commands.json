@@ -11,6 +11,10 @@
       "argv": ["brewberry-update", "list"], "kind": "query", "timeout": 120
     },
     {
+      "id": "update.check", "title": "Check for newer versions", "screen": "versions",
+      "argv": ["brewberry-update", "check"], "kind": "query", "timeout": 120
+    },
+    {
       "id": "update.download", "title": "Download", "screen": "versions",
       "argv": ["brewberry-update", "download", "{version}"],
       "args": { "version": "^[0-9]+\\.[0-9]+\\.[0-9]+(-(alpha|beta|rc)\\.[0-9]+)?$" },
@@ -29,10 +33,6 @@
       "kind": "action", "confirm": true, "job": true
     },
     {
-      "id": "update.rollback", "title": "Roll back", "screen": "versions",
-      "argv": ["brewberry-update", "rollback"], "kind": "action", "confirm": true, "job": true
-    },
-    {
       "id": "update.demo", "title": "Demo mode", "screen": "versions",
       "argv": ["brewberry-update", "demo", "{mode}"], "args": { "mode": "^(on|off)$" },
       "kind": "action", "confirm": true, "job": true
@@ -40,12 +40,6 @@
     {
       "id": "update.restart", "title": "Restart the app", "screen": "versions",
       "argv": ["brewberry-update", "restart"], "kind": "action", "confirm": true, "job": true
-    },
-    {
-      "id": "update.login", "title": "Registry login", "screen": "versions",
-      "argv": ["brewberry-update", "login", "--username", "{username}", "--password-stdin"],
-      "args": { "username": "^[A-Za-z0-9-]{1,39}$" }, "stdin": "token",
-      "kind": "action", "timeout": 60
     },
     {
       "id": "config.show", "title": "Configuration", "screen": "config",
@@ -82,7 +76,7 @@
     {
       "id": "system.logs", "title": "Logs", "screen": "logs",
       "argv": ["brewberry-system", "logs", "{name}"],
-      "args": { "name": "^(app|safemode|firstload|outputs-off|web|share|wifi)$" }, "kind": "query"
+      "args": { "name": "^(app|safemode|firstload|update|outputs-off|web|share|wifi)$" }, "kind": "query"
     },
     {
       "id": "wifi.status", "title": "Wi-Fi", "screen": "wifi",

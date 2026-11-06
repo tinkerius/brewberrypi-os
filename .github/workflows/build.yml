@@ -127,17 +127,11 @@ jobs:
           sudo "$RPI_IMAGE_GEN_DIR/install_deps.sh"
 
       # With the repository variable BREWBERRY_APP_VERSION (1.2.3 or 1.2.3-alpha.N), the image
-      # preloads that app release instead of the contract stub (OS8). The token
-      # needs read access to the app's package: the secret BREWBERRY_GHCR_TOKEN
-      # (classic PAT, read:packages), or GITHUB_TOKEN once this repository is
-      # granted access in the package's settings (Manage Actions access).
-      - name: Log in to GHCR for the app preload
+      # preloads that app release instead of the contract stub (OS8). The app's package is
+      # public (ADR-0007), so scripts/fetch-app.sh needs no login.
+      - name: Install skopeo for the app preload
         if: vars.BREWBERRY_APP_VERSION != ''
-        env:
-          TOKEN: ${{ secrets.BREWBERRY_GHCR_TOKEN || github.token }}
-        run: |
-          sudo apt-get install -y --no-install-recommends skopeo jq
-          echo "$TOKEN" | skopeo login ghcr.io -u "${{ github.actor }}" --password-stdin
+        run: sudo apt-get install -y --no-install-recommends skopeo jq
 
       - name: Build image
         env:

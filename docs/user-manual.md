@@ -31,8 +31,9 @@ BrewberryPi OS is built to behave like a games console:
 - **The system is read-only.** Only the data partition, `/data`, keeps changes. Anything you
   change anywhere else is gone after the next reboot.
 - **The app runs as a container.** It is signed, and the Pi only runs versions signed with the
-  app's key. You choose the version on the device. A version that fails to start is rolled back
-  automatically.
+  app's key. A fresh Pi **installs the newest app version by itself** once it is online. After
+  that, the Pi tells you when a newer version is out, and you choose when to install it. A version
+  that fails to start is rolled back automatically.
 - **The relays end up off** every time the app stops, whether it exits, crashes, hangs or the
   power is cut.
 - **Two web pages:** the app's own UI for brewing at `http://<hostname>.local/` (also on port
@@ -53,8 +54,8 @@ What is kept where:
 |---|---|
 | App configuration and recipes (`/data/config/app`), Wi-Fi settings (`/data/config/os`) | Logs (`journalctl`) |
 | The installed app versions (active and previous) | Files in home directories |
-| The registry token and changed passwords (`/data/secrets`) | Changes to system files or packages |
-| Update state and the version list (`/data/update`) | |
+| Changed passwords (`/data/secrets`) | Changes to system files or packages |
+| Update state, the version list and the last update check (`/data/update`) | |
 
 Reflashing the SD card erases everything, `/data` included.
 
@@ -119,10 +120,14 @@ be set up afterwards, [Wi-Fi](#wi-fi)).
 Put the card in the Pi, connect the network and power it on. On the first boot the Pi:
 
 1. applies the Imager settings;
-2. grows the data partition to fill the card and loads the app;
+2. grows the data partition to fill the card and loads the placeholder app;
 3. locks the system down to read-only and **reboots once by itself**.
 
 This takes a few minutes. **Don't pull the plug during the first boot.**
+
+Once the Pi is online (after the first boot, or once you've chosen its Wi-Fi), it downloads the
+newest app version and installs it by itself; until then `http://<hostname>.local/` shows the
+placeholder's page. See [App versions](#6-app-versions).
 
 To change the hostname later, reflash the card. Save your configuration first
 ([Backing up the configuration](#backing-up-the-configuration)). Wi-Fi is changed on the Pi itself.
@@ -209,8 +214,7 @@ Actions that restart the app or reboot the Pi ask first, and warn when a brew is
 Long actions (an install, an OS update) keep running when you close the page; open it again to see
 how they ended.
 
-The page uses plain HTTP, like the app: passwords and the registry token cross your network
-unencrypted. Use it only on your own network. If `.local` names don't work, use the Pi's IP address
+The page uses plain HTTP, like the app: passwords cross your network unencrypted. Use it only on your own network. If `.local` names don't work, use the Pi's IP address
 from your router: `http://192.168.1.23:8081/`.
 
 ### Over SSH
@@ -234,7 +238,7 @@ systemctl status brewberrypi           # the app service
 Every command in this manual that changes something needs `sudo`. The admin user doesn't need a
 password for it.
 
-Commands that restart the app or reboot the Pi (`install`, `rollback`, `demo`, `restart`,
+Commands that restart the app or reboot the Pi (`install`, `demo`, `restart`,
 `brewberry-maint on|upgrade|off`) ask you to type `yes`, and warn first when a brew is loaded or
 running, because they end it. Add `--yes` to skip the question in scripts. Without a terminal and
 without `--yes`, they print what they would do and exit with code 10, changing nothing. Queries
@@ -384,49 +388,67 @@ mode:
 ## 6. App versions
 
 The Pi runs one app version, the *active* one, and keeps the one before it, the *previous* one,
-to roll back to. Other versions are **downloaded** onto the Pi first and then **installed**;
-downloads stay until you remove them. App versions come from the private registry `ghcr.io/tinkerius/brewberrypi-app` and
-must be signed with the app's key. Unsigned or wrongly signed images are refused.
+for safe mode. Other versions are **downloaded** onto the Pi first and then **installed**;
+downloads stay until you remove them. App versions come from the public registry
+`ghcr.io/tinkerius/brewberrypi-app`, so the Pi needs no account or token, only internet. Every version
+must be signed with the app's key; unsigned or wrongly signed images are refused.
 
 Pick versions in the device web interface under **App versions**, or with the commands below over
 SSH. Both do exactly the same.
 
+### The first install happens by itself
+
 Until an app version is installed, the Pi runs a placeholder (the *contract stub*) that comes with
 the image. `http://<hostname>.local/` then shows a page saying that the app isn't installed
-yet, with these steps. The placeholder never switches the outputs. Its `/healthz` reports the version `placeholder`, and
+yet. The placeholder never switches the outputs. Its `/healthz` reports the version `placeholder`, and
 `brewberry-update status` (and the web interface) show *placeholder (no app installed)*.
 
-### Give the Pi access to the registry (once)
+Once the first boot is done (the Pi has rebooted once by itself), it asks the registry 2 minutes
+after starting and then every 15 minutes. As soon as it answers, the Pi downloads the newest
+version and installs it, with the same checks, 60-second watch and rollback as an install by
+hand. The placeholder keeps running until the switch. Which version:
 
-1. On GitHub, open **Settings → Developer settings → Personal access tokens → Tokens (classic) →
-   Generate new token (classic)**.
-2. Tick only the **`read:packages`** scope. Choose an expiry date and note it down.
-3. In the device web interface: **App versions → Registry access**, your GitHub user name and the
-   token. Or over SSH:
+- the newest release (`1.2.3`);
+- while there is no release yet, the newest pre-release (`1.2.3-alpha.1`).
 
-   ```sh
-   sudo brewberry-update login
-   ```
+The device web interface shows *Installing the app 1.2.3* at the top of every page, and its
+progress under **App versions**; the log is **Logs → Update check and first install**
+(`sudo brewberry-system logs update`). If the version fails 3 times, the Pi stops trying it and
+keeps the placeholder until a newer version is released; install one by hand then. The Pi never
+installs anything by itself once an app version has been installed, also not after safe mode fell
+back to the placeholder.
 
-   Enter your GitHub user name, and the token as the password.
+### Update notice
 
-The token is stored in `/data/secrets/auth.json`, readable by root only. The app container never
-sees it. When the token expires, create a new one and run `login` again.
+Once an app is installed, the Pi asks the registry for its versions **every 6 hours** (and whenever
+you click **Check for newer versions**). When there is a newer version, the device web interface shows:
 
-### List, download, install, roll back
+- *Update: 1.2.3* at the top of every page, and a dot on **App versions**;
+- at the top of **App versions**: the version you have and the new one, with **Download 1.2.3**,
+  then **Install 1.2.3** once it is on the Pi.
+
+Over SSH, `sudo brewberry-update status` has a line `update: 1.2.3 is available`. The Pi never
+installs an update by itself, because installing restarts the app and ends a brew: install it when
+no brew is running.
+
+Which versions are offered depends on what you run: on a release, only newer releases; on a
+pre-release, newer pre-releases too (you opted in by installing one), until you install a release.
+
+### List, download, install
 
 ```sh
-sudo brewberry-update list             # the registry's versions, newest first; the Pi's are marked
+sudo brewberry-update list             # the registry's versions (as of the last check), newest first; the Pi's are marked
+sudo brewberry-update check            # ask the registry now for newer versions
 sudo brewberry-update download 1.2.3   # download 1.2.3 onto the Pi (nothing switches yet)
-sudo brewberry-update install 1.2.3    # switch to the downloaded 1.2.3
+sudo brewberry-update install 1.2.3    # switch to the downloaded 1.2.3 (also an older version)
 sudo brewberry-update remove 1.2.2     # delete a downloaded version again
 sudo brewberry-update status           # active and previous version, result of the last action
-sudo brewberry-update rollback         # switch back to the previous version
 sudo brewberry-update restart          # restart the app, for example after a config change
 ```
 
-In the device web interface, **App versions** lists every version: the registry's and the ones on
-the Pi, marked *on the Pi* with their size (and *active* or *previous*). Next to each:
+In the device web interface, **App versions** lists every version as soon as the page opens: the
+registry's (as of the last check, every 6 hours) and the ones on the Pi, marked *on the Pi* with
+their size (and *active* or *previous*). Next to each:
 
 - **Download** for a version that is only in the registry. A spinner shows while it downloads;
   that can take a few minutes on a Pi 3. The app keeps running.
@@ -434,9 +456,12 @@ the Pi, marked *on the Pi* with their size (and *active* or *previous*). Next to
 - **Remove** for a downloaded version that is neither active nor previous. The active and the
   previous version are always kept.
 
-**Check the registry** loads the list again. Without internet or a registry token the page still
-lists the versions on the Pi, so you can switch between them offline. **Roll back** and **Restart
-the app** are on the same page.
+**Check for newer versions** asks the registry now and updates the list. Without internet the page
+still lists the versions on the Pi, so you can switch between them offline. **Restart the app** is
+on the same page.
+
+**Going back to an older version:** there is no separate *roll back*. Install the older version from
+the list like any other: the previous one is always on the Pi, older ones once downloaded.
 
 Downloads take space on `/data` (about 250 MB each; the page shows what is free). Remove the ones
 you no longer need.
@@ -521,7 +546,7 @@ because an update removed the BrewberryPi block from `/boot/firmware/config.txt`
 [docs/os-update.md](os-update.md#steps). That page also covers power cuts during an update.
 
 Alternatively, flash a newer BrewberryPi OS release. That erases `/data`, so back up the
-configuration first, and run `brewberry-update login` again afterwards.
+configuration first; the newest app installs itself again.
 
 ## 8. Troubleshooting
 
@@ -531,7 +556,8 @@ device web interface under **Logs**, or over SSH:
 ```sh
 sudo brewberry-system logs app                  # the app
 sudo brewberry-system logs safemode             # safe mode
-sudo brewberry-system logs firstload            # loading the app on first boot
+sudo brewberry-system logs firstload            # loading the placeholder on first boot
+sudo brewberry-system logs update               # the update check and the first install
 sudo brewberry-system logs web                  # the device web interface and its actions
 sudo brewberry-system logs share                # the file share
 sudo brewberry-system logs wifi                 # Wi-Fi and the hotspot
@@ -588,7 +614,7 @@ on the network.
    sudo brewberry-update restart
    ```
 
-3. Otherwise the version itself is broken. Install a working version, or roll back:
+3. Otherwise the version itself is broken. Install a working version, for example the previous one:
 
    ```sh
    sudo brewberry-update download 1.2.2   # if it isn't on the Pi yet
@@ -623,10 +649,16 @@ limit of 4 starts in 10 minutes too.
 - Very old systems (Windows 7, SMB 1 or 2 only) can't connect: the share speaks SMB 3 only.
 - More: `sudo brewberry-system logs share`.
 
-### `brewberry-update` says "no registry token" or the login fails
+### The app doesn't install itself
 
-Run `sudo brewberry-update login` with a token that has the `read:packages` scope and hasn't
-expired. After a reflash the token is gone, so log in again.
+1. Is the Pi online? **Overview → Wi-Fi**, or `sudo brewberry-wifi status`.
+2. Look at **App versions** (or `sudo brewberry-update status`): the *Update* line says when the
+   registry was last asked and why it failed; *Last action* shows a failed download or install.
+3. The log: **Logs → Update check and first install** (`sudo brewberry-system logs update`).
+   Nothing happens during the first boot, nor in maintenance mode: the check runs only on the
+   sealed system.
+4. A version that failed 3 times isn't tried again until a newer one is out: install another
+   version by hand ([List, download, install](#list-download-install)).
 
 ### An install says the signature was rejected
 
@@ -660,13 +692,12 @@ All commands run as root (`sudo`). The device web interface offers each of them
 
 | Command | What it does |
 |---|---|
-| `brewberry-update login` | Store the registry token (`--username <user> --password-stdin` without a prompt) |
-| `brewberry-update list` | Available app versions (releases and pre-releases), newest first, and the ones on the Pi |
+| `brewberry-update list` | Available app versions (releases and pre-releases) as of the last check, newest first, and the ones on the Pi |
+| `brewberry-update check` | Ask the registry now for newer versions (also every 6 hours by itself) |
 | `brewberry-update download <version>` | Download a version onto the Pi (signature checked); nothing switches |
 | `brewberry-update remove <version>` | Delete a downloaded version (never the active or previous one) |
 | `brewberry-update install <version>` | Switch to a downloaded version; rolls back if it fails |
-| `brewberry-update rollback` | Switch back to the previous version |
-| `brewberry-update status` | Active and previous version, last result, safe mode, demo mode |
+| `brewberry-update status` | Active and previous version, last result, safe mode, an available update, demo mode |
 | `brewberry-update demo on\|off` | Run the app with a simulated kettle (no GPIO), or normally |
 | `brewberry-update restart` | Restart the app (ends a running brew), also after a configuration error |
 | `brewberry-config show` | The configuration the app reads, and its recipes |
@@ -677,7 +708,7 @@ All commands run as root (`sudo`). The device web interface offers each of them
 | `brewberry-maint upgrade` | In maintenance mode: `apt update` and `apt full-upgrade` |
 | `brewberry-maint off` | Seal the system again (reboots) |
 | `brewberry-system info` | OS version, board, hostname, addresses, uptime, `/data` usage |
-| `brewberry-system logs <name>` | This boot's log: `app`, `safemode`, `firstload`, `outputs-off`, `web`, `share` or `wifi` |
+| `brewberry-system logs <name>` | This boot's log: `app`, `safemode`, `firstload`, `update`, `outputs-off`, `web`, `share` or `wifi` |
 | `brewberry-wifi status` | Wi-Fi connection, hotspot, configured networks and the last try |
 | `brewberry-wifi scan` | Wi-Fi networks in range (while the hotspot is up: the last ones seen) |
 | `brewberry-wifi add <ssid>` | Add or change a network; the password on stdin or at the prompt (empty: an open network) |

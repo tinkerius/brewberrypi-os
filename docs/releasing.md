@@ -37,12 +37,12 @@ git push origin v0.1.0-alpha.1
 
 1. `main` is green in CI, and everything for the release is merged.
 2. Decide what the image preloads:
-   - **Contract stub** (default): leave the repository variable `BREWBERRY_APP_VERSION` empty.
+   - **Contract stub** (default): leave the repository variable `BREWBERRY_APP_VERSION` empty. The
+     Pi installs the newest app by itself once it is online (ADR-0007).
    - **App release:** set `BREWBERRY_APP_VERSION` to the app version (`1.2.3` or `1.2.3-alpha.N`) (Settings → Secrets and variables →
-     Actions → Variables), and make sure CI can read the app's package: the secret
-     `BREWBERRY_GHCR_TOKEN` (classic PAT, `read:packages`), or this repository under the
-     package's *Manage Actions access*. The build refuses an app image that isn't signed with the
-     pinned key or whose labels don't say contract 2 and that version.
+     Actions → Variables). The app's package is public, so CI needs no token. The build refuses an
+     app image that isn't signed with the pinned key or whose labels don't say contract 2 and that
+     version.
 3. Decide whether to build an SSH key in (`BREWBERRY_SSH_PUBKEY`). For a public release, leave it
    empty: users add their own key in Imager's customisation.
 4. Check that `keys/app-cosign.pub` still equals the app repository's `deploy/signing/cosign.pub`.
@@ -113,7 +113,7 @@ Don't delete the release or move its tag; devices and manifests refer to them. M
 as broken in its notes, fix the problem on `main` and release the next patch version.
 
 There is no over-the-air update to a new OS release. Our layers, units and keys reach a device
-only through a **reflash**, which erases `/data` (config, app images, registry token); the
+only through a **reflash**, which erases `/data` (config, app images); the
 release notes must say what users need to back up and redo (see the
 [user manual](user-manual.md)). Maintenance mode ([os-update.md](os-update.md)) only applies
 Debian and Raspberry Pi OS package updates, and app versions are updated separately with

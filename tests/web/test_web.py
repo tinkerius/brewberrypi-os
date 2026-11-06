@@ -33,11 +33,10 @@ echo "$(basename "$0") $*" >> "$FAKE/log"
 args=" $* "
 yes=0; case $args in *" --yes "*) yes=1 ;; esac
 case "$(basename "$0") $1" in
-   "brewberry-update status") echo '{"active": {"version": "0.3.0", "id": "abc"}, "previous": null, "service": "active", "engine": "NoProcess", "last": null, "safemode": null, "demo": false}' ;;
+   "brewberry-update status") echo '{"active": {"version": "0.3.0", "id": "abc"}, "previous": null, "service": "active", "engine": "NoProcess", "last": null, "safemode": null, "demo": false, "update": {"latest": "0.4.0", "available": true, "onPi": false, "firstInstall": false, "checked": "2026-10-30T08:00:00Z", "tried": "2026-10-30T08:00:00Z", "error": null}}' ;;
    "brewberry-update install" | "brewberry-update demo" | "brewberry-maint on")
       if [ $yes = 0 ]; then echo '{"confirm": "This installs '"$2"' and restarts the app."}'; exit 10; fi
       echo "working on $2"; sleep "${FAKE_SLEEP:-0}"; echo "done" ;;
-   "brewberry-update login") cat > "$FAKE/token"; echo "Login Succeeded!" >&2 ;;
    "brewberry-config show") echo '{"config": {}, "files": ["config.json"], "recipes": null}' ;;
    "brewberry-config import") (cd "$2" 2>/dev/null && find . -type f | sort || echo "file:$(basename "$2")") >> "$FAKE/imported"; echo "imported" >&2 ;;
    "brewberry-config export") printf 'TARDATA' ;;
@@ -246,6 +245,15 @@ class WebTest(unittest.TestCase):
         self.assertEqual((status, data["output"]["active"]["version"]), (200, "0.3.0"))
         self.assertIn("brewberry-update status --json", self.log())
 
+    def test_update_notice_comes_from_the_cli(self):
+        # The page shows what brewberry-update status reports (ADR-0007); it decides nothing itself.
+        status, data = self.api("GET", "/api/run/update.status")
+        self.assertEqual((status, data["output"]["update"]["latest"], data["output"]["update"]["available"]), (200, "0.4.0", True))
+        with open(os.path.join(WEB, "index.html"), encoding="utf-8") as f:
+            page = f.read()
+        for marker in ('id="update-pill" href="#versions"', 'id="update-dot"', 'id="ver-update"', "u.available"):
+            self.assertIn(marker, page)
+
     def test_query_argument_checked(self):
         status, data = self.api("GET", "/api/run/system.logs?name=app")
         self.assertEqual((status, data["output"]["lines"]), (200, ["one"]))
@@ -297,13 +305,20 @@ class WebTest(unittest.TestCase):
         finally:
             self.helper_server.RequestHandlerClass = make_helper_handler(self.env)
 
-    def test_registry_login_token_on_stdin(self):
-        status, data = self.api("POST", "/api/run/update.login", {"args": {"username": "tinkerius"}, "stdin": "ghp_secret"})
-        self.assertEqual(status, 200)
-        with open(os.path.join(self.fake, "token")) as f:
-            self.assertEqual(f.read(), "ghp_secret\n")
-        self.assertIn("brewberry-update login --username tinkerius --password-stdin", self.log())
-        self.assertNotIn("ghp_secret", self.log())
+    def test_no_registry_login(self):
+        # The registry is public (ADR-0007): there is no token to store, from the browser either.
+        self.assertEqual(self.api("POST", "/api/run/update.login", {"args": {"username": "x"}, "stdin": "ghp_secret"})[0], 404)
+
+    def test_check_for_newer_versions_and_no_roll_back(self):
+        # The list shows without asking the registry; the button asks it (update.check). There is
+        # no roll back: an older version is installed from the list (ADR-0007).
+        self.assertEqual(self.api("GET", "/api/run/update.check")[0], 200)
+        self.assertIn("brewberry-update check --json", self.log())
+        self.assertEqual(self.api("POST", "/api/run/update.rollback", {"yes": True})[0], 404)
+        with open(os.path.join(WEB, "index.html"), encoding="utf-8") as f:
+            page = f.read()
+        self.assertIn('data-load="update.list"', page)
+        self.assertNotIn("update.rollback", page)
 
     def test_wifi_password_on_stdin_empty_for_an_open_network(self):
         status, data = self.api("POST", "/api/run/wifi.add", {"args": {"ssid": "Mein WLAN"}, "stdin": "secret pass"})
@@ -315,8 +330,6 @@ class WebTest(unittest.TestCase):
         self.assertEqual(status, 200)
         with open(os.path.join(self.fake, "wifi-password")) as f:
             self.assertEqual(f.read(), "")
-        # Other commands still need their secret.
-        self.assertEqual(self.api("POST", "/api/run/update.login", {"args": {"username": "x"}, "stdin": ""})[0], 400)
 
     def test_wifi_names_checked_before_the_cli(self):
         before = self.log()

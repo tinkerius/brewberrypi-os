@@ -56,5 +56,5 @@ The same window is used for changes to the real root or the boot partition. One 
 - **Power cut during `off`:** the next boot finishes sealing by itself (`brewberry-seal.service`).
 - **Power cut during `apt`:** the root filesystem may need repair (fsck runs at boot). If the Pi
   does not boot, reflash it. Reflashing overwrites the whole card, **`/data` included** (config,
-  app images, registry token). Keep a copy of your config (`brewberry-config export`) to
-  import afterwards, and run `brewberry-update login` again.
+  app images). Keep a copy of your config (`brewberry-config export`) to
+  import afterwards; the newest app installs itself again.

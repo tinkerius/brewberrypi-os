@@ -21,6 +21,7 @@ How to use it: [user manual](user-manual.md#4-logging-in). How to add a command:
 12. [Tests](#12-tests)
 13. [What does not change](#13-what-does-not-change)
 14. [Wi-Fi setup and the captive portal (OS11)](#14-wi-fi-setup-and-the-captive-portal-os11)
+15. [Update notice (OS14)](#15-update-notice-os14)
 
 ## 1. Goal and requirements
 
@@ -90,7 +91,7 @@ flowchart LR
 **Why two processes:** the HTTP server faces the LAN and parses untrusted input, so it has no
 privileges. The root side accepts only commands that are in the catalogue, with arguments that
 match the catalogue's patterns. A compromised web process can at most run catalogue commands, as
-a logged-in user can; it cannot get a root shell, read the registry token or write files.
+a logged-in user can; it cannot get a root shell or write files.
 
 **Why not other options** (see [ADR-0002](adr/0002-device-web-interface.md)): a web server running
 as root would expose the HTTP parser with full privileges; `sudo` rules are blocked by
@@ -142,7 +143,7 @@ test (§10) checks the CLIs and the user manual against it.
 Fields: `id`; `title`; `screen`; `argv` with `{placeholders}`; `args` with an anchored pattern per
 placeholder; `kind` (`query` or `action`); `confirm` (asks first, §5.3); `job` (runs as a transient
 unit, §6); `reboots`; `timeout` (seconds, default 60); `stdin` (a secret passed on standard input,
-the registry token, Wi-Fi passwords); `stdinOptional` (an empty line is allowed: an open
+Wi-Fi passwords); `stdinOptional` (an empty line is allowed: an open
 network or hotspot); `upload` (`{upload}` becomes the uploaded files, §8); `download` (the file
 name of a query's raw output); `webOnly` with its CLI counterpart and a `reason`, for the declared
 exceptions.
@@ -153,13 +154,12 @@ Every command of the user manual's command reference, plus the ones its other se
 
 | Screen | Catalogue ids → CLI | Notes |
 |---|---|---|
-| Overview | `update.status`, `system.info` + `maint.status` (one card, *OS*), `wifi.status` | `system.info` is new (§5.4): replaces `cat /etc/brewberry-release` and adds hostname, addresses, uptime, `/data` usage |
-| App versions | `update.list`, `update.download <version>`, `update.install <version>`, `update.remove <version>`, `update.rollback`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi`. The list marks the versions on the Pi; a row offers Download (only in the registry), Install (on the Pi) or Remove (on the Pi, neither active nor previous), with a spinner while a download or install runs (ADR-0001, amended 2026-10-20) |
-| Registry | `update.login` | gets non-interactive input (§5.4) |
+| Overview | `update.status` (with its *Update* row, ADR-0007), `system.info` + `maint.status` (one card, *OS*), `wifi.status` | `system.info` is new (§5.4): replaces `cat /etc/brewberry-release` and adds hostname, addresses, uptime, `/data` usage |
+| App versions | `update.list` (loaded with the screen: the registry's versions as of the last check, no network), `update.check` (*Check for newer versions*), `update.download <version>`, `update.install <version>`, `update.remove <version>`, `update.demo on\|off`, `update.restart` | `restart` is new (§5.4): replaces `systemctl reset-failed` + `restart brewberrypi`. No *roll back* (removed 2026-11-06): an older version is installed from the list like any other. The list marks the versions on the Pi; a row offers Download (only in the registry), Install (on the Pi) or Remove (on the Pi, neither active nor previous), with a spinner while a download or install runs (ADR-0001, amended 2026-10-20). The update notice (ADR-0007, §15) adds a card at the top with Download or Install of the offered version |
 | Configuration | `config.show`, `config.import <upload>`, `config.export` | new CLI `brewberry-config` (§5.4): replaces the manual's SSH steps (`jq`, `cp`, `sync`, `mv`) and `scp -r` backup |
 | OS update | `maint.on`, `maint.off`, `maint.upgrade` | `upgrade` is new (§5.4): replaces `apt update && apt full-upgrade`; only in maintenance mode |
 | Wi-Fi | `wifi.status`, `wifi.scan`, `wifi.add <ssid>`, `wifi.forget <ssid>`, `wifi.country <code>`, `wifi.hotspot-password` | OS11 (§14); `wifi.status` is on the overview too |
-| Logs | `system.logs <app\|safemode\|firstload\|outputs-off\|web\|share\|wifi>` | new (§5.4): replaces the manual's `journalctl` lines |
+| Logs | `system.logs <app\|safemode\|firstload\|update\|outputs-off\|web\|share\|wifi>` | new (§5.4): replaces the manual's `journalctl` lines |
 | Account | `account.password` | `webOnly`: CLI counterpart is `passwd` |
 
 ## 5. CLI changes
@@ -187,7 +187,8 @@ status --json`:
   "engine":   "NoProcess",
   "last":     { "time": "…", "phase": "done", "version": "1.2.3", "message": "1.2.3 is active" },
   "safemode": null,
-  "demo":     false
+  "demo":     false,
+  "update":   { "latest": "1.3.0", "available": true, "onPi": false, "firstInstall": false, "checked": "…", "tried": "…", "error": null }
 }
 ```
 
@@ -214,14 +215,14 @@ Every action marked `confirm` in the catalogue follows one protocol, in the CLI:
 The web interface calls the command without `--yes`, shows the returned prompt in a dialog, and on
 **Confirm** calls it again with `--yes`. It is a warning, never a refusal, on both sides.
 
-This applies to `update install|rollback|demo|restart` and `maint on|off|upgrade`. A config import restarts nothing (the app reads `config.json` at start
+This applies to `update install|demo|restart` and `maint on|off|upgrade`. A config import restarts nothing (the app reads `config.json` at start
 and its recipes whenever they change), so it doesn't ask; after a new `config.json` it ends with
 the hint to restart the app. `brewberry-wifi forget` asks
 only for the network the Pi is connected to, and without the brew warning (`confirm --no-brew`):
 it drops the browser's connection, not the app. A confirmed action that is not a job gets `--yes`
 from the helper the same way.
 
-**Behaviour change:** `brewberry-update install`, `rollback` and `demo`
+**Behaviour change:** `brewberry-update install` and `demo`
 now ask for confirmation, as `brewberry-maint` already does. Scripts and
 `tests/hardware/os4-check.sh` pass `--yes`.
 
@@ -230,13 +231,12 @@ now ask for confirmation, as `brewberry-maint` already does. Scripts and
 | Command | Replaces in the manual | What it does |
 |---|---|---|
 | `brewberry-update restart` | `systemctl reset-failed brewberrypi; systemctl restart brewberrypi` | Restarts the app; reports a configuration error (exit 2/3) like `install` does |
-| `brewberry-update login --username <u> --password-stdin` | interactive `login` (still works) | Non-interactive form for the web interface; the token is read from stdin and never appears in an argument list or log |
 | `brewberry-config show` | `cat /data/config/app/config.json` | `config.json` and the recipe ids (`--json`) |
 | `brewberry-config import <source>` | the SSH steps in "Configuration → Over SSH" | A folder (`*.json`, `recipes/`), one `.json` file or an export `.tar.gz` (only plain files, no absolute or `..` paths): the checks, backup (in `/data/config/os/backup`) and atomic writes; recipes are replaced file by file inside `recipes/`, which the app watches (ADR-0005) |
 | `brewberry-config export` | `scp -r …:/data/config/app` | Writes a `.tar.gz` of `/data/config/app` to stdout |
 | `brewberry-maint upgrade` | `apt update && apt full-upgrade` | Refuses unless in maintenance mode; runs non-interactively (`-y`, keeps changed config files); logs to the job |
 | `brewberry-system info` | `cat /etc/brewberry-release` | OS release, hostname, addresses, uptime, `/data` usage |
-| `brewberry-system logs <name> [--lines N]` | the `journalctl -u … -b` lines in "Troubleshooting" | Current boot's journal of `app`, `safemode`, `firstload`, `outputs-off` or `web` |
+| `brewberry-system logs <name> [--lines N]` | the `journalctl -u … -b` lines in "Troubleshooting" | Current boot's journal of `app`, `safemode`, `firstload`, `update` (ADR-0007), `outputs-off`, `web`, `share` or `wifi` |
 
 `systemctl`, `journalctl` and `apt` keep working as before; the manual then shows the
 `brewberry-*` command first.
@@ -381,7 +381,7 @@ the web interface and the manual in one change.
 | A compromised web server | It runs unprivileged and can only send catalogue requests over the socket |
 | Weak default password | Reminder banner (WEB-07); SSH stays key-only by default |
 | Downgrades | Allowed, as on the CLI: only signed versions install, and only logged-in users can ask. This answers ADR-0001's open question for the web interface. |
-| **Plain HTTP** | Passwords, session cookies and the registry token cross the LAN unencrypted, as with the app (app `IF-060`). Accepted for a home LAN; TLS with a self-signed certificate is a follow-up. |
+| **Plain HTTP** | Passwords and session cookies cross the LAN unencrypted, as with the app (app `IF-060`). Accepted for a home LAN; TLS with a self-signed certificate is a follow-up. |
 
 Safety is unchanged: the web interface only runs the CLIs, which keep the outputs-off reset,
 watchdogs, signature policy and `/data`-only writes.
@@ -409,7 +409,7 @@ watchdogs, signature policy and `/data`-only writes.
 - The **runtime contract** (version 1) and the app repository. The app's open question `Q-16`
   ("update from the web UI") can be answered there with: not part of the app; the OS's device web
   interface on port 8081 does it.
-- The app container: no `/update` mount, no access to the registry token.
+- The app container: no `/update` mount.
 - Safety measures, `policy.json` and the image tags `active` and `previous`.
 
 ## 14. Wi-Fi setup and the captive portal (OS11)
@@ -433,3 +433,27 @@ over it.
   Pi once it has left the hotspot.
 - **On an open hotspot** the app's port is closed by the service's nftables rule, so the header's
   link to the app doesn't work there; the Wi-Fi screen says so in a banner.
+
+## 15. Update notice (OS14)
+
+[ADR-0007](adr/0007-first-install-and-update-notice.md). `brewberry-update status --json` has
+`update: {latest, available, onPi, firstInstall, checked, tried, error}`, from the last registry answer
+(`/data/update/tags.json`, written by `brewberry-update check`, which `brewberry-update-check.timer`
+runs every 6 hours, and at every run while no app is installed). The CLI decides which version is
+offered and whether it is newer; the page only shows it:
+
+- **Top bar** (every screen): a pill *Update: 1.3.0* (no app installed: *Installing the app 1.3.0*),
+  a link to `#versions`. No pop-up.
+- **Tab** *App versions*: a dot.
+- **App versions**: a card at the top with the active and the offered version and one button,
+  *Download 1.3.0* (`update.download`) or, once `onPi`, *Install 1.3.0* (`update.install`, with the
+  CLI's confirmation and brew warning). While the first install runs (`last.phase` downloading or
+  switching for that version), its progress instead of the button. A failed last try is named.
+- **Overview**, card *App*: a row *Update* (available, up to date, or why the last check failed).
+
+The page reads `update.status` when a screen loads and every 5 minutes while logged in, without a
+message when the Pi doesn't answer. *App versions* shows `update.list` at once (no registry request;
+`data-load`, which the parity test counts like `data-cmd`); *Check for newer versions* runs
+`update.check` and loads the list again. The log is `system.logs update`.
+
+The registry is public (ADR-0007), so there is no registry login and no token anywhere on the Pi.

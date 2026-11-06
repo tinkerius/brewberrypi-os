@@ -1,9 +1,11 @@
 #!/bin/bash
 # Tests for brewberry-update and brewberrypi-safemode with fake podman and
 # systemctl: download with signature or contract rejection, install of a
-# downloaded version with soak and rollback, removing downloads, configuration
-# errors, rollback, garbage collection that keeps :previous and the downloads,
-# the list of the registry's and the Pi's versions, and safe mode switching
+# downloaded version with soak and the way back on failure, removing downloads,
+# configuration errors, garbage collection that keeps :previous and the
+# downloads, the list of the registry's versions (as of the last check) and the
+# Pi's, the check of the registry, the update in status, brewberry-update-check (the update check and
+# the first install while no app is installed), and safe mode switching
 # exactly once. Run by scripts/lint.sh.
 set -euo pipefail
 
@@ -87,6 +89,7 @@ cat > "$T/bin/skopeo" <<'FAKE'
 set -u
 [ "$1" = --command-timeout ] && shift 2
 [ "$1" = list-tags ] || { echo "fake skopeo: unsupported: $*" >&2; exit 99; }
+echo "list-tags" >> "$FAKE/skopeo.log"
 [ ! -e "$FAKE/offline" ] || { echo "pinging container registry: dial tcp: no route to host" >&2; exit 1; }
 { ls "$FAKE/registry"; echo sha256-0123.sig; echo latest; } | jq -R . | jq -sc '{Tags: .}'
 FAKE
@@ -106,7 +109,6 @@ export PATH=$T/bin:$PATH
 fixture() {
    rm -rf "$FAKE" "$BREWBERRY_UPDATE_ROOT"
    mkdir -p "$FAKE"/{tags,images,labels,registry,behave,sys} "$BREWBERRY_UPDATE_ROOT"/{data/secrets,run}
-   echo token > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
    : > "$FAKE/log"
    local v id behave contract labelled
    while read -r v id behave contract labelled; do
@@ -203,8 +205,6 @@ expect "download: version label differs from the tag, not kept" "$RC $(tag_of ac
 fixture; run "$UPDATE" download latest
 expect "non-release tag refused before pulling" "$RC $(tag_of active) $(grep -c . "$FAKE/log")" "1 id100 0"
 
-fixture; rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"; run "$UPDATE" download 1.1.0
-expect "no registry token: download refused" "$RC $(images)" "1 id100"
 
 fixture; inst 1.1.0; run "$UPDATE" --yes install 1.1.0
 expect "already active: nothing changed" "$RC $(tag_of active) $(tag_of previous) $(phase)" "0 id110 id100 done"
@@ -213,10 +213,7 @@ fixture; inst 1.1.0; run "$UPDATE" --yes install 1.0.0
 expect "install the previous version (no download tag): switches back" "$RC $(tag_of active) $(tag_of previous)" "0 id100 id110"
 
 fixture; inst 1.1.0; run "$UPDATE" --yes rollback
-expect "rollback: swapped" "$RC $(tag_of active) $(tag_of previous) $(phase)" "0 id100 id110 done"
-
-fixture; run "$UPDATE" --yes rollback
-expect "rollback without previous: refused" "$RC $(tag_of active)" "1 id100"
+expect "no rollback command: an older version is installed from the list instead" "$RC $(tag_of active)" "2 id110"
 
 fixture; exec 8> "$BREWBERRY_UPDATE_ROOT/run/brewberry-update.lock"; flock 8
 run "$UPDATE" download 1.1.0; exec 8>&-
@@ -224,18 +221,29 @@ expect "a download while another update runs: refused" "$RC $(images)" "1 id100"
 
 fixture; dl 1.1.0; inst 1.7.0
 run "$UPDATE" list
-expect "list: versions newest first in SemVer order, pre-releases before their release; the Pi's marked" "$RC $(paste -sd '|' "$T/out")" \
+expect "list, never checked: asks the registry; versions newest first in SemVer order, pre-releases before their release; the Pi's marked" \
+   "$RC $(grep -v '^brewberry-update:' "$T/out" | paste -sd '|')" \
    "0 1.9.0|1.9.0-rc.1|1.9.0-alpha.10|1.9.0-alpha.2|1.8.0|1.7.0  active, on the Pi (250 MB)|1.6.0|1.5.0|1.3.0|1.2.0|1.1.0  on the Pi (250 MB)|1.0.0  previous, on the Pi (250 MB)"
-expect "list: tags.json" "$(jq -c '[.active, .tags[0], (.tags | length)]' "$BREWBERRY_UPDATE_ROOT/data/update/tags.json")" '["1.7.0","1.9.0",11]'
+expect "list: tags.json" "$(jq -c '[.active, .tags[0], (.tags | length), .error, .time == .tried]' "$BREWBERRY_UPDATE_ROOT/data/update/tags.json")" '["1.7.0","1.9.0",11,null,true]'
 expect "list --json: the Pi's versions" "$("$UPDATE" list --json 2>/dev/null | jq -c '[.active, .previous, (.tags | length), [.local[] | [.version, .active, .previous, .downloaded, .mb]], .registryError]')" \
    '["1.7.0","1.0.0",11,[["1.7.0",true,false,true,250],["1.1.0",false,false,true,250],["1.0.0",false,true,false,250]],null]'
+expect "list once checked: no registry request (the web page shows it at once)" \
+   "$("$UPDATE" list --json 2>/dev/null | jq -c '[(.tags | length), .checked != null]') $(grep -c . "$FAKE/skopeo.log")" '[11,true] 1'
+echo id1a0 > "$FAKE/registry/1.10.0"; printf 'org.opencontainers.image.version=1.10.0\norg.brewberrypi.runtime-contract=2\n' > "$FAKE/labels/id1a0"
+run "$UPDATE" check
+expect "check: asks the registry now and reports the update" "$RC $(grep -c '^update: 1.10.0 is available' "$T/out") $(grep -c . "$FAKE/skopeo.log")" "0 1 2"
+expect "list after a check: the new version" "$("$UPDATE" list --json 2>/dev/null | jq -c '[.tags[0], (.tags | length)]')" '["1.10.0",12]'
+expect "check --json: the update" "$("$UPDATE" check --json 2>/dev/null | jq -c '[.latest, .available, .error]')" '["1.10.0",true,null]'
 touch "$FAKE/offline"
-run "$UPDATE" list
-expect "list without the registry: the Pi's versions, and why" "$RC $(paste -sd '|' "$T/out" | sed 's/^brewberry-update: [^|]*|//')" \
-   "0 1.7.0  active, on the Pi (250 MB)|1.1.0  on the Pi (250 MB)|1.0.0  previous, on the Pi (250 MB)"
-expect "list --json without the registry: registryError" "$("$UPDATE" list --json 2>/dev/null | jq -c '[(.tags | length), (.local | length), (.registryError | test("did not answer"))]')" '[0,3,true]'
-rm "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
-expect "list --json without a token: says so" "$("$UPDATE" list --json 2>/dev/null | jq -r .registryError)" "no registry token; run: brewberry-update login"
+run "$UPDATE" check
+expect "check without the registry: says why" "$RC $(grep -c 'the last check failed: the registry did not answer' "$T/out")" "0 1"
+expect "list after a failed check: the last answer, the Pi's versions, and why" \
+   "$("$UPDATE" list --json 2>/dev/null | jq -c '[(.tags | length), (.local | length), (.registryError | test("did not answer"))]')" '[12,3,true]'
+expect "a failed check: tags.json keeps the last answer, records the failed try" \
+   "$(jq -c '[(.tags | length), (.error | test("did not answer")), (.tried >= .time)]' "$BREWBERRY_UPDATE_ROOT/data/update/tags.json")" '[12,true,true]'
+fixture; touch "$FAKE/offline"; run "$UPDATE" list --json
+expect "list, never checked and no registry: the Pi's versions, and why" \
+   "$RC $(jq -c '[(.tags | length), (.local | length), .checked, (.registryError | test("did not answer"))]' "$T/out" 2>/dev/null)" '0 [0,1,null,true]'
 
 fixture; dl 1.9.0-alpha.2; run "$UPDATE" --yes install 1.9.0-alpha.2
 expect "install a pre-release (runtime contract §1)" "$RC $(tag_of active) $(phase)" "0 id192 done"
@@ -272,8 +280,6 @@ expect "install without --yes and without a terminal: exit 10, nothing changed" 
 expect "install without --yes: says what it would do" "$(grep -c 'This installs 1.1.0 and restarts the app' "$T/out")" 1
 fixture; dl 1.1.0; RC=0; "$UPDATE" --json install 1.1.0 < /dev/null > "$T/out" 2> /dev/null || RC=$?
 expect "--json: the prompt as {confirm}" "$RC $(jq -r '.confirm | startswith("This installs 1.1.0")' "$T/out")" "10 true"
-fixture; echo Running > "$FAKE/engine"; RC=0; "$UPDATE" --json rollback < /dev/null > "$T/out" 2> /dev/null || RC=$?
-expect "rollback without previous: refused before asking" "$RC $(grep -c . "$T/out" || true)" "1 0"
 fixture; echo Running > "$FAKE/engine"; RC=0; "$UPDATE" demo on --json < /dev/null > "$T/out" 2> /dev/null || RC=$?
 expect "brew loaded or running: the prompt warns first" \
    "$RC $(jq -r '.confirm | startswith("A brew is loaded or running (engine: Running). This ends it. This switches")' "$T/out")" "10 true"
@@ -286,8 +292,8 @@ fixture; run "$UPDATE" install 9.9 --json
 expect "invalid version: refused before asking" "$RC $(grep -c confirm "$T/out" || true)" "1 0"
 
 fixture; inst 1.1.0; echo NoProcess > "$FAKE/engine"
-expect "status --json" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .previous.version, .service, .engine, .last.phase, .demo, .safemode]')" \
-   '["1.1.0","1.0.0","active","NoProcess","done",false,null]'
+expect "status --json" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .previous.version, .service, .engine, .last.phase, .demo, .safemode, .update.checked]')" \
+   '["1.1.0","1.0.0","active","NoProcess","done",false,null,null]'
 fixture; printf 'org.opencontainers.image.version=placeholder\norg.brewberrypi.runtime-contract=2\n' > "$FAKE/labels/id100"
 expect "status: the preloaded placeholder is no app" "$("$UPDATE" status 2>/dev/null | head -n 1 | grep -c 'placeholder (no app installed)')" 1
 expect "status --json: the placeholder is marked" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .active.placeholder]')" '["placeholder",true]'
@@ -295,7 +301,7 @@ inst 1.1.0
 expect "install over the placeholder: it becomes previous" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.version, .active.placeholder, .previous.placeholder]')" '["1.1.0",false,true]'
 fixture
 expect "status --json: no previous, app not answering" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.previous, .engine, .last]')" '[null,null,null]'
-fixture; echo '{}' > "$BREWBERRY_UPDATE_ROOT/data/secrets/auth.json"
+fixture
 expect "list --json: tags.json" "$("$UPDATE" list --json 2>/dev/null | jq -c '[.active, .tags[0]]')" '["1.0.0","1.9.0"]'
 
 fixture; run "$UPDATE" restart --yes
@@ -304,6 +310,80 @@ fixture; echo config > "$FAKE/behave/id100"; run "$UPDATE" restart --yes
 expect "restart: a configuration error is reported" "$RC $(grep -c 'refuses its configuration' "$T/out") $(tag_of active)" "1 1 id100"
 fixture; run "$UPDATE" restart < /dev/null
 expect "restart without --yes: exit 10, not restarted" "$RC $(grep -c . "$FAKE/log")" "10 0"
+
+# --- the update in status (from the last check) ----------------------------------
+upd() { "$UPDATE" status --json 2>/dev/null | jq -c '[.update.latest, .update.available]'; }
+placeholder() { printf 'org.opencontainers.image.version=placeholder\norg.brewberrypi.runtime-contract=2\n' > "$FAKE/labels/id100"; }
+fixture
+expect "status: not checked yet" "$(upd) $("$UPDATE" status 2>/dev/null | grep -c '^update: not checked yet$')" '[null,false] 1'
+"$UPDATE" check > /dev/null 2>&1
+expect "update on a release: the newest release" "$(upd)" '["1.9.0",true]'
+dl 1.9.0
+expect "update: downloaded already" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.update.latest, .update.onPi]')" '["1.9.0",true]'
+expect "status: the update in words" "$("$UPDATE" status 2>/dev/null | grep -c '^update: 1.9.0 is available (registry checked at ')" 1
+rm "$FAKE/registry/1.9.0"; "$UPDATE" check > /dev/null 2>&1
+expect "update on a release: never a pre-release" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.update.latest, .update.available, .update.onPi]')" '["1.8.0",true,false]'
+dl 1.9.0-alpha.2; "$UPDATE" --yes install 1.9.0-alpha.2 > /dev/null 2>&1
+expect "update on a pre-release: newer pre-releases too" "$(upd)" '["1.9.0-rc.1",true]'
+echo id190 > "$FAKE/registry/1.9.0"; "$UPDATE" check > /dev/null 2>&1
+expect "update on a pre-release: its release" "$(upd)" '["1.9.0",true]'
+inst 1.9.0
+expect "on the newest version: no update" "$(upd) $("$UPDATE" status 2>/dev/null | grep -c '^update: none (registry checked at ')" '["1.9.0",false] 1'
+fixture; placeholder; "$UPDATE" check > /dev/null 2>&1
+expect "no app installed: the newest release, a first install" "$(upd) $("$UPDATE" status --json 2>/dev/null | jq .update.firstInstall)" '["1.9.0",true] true'
+for v in 1.1.0 1.2.0 1.3.0 1.5.0 1.6.0 1.7.0 1.8.0 1.9.0; do rm "$FAKE/registry/$v"; done
+"$UPDATE" check > /dev/null 2>&1
+expect "no app installed and no release yet: the newest pre-release" "$(upd)" '["1.9.0-rc.1",true]'
+touch "$FAKE/offline"; "$UPDATE" check > /dev/null 2>&1
+expect "status: a failed check is reported, the last answer kept" \
+   "$("$UPDATE" status --json 2>/dev/null | jq -c '[.update.latest, (.update.error | test("did not answer"))]') $("$UPDATE" status 2>/dev/null | grep -c '; the last check failed: the registry did not answer')" '["1.9.0-rc.1",true] 1'
+
+# --- brewberry-update-check: the update check and the first install ------------
+CHECK=$SBIN/brewberry-update-check
+export BREWBERRY_UPDATE=$UPDATE
+FIRST=$BREWBERRY_UPDATE_ROOT/data/update/first-install.json
+lists() { grep -c list-tags "$FAKE/skopeo.log" 2>/dev/null || echo 0; }
+
+fixture; placeholder; run "$CHECK"
+expect "check, no app installed: the newest version downloaded and installed" \
+   "$RC $(tag_of active) $(tag_of previous) $(phase) $(jq -c '[.version, .attempts, .result]' "$FIRST")" '0 id190 id100 done ["1.9.0",1,"installed"]'
+run "$CHECK"
+expect "check, an app installed: nothing installed, no new registry check within 6 h" "$RC $(tag_of active) $(lists)" "0 id190 1"
+
+fixture; run "$CHECK"
+expect "check, an app installed: the registry asked, the update reported, nothing installed" \
+   "$RC $(tag_of active) $(grep -c '^restart' "$FAKE/log") $(upd) $(grep -c 'update available: 1.9.0' "$T/out")" '0 id100 0 ["1.9.0",true] 1'
+jq '.tried = "2000-01-01T00:00:00Z"' "$BREWBERRY_UPDATE_ROOT/data/update/tags.json" > "$T/tags" && mv "$T/tags" "$BREWBERRY_UPDATE_ROOT/data/update/tags.json"
+run "$CHECK"
+expect "check, an app installed: the registry asked again after 6 h" "$RC $(lists)" "0 2"
+jq '.tried = "2999-01-01T00:00:00Z"' "$BREWBERRY_UPDATE_ROOT/data/update/tags.json" > "$T/tags" && mv "$T/tags" "$BREWBERRY_UPDATE_ROOT/data/update/tags.json"
+run "$CHECK"
+expect "check: a last try in the future (clock set back) counts as never" "$RC $(lists)" "0 3"
+
+fixture; placeholder; touch "$FAKE/offline"; run "$CHECK"; run "$CHECK"
+expect "check, no app installed, offline: asks at every run, the placeholder keeps running" \
+   "$RC $(lists) $(tag_of active) $(grep -c '^restart' "$FAKE/log")" "0 2 id100 0"
+rm "$FAKE/offline"; run "$CHECK"
+expect "check, no app installed, online again: installed" "$RC $(tag_of active)" "0 id190"
+
+
+fixture; placeholder; for v in 1.1.0 1.3.0 1.5.0 1.6.0 1.7.0 1.8.0 1.9.0 1.9.0-alpha.2 1.9.0-alpha.10 1.9.0-rc.1; do rm "$FAKE/registry/$v"; done
+for _ in 1 2 3; do run "$CHECK"; done
+expect "check, the newest version crashes: rolled back to the placeholder, 3 tries" \
+   "$RC $(tag_of active) $(jq -c '[.version, .attempts, .result]' "$FIRST") $(grep -c '^restart id120' "$FAKE/log")" '1 id100 ["1.2.0",3,"install-failed"] 3'
+run "$CHECK"
+expect "check: no fourth try of the same version" "$RC $(grep -c '^restart id120' "$FAKE/log") $(grep -c 'not trying it again' "$T/out")" "0 3 1"
+echo id130 > "$FAKE/registry/1.3.0"; echo ok > "$FAKE/behave/id130"; run "$CHECK"
+expect "check: a newer version is tried again" "$RC $(tag_of active) $(jq -c '[.version, .attempts]' "$FIRST")" '0 id130 ["1.3.0",1]'
+
+fixture; placeholder; rm "$FAKE/images/id100" "$FAKE/tags/localhost_brewberrypi_active"; run "$CHECK"
+expect "check, no image at all: installs the newest version" "$RC $(tag_of active) $(tag_of previous)" "0 id190 none"
+
+fixture; placeholder; run "$CHECK"; echo 1 > "$FAKE/sys/status"; "$SAFEMODE" > /dev/null 2>&1
+expect "safe mode fell back to the placeholder: no first install any more" "$("$UPDATE" status --json 2>/dev/null | jq -c '[.active.placeholder, .update.firstInstall, .update.available]')" '[true,false,true]'
+: > "$FAKE/log"; jq '.tried = "2000-01-01T00:00:00Z"' "$BREWBERRY_UPDATE_ROOT/data/update/tags.json" > "$T/tags" && mv "$T/tags" "$BREWBERRY_UPDATE_ROOT/data/update/tags.json"
+run "$CHECK"
+expect "check after safe mode fell back to the placeholder: announces, never installs" "$RC $(tag_of active) $(grep -c '^restart' "$FAKE/log")" "0 id100 0"
 
 # --- brewberrypi-safemode -----------------------------------------------------
 # Device with 1.1.0 active and 1.0.0 previous, after the start limit was hit.

@@ -40,13 +40,14 @@ done
 cat_cmds=$(jq -r '.commands[] | select(.argv) | "\(.argv[0]) \(.argv[1])"' "$CATALOGUE")
 cat_ids=$(jq -r '.commands[].id' "$CATALOGUE")
 web_only=$(jq -r '.commands[] | select(.webOnly) | .webOnly' "$CATALOGUE")
-page_ids=$(grep -oE 'data-cmd="[a-z.-]+"|dataset\.cmd = "[a-z.-]+"' "$PAGE" | grep -oE '"[a-z.-]+"' | tr -d '"')
+# A control (data-cmd), or a query a screen loads by itself (data-load: the version list).
+page_ids=$(grep -oE 'data-(cmd|load)="[a-z.-]+"|dataset\.cmd = "[a-z.-]+"' "$PAGE" | grep -oE '"[a-z.-]+"' | tr -d '"')
 # shellcheck disable=SC2016  # literal backticks and awk fields
 manual_cmds=$(sed -n '/^## 9\. Command reference/,/^## /p' "$MANUAL" | grep -oE '^\| `[^`]+`' |
    sed -E 's/^\| `//; s/`$//' | awk '{ print ($1 ~ /^brewberry-/ ? $1 " " $2 : $1) }')
 
 same "CLI usage headers ⇄ catalogue" "$cli_cmds" "$cat_cmds"
-same "catalogue ⇄ device web page (data-cmd)" "$cat_ids" "$page_ids"
+same "catalogue ⇄ device web page (data-cmd, data-load)" "$cat_ids" "$page_ids"
 same "catalogue ⇄ user manual's command reference" "$(printf '%s\n%s\n' "$cat_cmds" "$web_only")" "$manual_cmds"
 same "catalogue CLIs ⇄ the operator CLIs" "$(jq -r '.commands[] | select(.argv) | .argv[0]' "$CATALOGUE")" "$(tr ' ' '\n' <<< "$CLIS")"
 

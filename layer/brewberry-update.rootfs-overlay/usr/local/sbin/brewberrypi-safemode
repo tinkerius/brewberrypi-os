@@ -6,7 +6,7 @@
 # Once: switch localhost/brewberrypi:active to :previous and start again. If
 # the image it switched to fails too, or there is no previous image, the app
 # stays down. Configuration errors (exit code 2 or 3) never switch images.
-# brewberry-update clears the marker after a successful install or rollback.
+# brewberry-update clears the marker after a successful install.
 set -euo pipefail
 
 ACTIVE=localhost/brewberrypi:active

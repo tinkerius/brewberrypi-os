@@ -1,0 +1,12 @@
+# Every 15 minutes: brewberry-update-check asks the registry only every 6 hours,
+# but at every run while no app is installed (ADR-0007, OS14).
+[Unit]
+Description=BrewberryPi OS: app update check
+
+[Timer]
+OnBootSec=2min
+OnUnitInactiveSec=15min
+RandomizedDelaySec=1min
+
+[Install]
+WantedBy=timers.target

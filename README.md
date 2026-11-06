@@ -5,7 +5,7 @@ controller for a home-brewing mash kettle. It is built to behave like a games co
 
 - **Flash it, plug it in, brew.** It's a ready-made image for Raspberry Pi 3, 4 and 5, flashed with Raspberry Pi Imager.
 - **Unplugging is safe.** The system partitions are read-only; only a small data partition is written, and only during config changes and updates. The relays end up off on every stop.
-- **The app runs as a signed container.** Podman + Quadlet run the BrewberryPi image from a private registry.
+- **The app runs as a signed container.** Podman + Quadlet run the BrewberryPi image from its public registry; a fresh Pi installs the newest version by itself and announces updates (ADR-0007).
 - **Pick a version.** Available versions are listed on the device; the chosen one is installed with automatic rollback, and there is a safe mode if it won't start.
 
 ## Status
@@ -70,9 +70,8 @@ images, the Imager manifest and `SHA256SUMS`; publish it once the hardware check
 as a GitHub pre-release, marked as untested on hardware.
 
 The image preloads the contract stub. To preload a released app version instead, set the
-repository variable `BREWBERRY_APP_VERSION` (`1.2.3` or `1.2.3-alpha.N`) and give CI read access to the app's package:
-the secret `BREWBERRY_GHCR_TOKEN` (classic PAT, `read:packages`), or add this repository under the
-package's *Manage Actions access*. The build refuses an image that isn't signed with the pinned key.
+repository variable `BREWBERRY_APP_VERSION` (`1.2.3` or `1.2.3-alpha.N`); the app's package is public,
+so CI needs no token. The build refuses an image that isn't signed with the pinned key.
 
 The image's built-in admin user is `brewberry`. It has no password and logs in over SSH with a key
 only, from the **repository variable** `BREWBERRY_SSH_PUBKEY` (Settings → Secrets and variables →

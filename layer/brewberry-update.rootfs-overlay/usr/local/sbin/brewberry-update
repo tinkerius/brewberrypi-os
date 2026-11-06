@@ -1,11 +1,13 @@
 #!/bin/bash
 # Select the BrewberryPi app version on the device (ADR-0001, OS4). Run as root.
 #
-#   brewberry-update login [--username <user> --password-stdin]
-#                                    store the registry token (/data/secrets/auth.json)
-#   brewberry-update list            the registry's versions (also written to
-#                                    /data/update/tags.json) and the ones on the Pi
-#   brewberry-update status          active and previous image, last result
+#   brewberry-update list            the registry's versions as of the last check
+#                                    (/data/update/tags.json; asks the registry only
+#                                    if it was never asked) and the ones on the Pi
+#   brewberry-update check           ask the registry for its versions now; reports
+#                                    a newer version (an update)
+#   brewberry-update status          active and previous image, last result, and a
+#                                    newer version in the registry (an update)
 #   brewberry-update download <version>
 #                                    pull a version from the registry onto the Pi,
 #                                    signature checked by policy.json; nothing switches
@@ -13,18 +15,23 @@
 #                                    delete a downloaded version (never the active or
 #                                    the previous one)
 #   brewberry-update install <version>
-#                                    switch to a downloaded version; watch for 60 s,
-#                                    roll back on failure
-#   brewberry-update rollback        switch back to the previous image
+#                                    switch to a downloaded version (also an older
+#                                    one); watch for 60 s, back to the version before
+#                                    if it fails
 #   brewberry-update demo on|off     run the app with a simulated kettle
 #                                    (--dummymode, never touches GPIO) or normally;
 #                                    kept across reboots, restarts the app
 #   brewberry-update restart         restart the app (also after a configuration error)
 #
-# Options: --json (list, status: machine-readable output), --yes (install,
-# rollback, demo, restart: don't ask; without it they ask on a terminal, and
+# Options: --json (list, check, status: machine-readable output), --yes
+# (install, demo, restart: don't ask; without it they ask on a terminal, and
 # otherwise print what they would do and exit 10). They warn when a brew is
 # loaded or running, because restarting the app ends it (ADR-0002).
+#
+# Registry: public, used without a token (ADR-0007); what the Pi runs is
+# decided by the signature check in policy.json. brewberry-update-check
+# (timer) runs 'check' every 6 h, and installs the newest version by itself
+# while no app is installed (ADR-0007).
 #
 # Images: localhost/brewberrypi:active runs; :previous is the one before; both
 # are never garbage-collected. Downloaded versions are kept as
@@ -59,7 +66,7 @@ SAFEMODE_MARK=$UPDATE_DIR/safemode.json
 # Extra app arguments, read by brewberrypi.service (EnvironmentFile=).
 APP_ARGS=$UPDATE_DIR/app-args.env
 LOCK=$ROOT/run/brewberry-update.lock
-export REGISTRY_AUTH_FILE=$ROOT/data/secrets/auth.json
+TAGS=$UPDATE_DIR/tags.json
 
 image_id() { podman image inspect -f '{{.Id}}' "$1" 2>/dev/null || true; }
 label() { podman image inspect -f "{{index .Labels \"$2\"}}" "$1" 2>/dev/null || true; }
@@ -101,9 +108,6 @@ lock() {
    flock -n 9 || die "another update or safe-mode switch is running"
 }
 
-need_auth() {
-   [ -s "$REGISTRY_AUTH_FILE" ] || die "no registry token; run: brewberry-update login"
-}
 
 # Restart the app and watch it: it must reach READY (systemctl restart waits for
 # it) and then run for SOAK_S without a restart. Returns 0 if healthy, 2 for a
@@ -147,21 +151,6 @@ gc() {
    podman image prune -f > /dev/null || true
 }
 
-cmd_login() { # [--username <user> --password-stdin]
-   install -d -m 0700 "$(dirname "$REGISTRY_AUTH_FILE")"
-   if [ $# -eq 3 ] && [ "$1" = --username ] && [ "$3" = --password-stdin ]; then
-      [[ $2 =~ ^[A-Za-z0-9-]+$ ]] || die "not a GitHub user name: $2"
-      podman login --authfile "$REGISTRY_AUTH_FILE" --username "$2" --password-stdin "${REPO%%/*}"
-   elif [ $# -eq 0 ]; then
-      echo "Registry token for $REPO: a GitHub classic PAT with read:packages only." >&2
-      podman login --authfile "$REGISTRY_AUTH_FILE" "${REPO%%/*}"
-   else
-      die "usage: brewberry-update login [--username <user> --password-stdin]"
-   fi
-   chmod 0600 "$REGISTRY_AUTH_FILE"
-   sync -f "$(dirname "$REGISTRY_AUTH_FILE")"
-}
-
 # jq: newest first in SemVer order (a pre-release sorts before its release:
 # 1.2.0-alpha.2 < 1.2.0-beta.1 < 1.2.0).
 # shellcheck disable=SC2016  # jq program
@@ -169,21 +158,44 @@ SEMVER_DESC='def semver_desc: sort_by(capture("^(?<v>[0-9.]+)(-(?<k>[a-z]+)\\.(?
    | (.v | split(".") | map(tonumber)) + [if .k then 0 else 1 end, .k // "", (.n // "0" | tonumber)])
    | reverse;'
 
-# The registry's versions and the ones on the Pi. Without a token or a
-# network, it still lists the Pi's own versions and says why the registry is
-# missing (registryError).
-cmd_list() {
-   local tags='[]' err="" out v id active previous on_pi='[]'
-   if [ ! -s "$REGISTRY_AUTH_FILE" ]; then
-      err="no registry token; run: brewberry-update login"
-   elif out=$(skopeo --command-timeout 60s list-tags "docker://$REPO" 2>&1); then
+# Ask the registry for its versions and record the answer in tags.json: the
+# versions of the last answer (tags, time), the last try (tried) and why it
+# failed (error). A failed try keeps the last answer.
+fetch_tags() {
+   local out tags now
+   now=$(date -u +%Y-%m-%dT%H:%M:%SZ)
+   if out=$(skopeo --command-timeout 60s list-tags "docker://$REPO" 2>&1); then
       # Version tags only; signature tags (sha256-...) and anything else are left out.
       tags=$(jq -c --arg re "$VERSION_RE" "$SEMVER_DESC"' .Tags | map(select(test($re))) | semver_desc' <<< "$out")
-      jq -n --argjson tags "$tags" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" --arg active "$(version_of "$ACTIVE")" \
-         '{time: $time, active: $active, tags: $tags}' | write_atomic "$UPDATE_DIR/tags.json"
+      jq -n --argjson tags "$tags" --arg time "$now" --arg active "$(version_of "$ACTIVE")" \
+         '{time: $time, tried: $time, active: $active, tags: $tags, error: null}' | write_atomic "$TAGS"
    else
-      err="the registry did not answer: $(tail -n 1 <<< "$out")"
+      { jq -c . "$TAGS" 2> /dev/null || echo '{"time": null, "tags": []}'; } |
+         jq --arg tried "$now" --arg err "the registry did not answer: $(tail -n 1 <<< "$out")" \
+         '. + {tried: $tried, error: $err}' | write_atomic "$TAGS"
    fi
+}
+
+# Ask the registry now; prints the update it offers (update_info).
+cmd_check() {
+   fetch_tags
+   if [ "$JSON" = 1 ]; then
+      update_info | jq .
+   else
+      update_info | update_line
+   fi
+}
+
+# The registry's versions as of the last check (tags.json, no network: fast
+# enough for the web page to show at once) and the ones on the Pi. Asks the
+# registry only when it was never asked. registryError: why the last check
+# failed; checked: when the registry last answered.
+cmd_list() {
+   local tags err checked out v id active previous on_pi='[]'
+   [ -s "$TAGS" ] || fetch_tags
+   tags=$(jq -c --arg re "$VERSION_RE" "$SEMVER_DESC"' .tags // [] | map(select(test($re))) | semver_desc' "$TAGS" 2> /dev/null || echo '[]')
+   err=$(jq -r '.error // empty' "$TAGS" 2> /dev/null || true)
+   checked=$(jq -r '.time // empty' "$TAGS" 2> /dev/null || true)
    active=$(version_of "$ACTIVE")
    previous=$(version_of "$PREVIOUS")
    for v in $( { downloads; echo "$active"; echo "$previous"; } | grep -E "$VERSION_RE" | sort -u); do
@@ -194,16 +206,17 @@ cmd_list() {
          '. + [{version: $v, mb: $mb, active: ($v == $a), previous: ($v == $p), downloaded: $dl}]' <<< "$on_pi")
    done
    out=$(jq -n -c --argjson tags "$tags" --argjson local "$on_pi" --arg err "$err" --arg active "$active" \
-      --arg previous "$previous" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SEMVER_DESC"'
+      --arg previous "$previous" --arg checked "$checked" --arg time "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$SEMVER_DESC"'
       def ornull: if . == "" then null else . end;
-      {time: $time, active: ($active | ornull), previous: ($previous | ornull), tags: $tags,
+      {time: $time, checked: ($checked | ornull), active: ($active | ornull), previous: ($previous | ornull), tags: $tags,
        local: ([$local[].version] | semver_desc | map(. as $v | $local[] | select(.version == $v))),
        registryError: ($err | ornull)}')
    if [ "$JSON" = 1 ]; then
       jq . <<< "$out"
       return 0
    fi
-   [ -z "$err" ] || log "$err; showing the versions on the Pi only"
+   if [ -n "$checked" ]; then log "the registry's versions as of $checked (brewberry-update check asks it now)"; fi
+   [ -z "$err" ] || log "the last check failed: $err"
    jq -r "$SEMVER_DESC"'
       . as $o | (.tags + [.local[].version] | unique | semver_desc)[] | . as $v
       | ([$o.local[] | select(.version == $v)] | first) as $l
@@ -215,7 +228,6 @@ cmd_list() {
 cmd_download() { # <version>
    local version=$1 id mb
    check_version "$version"
-   need_auth
    lock
    if [ -n "$(image_id "$LOCAL:$version")" ]; then
       log "$version is already downloaded"
@@ -258,12 +270,52 @@ cmd_remove() { # <version>
       die "$version is the active version; it stays on the Pi"
    fi
    if [ "$(version_of "$PREVIOUS")" = "$version" ] || { [ -n "$id" ] && [ "$id" = "$(image_id "$PREVIOUS")" ]; }; then
-      die "$version is the previous version, kept to roll back to; it stays on the Pi"
+      die "$version is the previous version, kept for safe mode; it stays on the Pi"
    fi
    [ -n "$id" ] || die "$version is not downloaded"
    podman untag "$id" "$LOCAL:$version" || die "could not remove $version"
    gc
    log "removed $version"
+}
+
+# The update the registry offers, from tags.json (the last check):
+# {latest, available, onPi, firstInstall, checked, tried, error}. latest is the newest
+# version for this Pi: on a release, the newest release; on a pre-release, the
+# newest version, pre-releases included (it opted in by installing one); with
+# no app installed, the newest release, or the newest pre-release while there
+# is no release yet. available: latest is newer than the active version. onPi:
+# latest is downloaded. firstInstall: no app version was ever active here
+# (active and previous are the placeholder or nothing), so brewberry-update-check
+# installs latest by itself; not after safe mode fell back to the placeholder.
+# shellcheck disable=SC2016  # jq program
+update_info() {
+   local active latest info first=false
+   active=$(version_of "$ACTIVE")
+   case "$active $(version_of "$PREVIOUS")" in
+      " " | "$PLACEHOLDER " | " $PLACEHOLDER" | "$PLACEHOLDER $PLACEHOLDER") first=true ;;
+   esac
+   info=$({ jq -c . "$TAGS" 2> /dev/null || echo '{}'; } | jq -c --arg active "$active" --arg re "$VERSION_RE" "$SEMVER_DESC"'
+      def release: test("-") | not;
+      (.tags // [] | map(select(test($re))) | semver_desc) as $tags
+      | ($active | test($re)) as $app
+      | (if $app and ($active | release) then $tags | map(select(release))
+         elif $app then $tags
+         elif ($tags | map(select(release)) | length) > 0 then $tags | map(select(release))
+         else $tags end) as $candidates
+      | ($candidates | first) as $latest
+      | {latest: $latest,
+         available: ($latest != null and (if $app then $latest != $active and ([$latest, $active] | semver_desc | first) == $latest else true end)),
+         checked: .time, tried: .tried, error: .error}')
+   latest=$(jq -r '.latest // empty' <<< "$info")
+   jq -c --argjson on "$([ -n "$latest" ] && [ -n "$(local_image "$latest")" ] && echo true || echo false)" \
+      --argjson first "$first" '. + {onPi: $on, firstInstall: $first}' <<< "$info"
+}
+
+# The update in words, from update_info on stdin.
+update_line() {
+   jq -r '"update: " + (if .available then "\(.latest) is available" elif .checked then "none" else "not checked yet" end)
+      + (if .checked then " (registry checked at \(.checked))" else "" end)
+      + (if .error then "; the last check failed: \(.error)" else "" end)'
 }
 
 cmd_status() {
@@ -279,6 +331,7 @@ cmd_status() {
    systemctl is-active "$SERVICE" || true
    [ -f "$STATE" ] && jq . "$STATE"
    [ -f "$SAFEMODE_MARK" ] && { echo "safe mode:"; jq . "$SAFEMODE_MARK"; }
+   update_info | update_line
    echo "demo mode: $(demo_state)"
    return 0
 }
@@ -294,9 +347,10 @@ status_json() {
    jq -n --argjson active "${out[0]}" --argjson previous "${out[1]}" \
       --arg service "$(systemctl is-active "$SERVICE" 2> /dev/null || true)" --arg engine "$(engine_state)" \
       --argjson last "$state" --argjson safemode "$safemode" --arg demo "$(demo_state)" \
+      --argjson update "$(update_info)" \
       '{active: $active, previous: $previous, service: $service,
         engine: (if $engine == "" then null else $engine end),
-        last: $last, safemode: $safemode, demo: ($demo == "on")}'
+        last: $last, safemode: $safemode, demo: ($demo == "on"), update: $update}'
 }
 
 demo_state() {
@@ -377,7 +431,7 @@ cmd_install() { # <version>
          exit 1
          ;;
       *)
-         log "$version failed; rolling back"
+         log "$version failed; going back to the version before"
          if [ -n "$old" ]; then
             podman tag "$old" "$ACTIVE"
             if [ -n "$prev_before" ]; then podman tag "$prev_before" "$PREVIOUS"; else podman untag "$old" "$PREVIOUS" || true; fi
@@ -392,43 +446,17 @@ cmd_install() { # <version>
    esac
 }
 
-cmd_rollback() {
-   local a p rc
-   [ -n "$(image_id "$PREVIOUS")" ] || die "there is no previous image"
-   confirm "This switches back to the previous version ($(label "$PREVIOUS" org.opencontainers.image.version)) and restarts the app."
-   lock
-   a=$(image_id "$ACTIVE")
-   p=$(image_id "$PREVIOUS")
-   [ -n "$p" ] || die "there is no previous image"
-   state switching "rolling back to $(label "$p" org.opencontainers.image.version)"
-   podman tag "$p" "$ACTIVE"
-   podman tag "$a" "$PREVIOUS"
-   rm -f "$SAFEMODE_MARK"
-   rc=0
-   restart_and_soak || rc=$?
-   if [ "$rc" -eq 1 ]; then
-      podman tag "$a" "$ACTIVE"
-      podman tag "$p" "$PREVIOUS"
-      systemctl reset-failed "$SERVICE" 2>/dev/null || true
-      systemctl restart "$SERVICE" || true
-      state failed "the previous image failed too; switched back"
-      exit 1
-   fi
-   state "done" "rolled back to $(label "$ACTIVE" org.opencontainers.image.version)"
-}
-
 [ -n "$ROOT" ] || [ "$(id -u)" = 0 ] || die "run as root"
 install -d -m 0755 "$UPDATE_DIR"
 parse_opts "$@"
 set -- "${ARGS[@]+"${ARGS[@]}"}"
 case ${1:-} in
-   login) shift; cmd_login "$@" ;;
    list) cmd_list ;;
+   check) cmd_check ;;
    status) cmd_status ;;
    download) [ $# -eq 2 ] || die "usage: brewberry-update download <version>"; cmd_download "$2" ;;
    remove) [ $# -eq 2 ] || die "usage: brewberry-update remove <version>"; cmd_remove "$2" ;;
    install) [ $# -eq 2 ] || die "usage: brewberry-update install <version>"; cmd_install "$2" ;;
-   rollback) cmd_rollback ;;
    demo)
       case ${2:-} in
          on | off) cmd_demo "$2" ;;

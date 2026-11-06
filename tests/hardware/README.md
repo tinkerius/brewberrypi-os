@@ -94,11 +94,8 @@ another key.
    scp work/test-signing/test.pub brewberry@brewberrypi.local:/tmp/
    ```
 
-2. On the device, a registry token for that repository (a classic PAT with `read:packages`):
-
-   ```sh
-   ssh -t brewberry@brewberrypi.local 'sudo BREWBERRY_UPDATE_REPO=ghcr.io/tinkerius/brewberrypi-os-test brewberry-update login'
-   ```
+2. Make the test package **public** (GitHub: the package's *Package settings → Change visibility*):
+   the device has no registry login (ADR-0007).
 
 3. Install the test key and policy entry. They live in the RAM overlay only, so a reboot removes
    them:
@@ -152,17 +149,15 @@ Needs an app release (≥ 1.0 for the milestone) from `tinkerius/brewberrypi-app
    preloaded), then on the device:
 
    ```sh
-   sudo brewberry-update login             # classic PAT with read:packages
    sudo brewberry-update download <version>
    sudo brewberry-update install <version> # must end with the new version active
    sudo brewberry-update status
    ```
 
 2. **As the preload** (for the release image): set the repository variable
-   `BREWBERRY_APP_VERSION=<version>` and give CI read access to the app's package (the secret
-   `BREWBERRY_GHCR_TOKEN`, or this repository under the package's *Manage Actions access*). The
+   `BREWBERRY_APP_VERSION=<version>` (the app's package is public: no token). The
    image build fetches the arm64 image with `scripts/fetch-app.sh` and refuses it unless it is
-   signed with the pinned key and its labels say contract 1 and that version.
+   signed with the pinned key and its labels say contract 2 and that version.
    `/etc/brewberry-release` shows `BREWBERRY_OS_APP_PRELOAD`.
 3. Re-run the OS3 scenarios with the real app instead of the stub. `os3-check.sh` drives the stub's
    heater endpoint, so here use the app's protocol (H-08 stop, H-09 `kill`, H-10 `pause`); the
@@ -226,8 +221,8 @@ By hand, in a browser on another machine (`http://brewberrypi.local:8081/`):
 
 1. The login page shows the user `brewberry`; `pi` logs in and the default-password reminder
    shows until the password is changed.
-2. Every page loads; every button of the user manual's command reference works: **Check the
-   registry** and **Install** (with a registry token), **Roll back**, **Demo mode on/off**,
+2. Every page loads; every button of the user manual's command reference works: **Check for newer
+   versions**, **Download** and **Install** of a version, **Demo mode on/off**,
    **Restart the app**, **Download** and **Import**
    of the configuration, **Logs**, and the three **OS update** steps (OS6; the page reconnects after
    each reboot).
@@ -345,3 +340,34 @@ listens on port 80. Then, from another machine:
    still opens it, `:8080` no longer does. Set it back.
 3. On the setup hotspot (OS11), `http://10.42.0.1/` and any other name still open the Wi-Fi page.
 
+
+## OS14: first install and update notice
+
+Needs internet; the app's registry is public. Have at least two app releases in the registry, and
+a way to publish a newer one (or use the OS4 test images in a public test repository with
+`BREWBERRY_UPDATE_REPO`, as in OS4).
+
+1. Flash a card **without** a preloaded app (the stub; the default build) and boot it with a
+   network. On `http://brewberrypi.local/` the placeholder's page says the app installs itself.
+2. The first boot reboots once by itself; nothing is downloaded before that.
+3. Within about 15 minutes of the Pi being online (a few more on a Pi 3), without touching
+   anything: the top bar of the device web interface shows *Installing the app <version>* while it
+   runs, then `http://brewberrypi.local/` opens the app, the newest release (or the newest
+   pre-release while there is no release). **Logs → Update check and first install** shows the
+   download and the install.
+4. Run the check:
+
+   ```sh
+   ssh <user>@brewberrypi.local 'sudo sh -s -- run' < tests/hardware/os14-check.sh
+   ```
+
+5. Install an older version by hand (**App versions**), then click **Check for newer versions**: the top
+   bar shows *Update: <newest>*, the tab has a dot, and the card at the top of **App versions**
+   offers **Download**, then **Install**; `sudo brewberry-update status` has the line
+   `update: <newest> is available`. Install it from the card: the notice goes away.
+6. Load a brew in the app and leave it loaded across the next check (or run
+   `sudo systemctl start brewberry-update-check.service`): nothing is installed by itself, and the
+   brew is still loaded.
+7. Publish a version that crashes on start (OS4's `crash` test image) as the newest on a fresh card:
+   the Pi tries it 3 times, rolls back to the placeholder each time, then stops trying
+   (`/data/update/first-install.json`), and the card on **App versions** names the failed try.

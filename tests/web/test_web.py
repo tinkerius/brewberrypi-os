@@ -318,6 +318,9 @@ class WebTest(unittest.TestCase):
         with open(os.path.join(WEB, "index.html"), encoding="utf-8") as f:
             page = f.read()
         self.assertIn('data-load="update.list"', page)
+        # While App versions is open, the list is updated from the registry every 5 minutes.
+        self.assertIn("LIST_REFRESH_MS = 5 * 60 * 1000", page)
+        self.assertIn('id="ver-checked"', page)
         self.assertNotIn("update.rollback", page)
 
     def test_wifi_password_on_stdin_empty_for_an_open_network(self):

@@ -453,7 +453,11 @@ offered and whether it is newer; the page only shows it:
 
 The page reads `update.status` when a screen loads and every 5 minutes while logged in, without a
 message when the Pi doesn't answer. *App versions* shows `update.list` at once (no registry request;
-`data-load`, which the parity test counts like `data-cmd`); *Check for newer versions* runs
-`update.check` and loads the list again. The log is `system.logs update`.
+`data-load`, which the parity test counts like `data-cmd`), with a spinner until it arrives;
+*Check for newer versions* runs `update.check` and loads the list again. Beside the button: *Updated
+14:05 (3 min ago)*, the registry's last answer (`checked`), or a spinner while it is asked. While the
+screen is open, the page runs `update.check` itself when the list is 5 minutes old (its age is
+`time - checked` in the Pi's clock, so a Pi whose clock is off doesn't shift it), at most every 5
+minutes when the registry doesn't answer, and not while the browser tab is hidden. The log is `system.logs update`.
 
 The registry is public (ADR-0007), so there is no registry login and no token anywhere on the Pi.

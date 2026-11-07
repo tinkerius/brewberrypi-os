@@ -94,6 +94,7 @@ pre { background: var(--code); box-shadow: inset 0 0 0 1px var(--ring); border-r
 table { width: 100%; border-collapse: collapse; margin-top: 8px; }
 td { padding: 8px 4px; border-top: 1px solid var(--line); }
 td:last-child { text-align: right; }
+td:only-child { text-align: left; }
 dialog { border: 0; border-radius: 12px; padding: 24px; background: var(--card); color: var(--text); width: min(448px, calc(100vw - 32px)); margin-top: 80px;
   box-shadow: 0 0 0 1px var(--ring), 0 20px 25px -5px rgb(0 0 0 / .1), 0 8px 10px -6px rgb(0 0 0 / .1); }
 dialog h2 { font-size: 18px; line-height: 28px; margin: 0; }
@@ -260,11 +261,13 @@ td button + button { margin-left: 6px; }
         <h2>Available versions</h2>
         <p class="muted">Download a version onto the Pi first, then install it; older versions too. Downloads stay on the Pi until you remove them,
           so switching between them needs no internet. The active and the previous version are always kept. <span id="ver-space"></span></p>
-        <p class="muted">The Pi checks the registry for newer versions every 6 hours and shows one at the top of every page; it never installs
-          one by itself while an app is installed. Until the first app version is installed, it installs the newest one by itself.</p>
-        <p id="ver-note" class="muted"></p>
+        <p class="muted">While this page is open, the list is updated from the registry every 5 minutes; otherwise the Pi checks every 6 hours
+          and shows a newer version at the top of every page. It never installs one by itself while an app is installed. Until the first app
+          version is installed, it installs the newest one by itself.</p>
+        <div class="row"><button class="secondary" data-cmd="update.check">Check for newer versions</button>
+          <span id="ver-checked" class="muted"></span></div>
+        <p id="ver-note" class="banner warn hidden"></p>
         <table id="ver-list" data-load="update.list"><tr><td><span class="spinner"></span> Loading the versions…</td></tr></table>
-        <div class="row"><button class="secondary" data-cmd="update.check">Check for newer versions</button></div>
       </div>
     </section>
 
@@ -510,10 +513,11 @@ const views = {
     if (!w.networks.length) t.insertRow().insertCell().textContent = "No networks yet.";
   },
   async versions() {
-    const [app, sys] = await Promise.all([query("update.status"), query("system.info")]);
+    renderVersions();  // the list loaded before, or the spinner, until the Pi answers
+    const [app, sys] = await Promise.all([query("update.status"), query("system.info"), loadVersions()]);
     if (app) { showAppStatus($("#ver-status"), app); showUpdate(app); }
     $("#ver-space").textContent = sys && sys.data ? `Free on the Pi: ${Math.round(sys.data.free / 1048576)} MiB.` : "";
-    await loadVersions();
+    startVersionTimer();
   },
   async config() {
     const host = location.hostname;
@@ -534,7 +538,12 @@ const views = {
 
 // --- app versions: the registry's and the Pi's ---------------------------------
 let versionList = null;   // the last brewberry-update list --json
+let versionListAt = 0;    // when it arrived (Date.now())
 let busy = null;          // {version, label} while a download or install runs
+let checking = false;     // a registry check (update.check) is running
+let lastCheckTry = 0;     // when this page last asked the registry (Date.now())
+let versionTimer = null;
+const LIST_REFRESH_MS = 5 * 60 * 1000;
 
 function semverCompare(a, b) {
   const p = v => {
@@ -548,20 +557,93 @@ function semverCompare(a, b) {
 
 async function loadVersions() {
   const out = await query("update.list");
-  if (out) versionList = out;
+  if (out) { versionList = out; versionListAt = Date.now(); }
+  else if (!versionList) {
+    $("#ver-list").replaceChildren();
+    $("#ver-list").insertRow().insertCell().textContent = "The Pi did not send the list; reload the page.";
+  }
   renderVersions();
+}
+
+// How old the list is: the registry's last answer, in the Pi's own clock (list: time - checked), so
+// a Pi whose clock is off doesn't make it look older or newer; plus the time since the Pi sent it.
+function listAgeMs() {
+  const out = versionList;
+  if (!out || !out.checked) return Infinity;
+  return Math.max(0, Date.parse(out.time) - Date.parse(out.checked)) + (Date.now() - versionListAt);
+}
+
+function timeText(iso) {
+  const d = new Date(iso);
+  const sameDay = d.toDateString() === new Date().toDateString();
+  return sameDay ? d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })
+    : d.toLocaleString([], { dateStyle: "medium", timeStyle: "short" });
+}
+
+function agoText(ms) {
+  const min = Math.floor(ms / 60000);
+  if (min < 1) return "just now";
+  if (min < 60) return `${min} min ago`;
+  const h = Math.floor(min / 60);
+  return h < 48 ? `${h} h ago` : `${Math.floor(h / 24)} days ago`;
+}
+
+// "Updated 14:05 (3 min ago)", or a spinner while the registry is asked.
+function renderChecked() {
+  const el = $("#ver-checked");
+  el.replaceChildren();
+  if (checking) {
+    const spin = document.createElement("span");
+    spin.className = "spinner";
+    el.append(spin, " Asking the registry…");
+    return;
+  }
+  const out = versionList;
+  if (!out) return;
+  el.textContent = out.checked ? `Updated ${timeText(out.checked)} (${agoText(listAgeMs())})` : "Not updated from the registry yet";
+}
+
+// Ask the registry (update.check), then show the list and the update notice again. silent: the
+// 5-minute refresh, which reports nothing but the list's own note.
+async function checkRegistry(silent) {
+  if (checking) return;
+  checking = true;
+  lastCheckTry = Date.now();
+  renderChecked();
+  const { status, data } = await api("GET", "/api/run/update.check");
+  checking = false;
+  const u = status === 200 ? data.output : null;
+  if (!silent) {
+    if (!u) message(`Check for newer versions: ${cliText(data) || "failed"}`, "bad");
+    else if (u.error) message(`Check for newer versions: ${u.error}.`, "warn");
+    else message(u.available ? `${u.latest} is available.` : "No newer version.", "good");
+  }
+  await loadVersions();
+  pollUpdate();
+}
+
+// While App versions is open: keep "x min ago" current and update the list from the registry when
+// it is 5 minutes old (not more often than that when the registry doesn't answer).
+function startVersionTimer() {
+  clearInterval(versionTimer);
+  const tick = () => {
+    if (current() !== "versions") { clearInterval(versionTimer); versionTimer = null; return; }
+    renderChecked();
+    if (!document.hidden && !checking && listAgeMs() >= LIST_REFRESH_MS && Date.now() - lastCheckTry >= LIST_REFRESH_MS) checkRegistry(true);
+  };
+  tick();
+  versionTimer = setInterval(tick, 20 * 1000);
 }
 
 function renderVersions() {
   const t = $("#ver-list");
-  t.replaceChildren();
   const out = versionList;
-  if (!out) return;
-  // The list is the registry's answer at the last check (every 6 h, or the button), so it shows at once.
+  renderChecked();
+  if (!out) return;  // still the spinner row from the page
+  t.replaceChildren();
   const note = $("#ver-note");
-  note.textContent = (out.checked ? `The registry's versions as of ${out.checked}.` : "The registry hasn't answered yet: only the versions on the Pi.")
-    + (out.registryError ? ` The last check failed: ${out.registryError}.` : "");
-  note.className = out.registryError ? "banner warn" : "muted";
+  note.textContent = out.registryError ? `The last check failed: ${out.registryError}. The list shows the registry's last answer and the versions on the Pi.` : "";
+  note.classList.toggle("hidden", !out.registryError);
   const local = Object.fromEntries((out.local || []).map(l => [l.version, l]));
   const all = [...new Set([...(out.tags || []), ...Object.keys(local)])].sort(semverCompare).reverse();
   const button = (label, version, primary) => {
@@ -764,15 +846,7 @@ async function onCommand(el) {
         $("#hotspot-password").value = "";
         break;
       }
-      case "update.check": {
-        // Ask the registry now, then show its versions and the update notice again.
-        const u = await query(id);
-        if (u && u.error) message(`Check for newer versions: ${u.error}.`, "warn");
-        else if (u) message(u.available ? `${u.latest} is available.` : "No newer version.", "good");
-        await loadVersions();
-        pollUpdate();
-        break;
-      }
+      case "update.check": await checkRegistry(false); break;
       case "update.download": case "update.install": {
         // The row shows a spinner until the job ends (watchJob clears it).
         const version = el.dataset.argVersion;

@@ -446,9 +446,12 @@ sudo brewberry-update status           # active and previous version, result of 
 sudo brewberry-update restart          # restart the app, for example after a config change
 ```
 
-In the device web interface, **App versions** lists every version as soon as the page opens: the
-registry's (as of the last check, every 6 hours) and the ones on the Pi, marked *on the Pi* with
-their size (and *active* or *previous*). Next to each:
+In the device web interface, **App versions** lists every version as soon as the page opens (a
+spinner shows until the Pi has sent the list): the registry's and the ones on the Pi, marked *on
+the Pi* with their size (and *active* or *previous*). Next to **Check for newer versions** it says
+when the list was last updated from the registry (*Updated 14:05 (3 min ago)*). While the page is
+open, the list is updated from the registry every 5 minutes, and at once if it is older than that;
+otherwise the Pi checks every 6 hours. Next to each version:
 
 - **Download** for a version that is only in the registry. A spinner shows while it downloads;
   that can take a few minutes on a Pi 3. The app keeps running.
